@@ -473,8 +473,8 @@ class DesktopApi:
             if not source_path.is_file():
                 return {"ok": False, "value": None, "error": f"File does not exist: {source_path.name}"}
 
-            # Parse via strict PreviewConfig.from_mapping
-            cfg = PreviewConfig.from_mapping(config_dict)
+            # Parse via PreviewConfig.from_mapping in forgiving preview mode
+            cfg = PreviewConfig.from_mapping(config_dict, mode="preview")
             cfg.position = "custom"
 
             jpeg_bytes, orig_w, orig_h = preview_jpeg_bytes(source_path, cfg, max_dimension=850)
@@ -501,9 +501,26 @@ class DesktopApi:
             return
 
         self.cancel_event.clear()
-
-        cfg = PreviewConfig.from_mapping(config_dict)
-        cfg.position = "custom"
+        # Parse via strict-export mode: reject invalid values and unknown keys
+        try:
+            cfg = PreviewConfig.from_mapping(config_dict, mode="strict-export")
+            cfg.position = "custom"
+        except ValueError as val_err:
+            logging.error("Strict export configuration validation failed: %s", val_err)
+            if self.window:
+                fail_summary = {
+                    "planned": 1,
+                    "processed": 0,
+                    "remaining": 1,
+                    "success": 0,
+                    "failed": 1,
+                    "skipped": 0,
+                    "cancelled": False,
+                    "errors": [f"Configuration error: {val_err}"],
+                    "duration": 0.0,
+                }
+                self.window.evaluate_js(f"window.__onBatchFinishedSummary({json.dumps(fail_summary)})")
+            return
 
         def run_worker() -> None:
             def on_progress(cur: int, tot: int, msg: str) -> None:

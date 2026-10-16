@@ -80,10 +80,24 @@ class PreviewConfig:
     overwrite_policy: str = "rename"      # rename, skip, overwrite
 
     @classmethod
-    def from_mapping(cls, mapping: dict[str, Any] | None, strict: bool = False) -> PreviewConfig:
-        """Strictly parse, validate, and sanitize config from JS API or external dict."""
+    def from_mapping(
+        cls,
+        mapping: dict[str, Any] | None,
+        mode: str = "preview",
+        strict: bool | None = None,
+    ) -> PreviewConfig:
+        """
+        Parse and validate configuration dictionary.
+        Modes:
+          - 'preview': Forgiving and sanitized for interactive live canvas.
+          - 'strict-export': Rejects invalid types, malformed colors, unknown keys, or invalid paths with ValueError.
+        """
         if not isinstance(mapping, dict):
+            if mode == "strict-export" or strict is True:
+                raise ValueError("Configuration must be a dictionary")
             return cls()
+
+        is_strict = mode == "strict-export" or strict is True
 
         KNOWN_KEYS = {
             "text", "position", "opacity", "invertTriangles", "invert_triangles",
@@ -97,32 +111,43 @@ class PreviewConfig:
             "logoPosY", "logo_pos_y", "fontPath", "font_path",
             "overwritePolicy", "overwrite_policy", "theme", "inputFolder", "outputFolder", "sameFolder"
         }
-        if strict:
+        if is_strict:
             unknown = set(mapping.keys()) - KNOWN_KEYS
             if unknown:
                 raise ValueError(f"Unknown configuration key(s): {', '.join(sorted(unknown))}")
-
-        def _safe_float(val: Any, default: float, min_val: float, max_val: float) -> float:
+        def _safe_float(val: Any, default: float, min_val: float, max_val: float, field_name: str = "") -> float:
             try:
                 if val is None or val == "":
                     return default
                 f = float(val)
-                if not (f == f) or f == float("inf") or f == float("-inf"):  # NaN or Inf check
+                if not (f == f) or f == float("inf") or f == float("-inf"):
+                    if is_strict:
+                        raise ValueError(f"Invalid non-finite float value for {field_name}")
                     return default
+                if is_strict and (f < min_val or f > max_val):
+                    raise ValueError(f"Value for {field_name} out of bounds [{min_val}, {max_val}]: {f}")
                 return max(min_val, min(max_val, f))
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as exc:
+                if is_strict:
+                    raise ValueError(f"Invalid float for {field_name}: {exc}") from exc
                 return default
 
-        def _safe_int(val: Any, default: int, min_val: int, max_val: int) -> int:
+        def _safe_int(val: Any, default: int, min_val: int, max_val: int, field_name: str = "") -> int:
             try:
                 if val is None or val == "":
                     return default
                 i = int(round(float(val)))
+                if is_strict and (i < min_val or i > max_val):
+                    raise ValueError(f"Value for {field_name} out of bounds [{min_val}, {max_val}]: {i}")
                 return max(min_val, min(max_val, i))
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as exc:
+                if is_strict:
+                    raise ValueError(f"Invalid integer for {field_name}: {exc}") from exc
                 return default
 
-        def _safe_bool(val: Any, default: bool) -> bool:
+        def _safe_bool(val: Any, default: bool, field_name: str = "") -> bool:
+            if val is None or val == "":
+                return default
             if isinstance(val, bool):
                 return val
             if isinstance(val, (int, float)):
@@ -133,40 +158,60 @@ class PreviewConfig:
                     return True
                 if v in ("false", "0", "no", "n", "off"):
                     return False
+            if is_strict:
+                raise ValueError(f"Invalid boolean value for {field_name}: {val!r}")
             return default
-
-        def _safe_color(val: Any, default: tuple[int, int, int]) -> tuple[int, int, int]:
+        def _safe_color(val: Any, default: tuple[int, int, int], field_name: str = "") -> tuple[int, int, int]:
+            if val is None or val == "":
+                return default
             if isinstance(val, (tuple, list)) and len(val) >= 3:
                 try:
-                    return (
-                        max(0, min(255, int(val[0]))),
-                        max(0, min(255, int(val[1]))),
-                        max(0, min(255, int(val[2]))),
+                    c = (
+                        int(val[0]),
+                        int(val[1]),
+                        int(val[2]),
                     )
-                except (ValueError, TypeError):
+                    if is_strict and any(channel < 0 or channel > 255 for channel in c):
+                        raise ValueError(f"RGB channel for {field_name} must be 0-255: {c}")
+                except (ValueError, TypeError) as exc:
+                    if is_strict:
+                        raise ValueError(f"Invalid RGB color tuple for {field_name}: {val!r}") from exc
                     return default
             if isinstance(val, str):
                 h = val.strip().lstrip("#")
                 if len(h) == 3:
-                    h = "".join(c * 2 for c in h)
+                    h = "".join(ch * 2 for ch in h)
                 if len(h) == 6:
                     try:
                         return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
-                    except ValueError:
+                    except ValueError as exc:
+                        if is_strict:
+                            raise ValueError(f"Invalid hex color for {field_name}: {val!r}") from exc
                         return default
+            if is_strict:
+                raise ValueError(f"Invalid color specification for {field_name}: {val!r}")
             return default
 
-        def _safe_path(val: Any, allowed_exts: tuple[str, ...]) -> str:
+        def _safe_path(val: Any, allowed_exts: tuple[str, ...], field_name: str = "") -> str:
             if not isinstance(val, str) or not val.strip():
                 return ""
             clean = val.strip()
             try:
                 p = Path(clean)
-                if p.suffix.lower() in allowed_exts and p.is_file():
-                    return str(p.resolve())
-            except Exception:
+                if p.suffix.lower() not in allowed_exts:
+                    if is_strict:
+                        raise ValueError(f"File extension for {field_name} not permitted: {p.suffix}")
+                    return ""
+                if not p.is_file():
+                    if is_strict:
+                        raise ValueError(f"Path for {field_name} does not exist: {clean}")
+                    return ""
+                return str(p.resolve())
+            except Exception as exc:
+                if is_strict:
+                    raise ValueError(f"Invalid file path for {field_name}: {exc}") from exc
                 return ""
-            return ""
+
 
         # Text with length limit (max 100 chars to prevent memory/render DOS)
         raw_text = mapping.get("text", DEFAULT_TEXT)
@@ -182,11 +227,13 @@ class PreviewConfig:
         overwrite_policy = raw_policy if raw_policy in {"overwrite", "skip", "rename"} else "rename"
 
         # Opacity: supports 0.0-1.0 or 0-100 percent
-        raw_opacity = mapping.get("opacity", 90)
-        op_val = float(raw_opacity) if isinstance(raw_opacity, (int, float, str)) and str(raw_opacity).replace('.', '', 1).isdigit() else 90.0
-        opacity = (op_val / 100.0) if op_val > 1.0 else op_val
+        raw_opacity = mapping.get("opacity")
+        if raw_opacity is not None:
+            op_f = _safe_float(raw_opacity, 90.0, 0.0, 100.0, "opacity")
+            opacity = (op_f / 100.0) if op_f > 1.0 else op_f
+        else:
+            opacity = 0.90
         opacity = max(0.0, min(1.0, opacity))
-
         # Scale values (0.1 to 3.0)
         raw_font_scale = mapping.get("fontScale", mapping.get("font_scale", 100))
         fs_val = float(raw_font_scale) if isinstance(raw_font_scale, (int, float, str)) and str(raw_font_scale).replace('.', '', 1).isdigit() else 100.0
@@ -231,16 +278,16 @@ class PreviewConfig:
             text=text,
             position=position,
             opacity=opacity,
-            invert_triangles=_safe_bool(mapping.get("invertTriangles", mapping.get("invert_triangles")), True),
-            solid_color=_safe_color(mapping.get("solidColor", mapping.get("solid_color")), (255, 255, 255)),
-            text_color=_safe_color(mapping.get("textColor", mapping.get("text_color")), (255, 255, 255)),
-            has_outline=_safe_bool(mapping.get("hasOutline", mapping.get("has_outline")), True),
-            outline_color=_safe_color(mapping.get("outlineColor", mapping.get("outline_color")), (0, 0, 0)),
-            outline_thickness=_safe_int(mapping.get("outlineThickness", mapping.get("outline_thickness")), 2, 1, 10),
+            invert_triangles=_safe_bool(mapping.get("invertTriangles", mapping.get("invert_triangles")), True, "invertTriangles"),
+            solid_color=_safe_color(mapping.get("solidColor", mapping.get("solid_color")), (255, 255, 255), "solidColor"),
+            text_color=_safe_color(mapping.get("textColor", mapping.get("text_color")), (255, 255, 255), "textColor"),
+            has_outline=_safe_bool(mapping.get("hasOutline", mapping.get("has_outline")), True, "hasOutline"),
+            outline_color=_safe_color(mapping.get("outlineColor", mapping.get("outline_color")), (0, 0, 0), "outlineColor"),
+            outline_thickness=_safe_int(mapping.get("outlineThickness", mapping.get("outline_thickness")), 2, 1, 10, "outlineThickness"),
             font_scale=font_scale,
             yaw=yaw,
             pitch=pitch,
-            model_color=_safe_color(mapping.get("modelColor", mapping.get("model_color")), (120, 130, 160)),
+            model_color=_safe_color(mapping.get("modelColor", mapping.get("model_color")), (120, 130, 160), "modelColor"),
             text_pos_x=text_pos_x,
             text_pos_y=text_pos_y,
             logo_path=logo_path,
@@ -1129,13 +1176,23 @@ def generate_file(
     output_path: Path,
     config: PreviewConfig | None = None,
     text: str | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> None:
     if config is None:
         config = PreviewConfig(text=text if text is not None else DEFAULT_TEXT)
 
+    if is_cancelled and is_cancelled():
+        raise RuntimeError("Cancelled before rendering image")
+
     source = load_source_image(source_path, config)
+
+    if is_cancelled and is_cancelled():
+        raise RuntimeError("Cancelled during image preparation")
+
     output = compose_preview(source, config)
 
+    if is_cancelled and is_cancelled():
+        raise RuntimeError("Cancelled before saving output")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     import uuid
     temp_name = f".tmp_{output_path.stem}_{uuid.uuid4().hex[:8]}.jpg"
@@ -1365,14 +1422,20 @@ def process_folder(
                         r_count += 1
 
             try:
-                generate_file(item_path, target_file, config)
+                # Checkpoint right before generating file
+                if is_cancelled():
+                    cancelled = True
+                    break
+                generate_file(item_path, target_file, config, is_cancelled=is_cancelled)
                 success += 1
                 status = f"Created {target_file.name}"
             except Exception as exc:
+                if is_cancelled():
+                    cancelled = True
+                    break
                 failed += 1
                 status = f"Failed {item_path.name}"
                 errors.append(f"{item_path.name}: {exc}")
-
             completed += 1
             progress(completed, total, status)
 

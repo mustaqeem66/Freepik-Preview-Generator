@@ -34,10 +34,20 @@ def test_preview_config_from_mapping_strictness():
     assert PreviewConfig.from_mapping({"overwritePolicy": "rename"}).overwrite_policy == "rename"
     assert PreviewConfig.from_mapping({"overwritePolicy": "invalid"}).overwrite_policy == "rename"
 
-    # Strict mode: must raise ValueError on unknown keys
-    with pytest.raises(ValueError, match="Unknown configuration key"):
-        PreviewConfig.from_mapping({"bogusKey": 123}, strict=True)
+    # Strict-export mode vs preview mode
+    # 1. Preview mode is forgiving
+    cfg_prev = PreviewConfig.from_mapping({"textColor": "not-a-color"}, mode="preview")
+    assert cfg_prev.text_color == (255, 255, 255)
 
+    # 2. Strict export mode rejects invalid colors, out-of-range floats, and unknown keys
+    with pytest.raises(ValueError, match="Unknown configuration key"):
+        PreviewConfig.from_mapping({"bogusKey": 123}, mode="strict-export")
+
+    with pytest.raises(ValueError, match="Invalid color specification"):
+        PreviewConfig.from_mapping({"textColor": "not-a-color"}, mode="strict-export")
+
+    with pytest.raises(ValueError, match="Value for opacity out of bounds"):
+        PreviewConfig.from_mapping({"opacity": 150}, mode="strict-export")
 
 def test_batch_collision_resolution_and_overwrite_policies():
     """Verify deterministic collision looping and overwrite policies (skip, rename, overwrite)."""
@@ -98,3 +108,23 @@ def test_batch_collision_resolution_and_overwrite_policies():
         assert summary_rename["success"] == 2
         assert (out_dir / "sub1_asset_copy1.jpg").is_file()
         assert (out_dir / "sub2_asset_copy1.jpg").is_file()
+        # Verify consistent batch accounting: processed = success + failed + skipped
+        assert summary_rename["processed"] == summary_rename["success"] + summary_rename["failed"] + summary_rename["skipped"]
+        assert summary_rename["remaining"] == 0
+
+
+def test_cancellation_checkpoints_during_file_generation():
+    """Verify cancellation checkpoint interrupts generate_file immediately."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        src = tmp / "test.png"
+        out = tmp / "test.jpg"
+
+        img = Image.new("RGBA", (100, 100), (0, 255, 0, 255))
+        img.save(src)
+
+        # Pre-cancelled checkpoint must stop immediately
+        with pytest.raises(RuntimeError, match="Cancelled before rendering"):
+            generate_file(src, out, is_cancelled=lambda: True)
+
+        assert not out.exists()
