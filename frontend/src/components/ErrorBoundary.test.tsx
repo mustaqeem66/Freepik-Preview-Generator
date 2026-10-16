@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import React from "react";
+
 import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -19,9 +19,10 @@ describe("ErrorBoundary Component", () => {
       </ErrorBoundary>
     );
 
-    expect(screen.getByText("Application Render Error")).toBeInTheDocument();
+    expect(screen.getByText("PreviewGen could not load its interface")).toBeInTheDocument();
     expect(screen.getByText("Simulated mount crash")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Reload Application" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restart PreviewGen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy Details" })).toBeInTheDocument();
 
     spy.mockRestore();
   });

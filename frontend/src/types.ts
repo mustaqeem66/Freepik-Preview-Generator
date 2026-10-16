@@ -36,6 +36,7 @@ export interface PreviewState {
 export interface BatchSummary {
   planned: number;
   processed: number;
+  remaining: number;
   success: number;
   failed: number;
   skipped: number;
