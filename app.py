@@ -457,15 +457,29 @@ class DesktopApi:
                 if self.window:
                     msg_json = json.dumps(str(msg))
                     self.window.evaluate_js(f"window.__onBatchProgress({int(cur)}, {int(tot)}, {msg_json})")
-
             try:
+                # Disk space preflight check (at least 200 MB free)
+                out_p = Path(output_folder).resolve()
+                out_p.mkdir(parents=True, exist_ok=True)
+                free_bytes = shutil.disk_usage(out_p).free
+                if free_bytes < 200 * 1024 * 1024:
+                    raise RuntimeError(f"Insufficient disk space on target volume: {free_bytes // (1024*1024)} MB available (200 MB required).")
+
                 summary = process_folder(
                     Path(input_folder),
-                    Path(output_folder),
+                    out_p,
                     cfg,
                     on_progress,
                     self.cancel_event.is_set,
                 )
+
+                # Save persistent batch summary and error report in output folder
+                try:
+                    report_file = out_p / "previewgen_batch_report.json"
+                    report_file.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+                except Exception as r_err:
+                    logging.warning("Could not write batch report file: %s", r_err)
+
                 if self.window:
                     summary_json = json.dumps(summary)
                     self.window.evaluate_js(f"window.__onBatchFinishedSummary({summary_json})")

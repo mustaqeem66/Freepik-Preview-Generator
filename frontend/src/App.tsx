@@ -112,7 +112,7 @@ export default function App() {
             await api.frontend_ready().catch(() => {});
           }
           const res = await api.get_initial_state();
-          const saved = res?.value || res;
+          const saved: Partial<PreviewState> | undefined = res && "value" in res ? res.value : (res as Partial<PreviewState>);
           if (saved && !unmounted) {
             setState((prev) => ({ ...prev, ...saved }));
             if (saved.inputFolder) {
@@ -207,13 +207,12 @@ export default function App() {
         if (api) {
           const res = await api.render_preview(activeFile.path, state);
           if (cancelled) return;
-          const val = res?.value !== undefined ? res.value : res;
-          if (val?.dataUrl) {
-            setPreviewDataUrl(val.dataUrl);
-            setPreviewMeta({ width: val.width || 0, height: val.height || 0, name: activeFile.name });
+          if (res && "value" in res && res.value) {
+            setPreviewDataUrl(res.value.dataUrl);
+            setPreviewMeta({ width: res.value.width || 0, height: res.value.height || 0, name: activeFile.name });
             setRenderError(null);
-          } else if (res?.error || val?.error) {
-            setRenderError(res?.error || val?.error);
+          } else if (res && "error" in res && res.error) {
+            setRenderError(res.error);
           }
         }
       } catch (err: unknown) {
@@ -970,11 +969,11 @@ export default function App() {
                     const api = await getApi(3000);
                     if (api) {
                       const res = await api.render_preview(activeFile.path, state);
-                      if (res?.dataUrl) {
-                        setPreviewDataUrl(res.dataUrl);
-                        setPreviewMeta({ width: res.width || 0, height: res.height || 0, name: activeFile.name });
+                      if (res && "value" in res && res.value) {
+                        setPreviewDataUrl(res.value.dataUrl);
+                        setPreviewMeta({ width: res.value.width || 0, height: res.value.height || 0, name: activeFile.name });
                         setRenderError(null);
-                      } else if (res?.error) {
+                      } else if (res && "error" in res && res.error) {
                         setRenderError(res.error);
                       }
                     }

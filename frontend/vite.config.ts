@@ -13,4 +13,9 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  // @ts-expect-error vitest config extension
+  test: {
+    globals: true,
+    environment: "jsdom",
+  },
 });
