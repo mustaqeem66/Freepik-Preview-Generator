@@ -77,13 +77,30 @@ class PreviewConfig:
     logo_pos_y: float = 0.05              # Logo vertical position (0.0 to 1.0)
     # Custom Font Support
     font_path: str = ""                   # Path to custom .ttf/.otf font file
-    overwrite_policy: str = "overwrite"   # overwrite, skip, rename
+    overwrite_policy: str = "rename"      # rename, skip, overwrite
 
     @classmethod
-    def from_mapping(cls, mapping: dict[str, Any] | None) -> PreviewConfig:
+    def from_mapping(cls, mapping: dict[str, Any] | None, strict: bool = False) -> PreviewConfig:
         """Strictly parse, validate, and sanitize config from JS API or external dict."""
         if not isinstance(mapping, dict):
             return cls()
+
+        KNOWN_KEYS = {
+            "text", "position", "opacity", "invertTriangles", "invert_triangles",
+            "solidColor", "solid_color", "textColor", "text_color",
+            "hasOutline", "has_outline", "outlineColor", "outline_color",
+            "outlineThickness", "outline_thickness", "fontScale", "font_scale",
+            "yaw", "pitch", "modelColor", "model_color",
+            "textPosX", "text_pos_x", "textPosY", "text_pos_y",
+            "logoPath", "logo_path", "logoScale", "logo_scale",
+            "logoOpacity", "logo_opacity", "logoPosX", "logo_pos_x",
+            "logoPosY", "logo_pos_y", "fontPath", "font_path",
+            "overwritePolicy", "overwrite_policy", "theme", "inputFolder", "outputFolder", "sameFolder"
+        }
+        if strict:
+            unknown = set(mapping.keys()) - KNOWN_KEYS
+            if unknown:
+                raise ValueError(f"Unknown configuration key(s): {', '.join(sorted(unknown))}")
 
         def _safe_float(val: Any, default: float, min_val: float, max_val: float) -> float:
             try:
@@ -161,8 +178,8 @@ class PreviewConfig:
         position = raw_pos if raw_pos in valid_positions else "custom"
 
         # Overwrite policy
-        raw_policy = str(mapping.get("overwritePolicy") or mapping.get("overwrite_policy", "overwrite")).strip().lower()
-        overwrite_policy = raw_policy if raw_policy in {"overwrite", "skip", "rename"} else "overwrite"
+        raw_policy = str(mapping.get("overwritePolicy") or mapping.get("overwrite_policy", "rename")).strip().lower()
+        overwrite_policy = raw_policy if raw_policy in {"overwrite", "skip", "rename"} else "rename"
 
         # Opacity: supports 0.0-1.0 or 0-100 percent
         raw_opacity = mapping.get("opacity", 90)
@@ -1365,9 +1382,12 @@ def process_folder(
 
     duration = round(time.time() - start_time, 2)
     planned = len(work_items) + failed
+    processed = success + failed + skipped
+    remaining = max(0, planned - processed)
     return {
         "planned": planned,
-        "processed": success + failed,
+        "processed": processed,
+        "remaining": remaining,
         "success": success,
         "failed": failed,
         "skipped": skipped,

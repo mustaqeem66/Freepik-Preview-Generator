@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { FileInfo, PreviewState, BatchSummary, PyWebViewApi } from "./types";
+import { ApiBridge } from "./api/bridge";
 
 // Apple-calibrated spring physics
 const springTransition = {
@@ -49,7 +50,7 @@ const defaultState: PreviewState = {
   yaw: 45,
   pitch: 30,
   theme: "light",
-  overwritePolicy: "overwrite",
+  overwritePolicy: "rename",
 };
 
 export default function App() {
@@ -77,7 +78,7 @@ export default function App() {
   });
   const [stats, setStats] = useState<{ success: number; failed: number }>({ success: 0, failed: 0 });
   const [batchErrors, setBatchErrors] = useState<string[]>([]);
-
+  const [isBackendConnected, setIsBackendConnected] = useState<boolean>(true);
   // 3D drag ref & settings loaded gate
   const dragStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isLoadedRef = useRef<boolean>(false);
@@ -87,24 +88,13 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", state.theme);
   }, [state.theme]);
 
-  // Robust pywebview API accessor with retry
-  const getApi = async (maxWaitMs: number = 3000): Promise<PyWebViewApi | undefined> => {
-    if (window.pywebview?.api) return window.pywebview.api;
-    const start = Date.now();
-    while (Date.now() - start < maxWaitMs) {
-      if (window.pywebview?.api) return window.pywebview.api;
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 50);
-      await promise;
-    }
-    return window.pywebview?.api;
-  };
+
 
   // Initial Load from Python Backend with pywebviewready listener
   useEffect(() => {
     let unmounted = false;
     const init = async () => {
-      const api = await getApi(5000);
+      const api = await ApiBridge.getApi(5000);
       if (api && !unmounted) {
         try {
           // P0-1: Notify backend that React frontend is mounted and interactive
@@ -124,6 +114,8 @@ export default function App() {
         } finally {
           isLoadedRef.current = true;
         }
+      } else if (!api && !unmounted) {
+        setIsBackendConnected(false);
       }
     };
 
@@ -179,7 +171,7 @@ export default function App() {
   useEffect(() => {
     if (!isLoadedRef.current) return;
     const timer = setTimeout(async () => {
-      const api = await getApi(1000);
+      const api = await ApiBridge.getApi(1000);
       if (api) {
         api.save_settings(state).catch(() => {});
       }
@@ -203,7 +195,7 @@ export default function App() {
     const timer = setTimeout(async () => {
       setIsLoadingPreview(true);
       try {
-        const api = await getApi(3000);
+        const api = await ApiBridge.getApi(3000);
         if (api) {
           const res = await api.render_preview(activeFile.path, state);
           if (cancelled) return;
@@ -259,7 +251,7 @@ export default function App() {
   const scanFolder = async (folderPath: string) => {
     if (!folderPath) return;
     try {
-      const api = await getApi(3000);
+      const api = await ApiBridge.getApi(3000);
       if (api) {
         const res = await api.scan_folder(folderPath);
         if (res?.files) {
@@ -279,7 +271,7 @@ export default function App() {
 
   const handleBrowseInput = async () => {
     try {
-      const api = await getApi(3000);
+      const api = await ApiBridge.getApi(3000);
       if (api) {
         const folder = await api.browse_input_folder();
         if (folder) {
@@ -298,7 +290,7 @@ export default function App() {
 
   const handleBrowseOutput = async () => {
     try {
-      const api = await getApi(3000);
+      const api = await ApiBridge.getApi(3000);
       if (api) {
         const folder = await api.browse_output_folder();
         if (folder) {
@@ -312,7 +304,7 @@ export default function App() {
 
   const handleOpenOutput = async () => {
     const target = state.outputFolder || state.inputFolder;
-    const api = await getApi(3000);
+    const api = await ApiBridge.getApi(3000);
     if (target && api) {
       api.open_folder(target).catch(() => {});
     }
@@ -320,7 +312,7 @@ export default function App() {
 
   const handleBrowseLogo = async () => {
     try {
-      const api = await getApi(3000);
+      const api = await ApiBridge.getApi(3000);
       if (api) {
         const logo = await api.browse_logo();
         if (logo) {
@@ -334,7 +326,7 @@ export default function App() {
 
   const handleBrowseFont = async () => {
     try {
-      const api = await getApi(3000);
+      const api = await ApiBridge.getApi(3000);
       if (api) {
         const font = await api.browse_font();
         if (font) {
@@ -352,7 +344,7 @@ export default function App() {
     setStats({ success: 0, failed: 0 });
     setProgress({ current: 0, total: fileList.length, message: "Starting batch generation…" });
 
-    const api = await getApi(3000);
+    const api = await ApiBridge.getApi(3000);
     if (api) {
       api.start_batch(state.inputFolder, state.outputFolder || state.inputFolder, state).catch(() => {
         setIsProcessing(false);
@@ -361,7 +353,7 @@ export default function App() {
   };
 
   const handleCancelBatch = async () => {
-    const api = await getApi(3000);
+    const api = await ApiBridge.getApi(3000);
     if (api) {
       api.cancel_batch().catch(() => {});
     }
@@ -434,6 +426,22 @@ export default function App() {
           <p style={{ fontSize: "12px", color: "var(--text-sec)", marginTop: "2px" }}>
             Create marketplace-ready JPG previews with customizable diagonal backgrounds & text
           </p>
+          {!isBackendConnected && (
+            <div
+              style={{
+                marginTop: "6px",
+                padding: "4px 8px",
+                background: "rgba(239, 68, 68, 0.15)",
+                color: "#EF4444",
+                borderRadius: "6px",
+                fontSize: "11px",
+                fontWeight: 600,
+                display: "inline-block",
+              }}
+            >
+              ⚠️ Disconnected from Python backend bridge. Features may be offline.
+            </div>
+          )}
         </div>
 
         {/* Theme Toggle Pill Switch with Spring Animation */}
@@ -966,7 +974,7 @@ export default function App() {
                   if (!activeFile) return;
                   setIsLoadingPreview(true);
                   try {
-                    const api = await getApi(3000);
+                    const api = await ApiBridge.getApi(3000);
                     if (api) {
                       const res = await api.render_preview(activeFile.path, state);
                       if (res && "value" in res && res.value) {

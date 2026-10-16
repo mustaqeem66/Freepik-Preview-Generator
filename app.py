@@ -27,7 +27,14 @@ from processor import (
     SUPPORTED_CAD_EXTENSIONS,
 )
 
-SETTINGS_DIR = Path.home() / ".previewgen"
+def get_settings_directory() -> Path:
+    if sys.platform == "win32":
+        return Path.home() / "AppData" / "Local" / "PreviewGen"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "PreviewGen"
+    return Path.home() / ".config" / "previewgen"
+
+SETTINGS_DIR = get_settings_directory()
 SETTINGS_FILE = SETTINGS_DIR / "settings.v1.json"
 SETTINGS_BACKUP = SETTINGS_DIR / "settings.v1.json.bak"
 
@@ -129,8 +136,8 @@ class DesktopApi:
         self.window: webview.Window | None = None
         self.session_zip_dir: Path | None = None
         self.cancel_event = threading.Event()
+        self.scan_cancel_event = threading.Event()
         self.batch_thread: threading.Thread | None = None
-
     def set_window(self, win: webview.Window) -> None:
         self.window = win
 
@@ -311,8 +318,13 @@ class DesktopApi:
         except Exception:
             return False
 
+    def cancel_scan(self) -> None:
+        """Signal active folder scan to stop."""
+        self.scan_cancel_event.set()
+
     def scan_folder(self, folder_path: str) -> dict[str, Any]:
-        """Scan folder for supported 2D and 3D assets, indexing zip files with quotas and depth bounds."""
+        """Scan folder for supported 2D and 3D assets, indexing zip files with quotas, depth bounds, and cancellation."""
+        self.scan_cancel_event.clear()
         if not isinstance(folder_path, str) or not folder_path.strip():
             return {"files": [], "total": 0}
 
@@ -330,8 +342,10 @@ class DesktopApi:
         item_count = 0
 
         try:
-            # Bounded traversal to prevent filesystem recursion loops and memory exhaustion
             for root, dirs, files in os.walk(p, topdown=True, followlinks=False):
+                if self.scan_cancel_event.is_set():
+                    logging.info("Folder scan cancelled by user.")
+                    break
                 rel_root = Path(root).relative_to(p)
                 # Skip hidden directories & macOS metadata
                 dirs[:] = [
@@ -364,6 +378,8 @@ class DesktopApi:
                             with zipfile.ZipFile(f_path, "r") as zf:
                                 members = zf.infolist()[:1000]  # Cap per archive
                                 for member in members:
+                                    if self.scan_cancel_event.is_set():
+                                        break
                                     if member.is_dir() or member.file_size > 250 * 1024 * 1024:
                                         continue
                                     member_path = Path(member.filename)

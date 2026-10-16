@@ -32,7 +32,11 @@ def test_preview_config_from_mapping_strictness():
     # Overwrite policies
     assert PreviewConfig.from_mapping({"overwritePolicy": "skip"}).overwrite_policy == "skip"
     assert PreviewConfig.from_mapping({"overwritePolicy": "rename"}).overwrite_policy == "rename"
-    assert PreviewConfig.from_mapping({"overwritePolicy": "invalid"}).overwrite_policy == "overwrite"
+    assert PreviewConfig.from_mapping({"overwritePolicy": "invalid"}).overwrite_policy == "rename"
+
+    # Strict mode: must raise ValueError on unknown keys
+    with pytest.raises(ValueError, match="Unknown configuration key"):
+        PreviewConfig.from_mapping({"bogusKey": 123}, strict=True)
 
 
 def test_batch_collision_resolution_and_overwrite_policies():
