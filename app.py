@@ -27,7 +27,9 @@ from processor import (
     SUPPORTED_CAD_EXTENSIONS,
 )
 
-SETTINGS_FILE = Path.home() / ".previewgen_settings.json"
+SETTINGS_DIR = Path.home() / ".previewgen"
+SETTINGS_FILE = SETTINGS_DIR / "settings.v1.json"
+SETTINGS_BACKUP = SETTINGS_DIR / "settings.v1.json.bak"
 
 if sys.platform.startswith("linux"):
     flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
@@ -100,50 +102,8 @@ def configure_logging() -> Path:
     )
     return log_file
 
-def ensure_desktop_shortcut() -> None:
-    """Automatically create Desktop shortcut on Windows if not already present."""
-    if sys.platform != "win32":
-        return
-
-    def _task():
-        try:
-            desktop = Path.home() / "Desktop"
-            shortcut = desktop / "PreviewGen.lnk"
-            if shortcut.exists():
-                return
-            exe_path = Path(sys.executable).resolve()
-            if not getattr(sys, "frozen", False):
-                candidate = exe_path.parent / "dist" / "PreviewGen" / "PreviewGen.exe"
-                if candidate.exists():
-                    exe_path = candidate
-                else:
-                    return
-
-            working_dir = exe_path.parent
-            icon_path = working_dir / "app.ico"
-            if not icon_path.exists():
-                icon_path = exe_path
-
-            cmd = (
-                "$w = New-Object -ComObject WScript.Shell; "
-                f'$s = $w.CreateShortcut("{shortcut}"); '
-                f'$s.TargetPath = "{exe_path}"; '
-                f'$s.WorkingDirectory = "{working_dir}"; '
-                f'$s.IconLocation = "{icon_path},0"; '
-                "$s.Description = 'PreviewGen - Transparent PNG to JPG Preview Generator'; "
-                "$s.Save()"
-            )
-            subprocess.run(
-                ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", cmd],
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                timeout=10,
-                check=False,
-            )
-            logging.info("Desktop shortcut verified/created at %s", shortcut)
-        except Exception as exc:
-            logging.debug("Desktop shortcut creation notice: %s", exc)
-
-    threading.Thread(target=_task, daemon=True).start()
+# Note: Desktop shortcut management is the responsibility of system installers (Inno Setup / DMG / AppImage / setup scripts)
+# Runtime auto-shortcut creation removed per security and packaging best practices.
 
 
 def show_fatal_error(title: str, message: str) -> None:
@@ -174,22 +134,74 @@ class DesktopApi:
     def set_window(self, win: webview.Window) -> None:
         self.window = win
 
+    def frontend_ready(self) -> dict[str, Any]:
+        """Called by React frontend when mounted and interactive."""
+        logging.info("Frontend mounted and reported ready.")
+        ready_marker = os.environ.get("PREVIEWGEN_READY_MARKER")
+        if ready_marker:
+            try:
+                Path(ready_marker).write_text("READY\n", encoding="utf-8")
+            except Exception as exc:
+                logging.warning("Could not write ready marker: %s", exc)
+        if "--gui-smoke-test" in sys.argv:
+            logging.info("GUI smoke test verified! Frontend interactive. Closing window.")
+            threading.Thread(target=self._close_window_soon, daemon=True).start()
+        return {"ok": True, "value": "ready", "error": None}
+
+    def _close_window_soon(self) -> None:
+        import time
+        time.sleep(0.5)
+        if self.window:
+            self.window.destroy()
+
     def get_initial_state(self) -> dict[str, Any]:
-        """Load persistent user preferences."""
+        """Load persistent user preferences with atomic schema validation."""
         if SETTINGS_FILE.is_file():
             try:
-                return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-        return {}
+                data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    # Strip corrupted or unexpected top-level fields
+                    clean_settings = {k: v for k, v in data.items() if isinstance(k, str) and not k.startswith("_")}
+                    return {"ok": True, "value": clean_settings, "error": None}
+            except Exception as exc:
+                logging.warning("Primary settings corrupt: %s. Attempting backup.", exc)
+                if SETTINGS_BACKUP.is_file():
+                    try:
+                        data = json.loads(SETTINGS_BACKUP.read_text(encoding="utf-8"))
+                        if isinstance(data, dict):
+                            clean_settings = {k: v for k, v in data.items() if isinstance(k, str) and not k.startswith("_")}
+                            return {"ok": True, "value": clean_settings, "error": None}
+                    except Exception:
+                        pass
+        return {"ok": True, "value": {}, "error": None}
 
-    def save_settings(self, settings_dict: dict[str, Any]) -> bool:
-        """Save user preferences to disk."""
+    def save_settings(self, settings_dict: dict[str, Any]) -> dict[str, Any]:
+        """Save user preferences atomically to disk with backup and schema version."""
+        if not isinstance(settings_dict, dict):
+            return {"ok": False, "value": False, "error": "Invalid settings payload"}
         try:
-            SETTINGS_FILE.write_text(json.dumps(settings_dict, indent=2), encoding="utf-8")
-            return True
-        except Exception:
-            return False
+            SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "_schema_version": 1,
+                **{k: v for k, v in settings_dict.items() if isinstance(k, str) and not k.startswith("_")}
+            }
+            serialized = json.dumps(payload, indent=2)
+            temp_file = SETTINGS_DIR / f"settings_{os.getpid()}_{threading.get_ident()}.tmp"
+            temp_file.write_text(serialized, encoding="utf-8")
+            # Sync to physical storage
+            with open(temp_file, "a+", encoding="utf-8") as f:
+                f.flush()
+                os.fsync(f.fileno())
+            if SETTINGS_FILE.is_file():
+                try:
+                    shutil.copy2(SETTINGS_FILE, SETTINGS_BACKUP)
+                except Exception:
+                    pass
+            temp_file.replace(SETTINGS_FILE)
+            return {"ok": True, "value": True, "error": None}
+        except Exception as exc:
+            logging.warning("Atomic settings write failed: %s", exc)
+            return {"ok": False, "value": False, "error": str(exc)}
 
     def _powershell_folder_dialog(self, title: str = "Select Folder") -> str:
         if sys.platform != "win32":
@@ -238,7 +250,7 @@ class DesktopApi:
         """Open native OS folder selection dialog."""
         if self.window:
             try:
-                res = self.window.create_file_dialog(webview.FOLDER_DIALOG)
+                res = self.window.create_file_dialog(int(webview.FOLDER_DIALOG))
                 if res and len(res) > 0:
                     return res[0]
             except Exception as exc:
@@ -249,7 +261,7 @@ class DesktopApi:
         """Open native OS folder selection dialog."""
         if self.window:
             try:
-                res = self.window.create_file_dialog(webview.FOLDER_DIALOG)
+                res = self.window.create_file_dialog(int(webview.FOLDER_DIALOG))
                 if res and len(res) > 0:
                     return res[0]
             except Exception as exc:
@@ -261,7 +273,7 @@ class DesktopApi:
         if self.window:
             try:
                 res = self.window.create_file_dialog(
-                    webview.OPEN_DIALOG,
+                    int(webview.OPEN_DIALOG),
                     file_types=("Logo Images (*.png;*.webp;*.svg;*.ico;*.jpg;*.jpeg)",),
                 )
                 if res and len(res) > 0:
@@ -275,7 +287,7 @@ class DesktopApi:
         if self.window:
             try:
                 res = self.window.create_file_dialog(
-                    webview.OPEN_DIALOG,
+                    int(webview.OPEN_DIALOG),
                     file_types=("Font Files (*.ttf;*.otf;*.woff;*.woff2)",),
                 )
                 if res and len(res) > 0:
@@ -300,7 +312,10 @@ class DesktopApi:
             return False
 
     def scan_folder(self, folder_path: str) -> dict[str, Any]:
-        """Scan folder for supported 2D and 3D assets, indexing zip files in memory in milliseconds."""
+        """Scan folder for supported 2D and 3D assets, indexing zip files with quotas and depth bounds."""
+        if not isinstance(folder_path, str) or not folder_path.strip():
+            return {"files": [], "total": 0}
+
         p = Path(folder_path).resolve()
         if not p.is_dir():
             return {"files": [], "total": 0}
@@ -310,72 +325,89 @@ class DesktopApi:
             shutil.rmtree(self.session_zip_dir, ignore_errors=True)
             self.session_zip_dir = None
 
-        direct_files = [
-            f for f in p.rglob("*.*")
-            if f.is_file()
-            and f.suffix.lower() in SUPPORTED_EXTENSIONS
-            and f.suffix.lower() != ".zip"
-            and not any(part.startswith(".") and part not in (".", "..") or part == "__MACOSX" for part in f.relative_to(p).parts)
-        ]
-        zip_files = [
-            f for f in p.rglob("*.zip")
-            if f.is_file()
-            and not any(part.startswith(".") and part not in (".", "..") or part == "__MACOSX" for part in f.relative_to(p).parts)
-        ]
-
         files_payload: list[dict[str, Any]] = []
+        MAX_SCANNED_ITEMS = 5000
+        item_count = 0
 
-        # 1. Direct files from folder
-        for f in sorted(direct_files):
-            ext_clean = f.suffix.upper().lstrip(".")
-            is_3d = (f.suffix.lower() in SUPPORTED_3D_EXTENSIONS and f.suffix.lower() != ".blend") or f.suffix.lower() in (".step", ".stp", ".iges", ".igs")
-            files_payload.append({
-                "name": f.name,
-                "path": str(f.resolve()),
-                "ext": ext_clean,
-                "is_3d": is_3d,
-            })
+        try:
+            # Bounded traversal to prevent filesystem recursion loops and memory exhaustion
+            for root, dirs, files in os.walk(p, topdown=True, followlinks=False):
+                rel_root = Path(root).relative_to(p)
+                # Skip hidden directories & macOS metadata
+                dirs[:] = [
+                    d for d in dirs
+                    if not d.startswith(".") and d != "__MACOSX" and len(rel_root.parts) < 15
+                ]
+                for f_name in sorted(files):
+                    if f_name.startswith(".") or f_name == "Thumbs.db":
+                        continue
+                    item_count += 1
+                    if item_count > MAX_SCANNED_ITEMS:
+                        logging.warning("Folder scan item cap (%d) reached at %s", MAX_SCANNED_ITEMS, root)
+                        break
+                    f_path = Path(root) / f_name
+                    ext = f_path.suffix.lower()
 
-        # 2. Add zip members indexed in memory (zero disk write, 0.001s instant startup)
-        if zip_files:
-            import zipfile
-            for z in sorted(zip_files):
-                try:
-                    with zipfile.ZipFile(z, "r") as zf:
-                        for member in zf.infolist():
-                            if member.is_dir():
-                                continue
-                            member_path = Path(member.filename)
-                            clean_name = member_path.name
-                            if clean_name.startswith(".") or any(part == "__MACOSX" for part in member_path.parts):
-                                continue
-                            ext = member_path.suffix.lower()
-                            if ext in SUPPORTED_EXTENSIONS and ext != ".zip":
-                                ext_clean = ext.upper().lstrip(".")
-                                is_3d = (ext in SUPPORTED_3D_EXTENSIONS and ext != ".blend") or ext in (".step", ".stp", ".iges", ".igs")
-                                files_payload.append({
-                                    "name": f"{z.stem}/{clean_name}",
-                                    "path": f"zip://{z.resolve()}?entry={member.filename}",
-                                    "ext": ext_clean,
-                                    "is_3d": is_3d,
-                                })
-                except Exception as exc:
-                    logging.warning("Could not index archive %s: %s", z.name, exc)
+                    if ext in SUPPORTED_EXTENSIONS and ext != ".zip":
+                        ext_clean = ext.upper().lstrip(".")
+                        is_3d = (ext in SUPPORTED_3D_EXTENSIONS and ext != ".blend") or ext in (".step", ".stp", ".iges", ".igs")
+                        files_payload.append({
+                            "name": f_path.name,
+                            "path": str(f_path.resolve()),
+                            "ext": ext_clean,
+                            "is_3d": is_3d,
+                        })
+                    elif ext == ".zip":
+                        # Bounded zip indexing
+                        try:
+                            import zipfile
+                            with zipfile.ZipFile(f_path, "r") as zf:
+                                members = zf.infolist()[:1000]  # Cap per archive
+                                for member in members:
+                                    if member.is_dir() or member.file_size > 250 * 1024 * 1024:
+                                        continue
+                                    member_path = Path(member.filename)
+                                    clean_name = member_path.name
+                                    if clean_name.startswith(".") or any(part == "__MACOSX" for part in member_path.parts):
+                                        continue
+                                    m_ext = member_path.suffix.lower()
+                                    if m_ext in SUPPORTED_EXTENSIONS and m_ext != ".zip":
+                                        m_clean = m_ext.upper().lstrip(".")
+                                        m_3d = (m_ext in SUPPORTED_3D_EXTENSIONS and m_ext != ".blend") or m_ext in (".step", ".stp", ".iges", ".igs")
+                                        files_payload.append({
+                                            "name": f"{f_path.stem}/{clean_name}",
+                                            "path": f"zip://{f_path.resolve()}?entry={member.filename}",
+                                            "ext": m_clean,
+                                            "is_3d": m_3d,
+                                        })
+                                        item_count += 1
+                                        if item_count > MAX_SCANNED_ITEMS:
+                                            break
+                        except Exception as exc:
+                            logging.warning("Could not index archive %s: %s", f_path.name, exc)
+
+                if item_count > MAX_SCANNED_ITEMS:
+                    break
+        except Exception as exc:
+            logging.warning("Folder scan interrupted: %s", exc)
 
         return {"files": files_payload, "total": len(files_payload)}
     def render_preview(self, file_path: str, config_dict: dict[str, Any]) -> dict[str, Any]:
-        """Render live preview asynchronously and return base64 JPEG data URL."""
+        """Render live preview asynchronously with strict config parsing and structured envelope."""
         temp_dir: Path | None = None
         try:
+            if not isinstance(file_path, str) or not file_path.strip():
+                return {"ok": False, "value": None, "error": "Empty file path"}
+
             if file_path.startswith("zip://"):
                 import urllib.parse
                 import zipfile
                 parsed = urllib.parse.urlparse(file_path)
-                zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path))
+                zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
                 qs = urllib.parse.parse_qs(parsed.query)
                 entry_name = qs.get("entry", [""])[0]
                 if not zip_path.is_file() or not entry_name:
-                    return {"error": "Invalid zip entry URI"}
+                    return {"ok": False, "value": None, "error": "Invalid zip entry URI"}
                 temp_dir = Path(tempfile.mkdtemp(prefix="previewgen_ondemand_"))
                 target_file = temp_dir / Path(entry_name).name
                 with zipfile.ZipFile(zip_path, "r") as zf:
@@ -383,49 +415,29 @@ class DesktopApi:
                         shutil.copyfileobj(src, dst)
                 source_path = target_file
             else:
-                source_path = Path(file_path)
+                source_path = Path(file_path).resolve()
 
             if not source_path.is_file():
-                return {"error": "File does not exist"}
-            # Hex to RGB tuple conversion helper
-            def hex_to_rgb(h: str) -> tuple[int, int, int]:
-                h = h.lstrip("#")
-                if len(h) == 6:
-                    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
-                return (255, 255, 255)
+                return {"ok": False, "value": None, "error": f"File does not exist: {source_path.name}"}
 
-            cfg = PreviewConfig(
-                text=config_dict.get("text", DEFAULT_TEXT),
-                position="custom",
-                opacity=float(config_dict.get("opacity", 90)) / 100.0,
-                invert_triangles=bool(config_dict.get("invertTriangles", True)),
-                solid_color=hex_to_rgb(config_dict.get("solidColor", "#FFFFFF")),
-                text_color=hex_to_rgb(config_dict.get("textColor", "#FFFFFF")),
-                has_outline=bool(config_dict.get("hasOutline", True)),
-                outline_color=hex_to_rgb(config_dict.get("outlineColor", "#000000")),
-                outline_thickness=int(config_dict.get("outlineThickness", 2)),
-                font_scale=float(config_dict.get("fontScale", 100)) / 100.0,
-                yaw=float(config_dict.get("yaw", 45)),
-                pitch=float(config_dict.get("pitch", 30)),
-                text_pos_x=float(config_dict.get("textPosX", 5)) / 100.0,
-                text_pos_y=float(config_dict.get("textPosY", 5)) / 100.0,
-                logo_path=str(config_dict.get("logoPath", "")),
-                logo_scale=float(config_dict.get("logoScale", 100)) / 100.0,
-                logo_opacity=float(config_dict.get("logoOpacity", 90)) / 100.0,
-                logo_pos_x=float(config_dict.get("logoPosX", 88)) / 100.0,
-                logo_pos_y=float(config_dict.get("logoPosY", 5)) / 100.0,
-                font_path=str(config_dict.get("fontPath", "")),
-            )
+            # Parse via strict PreviewConfig.from_mapping
+            cfg = PreviewConfig.from_mapping(config_dict)
+            cfg.position = "custom"
 
             jpeg_bytes, orig_w, orig_h = preview_jpeg_bytes(source_path, cfg, max_dimension=850)
             b64 = base64.b64encode(jpeg_bytes).decode("ascii")
             return {
-                "dataUrl": f"data:image/jpeg;base64,{b64}",
-                "width": orig_w,
-                "height": orig_h,
+                "ok": True,
+                "value": {
+                    "dataUrl": f"data:image/jpeg;base64,{b64}",
+                    "width": orig_w,
+                    "height": orig_h,
+                },
+                "error": None,
             }
         except Exception as exc:
-            return {"error": str(exc)}
+            logging.warning("render_preview failure: %s", exc)
+            return {"ok": False, "value": None, "error": str(exc)}
         finally:
             if temp_dir and temp_dir.exists():
                 shutil.rmtree(temp_dir, ignore_errors=True)
@@ -437,39 +449,8 @@ class DesktopApi:
 
         self.cancel_event.clear()
 
-        def hex_to_rgb(h: str) -> tuple[int, int, int]:
-            try:
-                h = h.lstrip("#")
-                if len(h) == 3:
-                    h = "".join(c * 2 for c in h)
-                if len(h) == 6:
-                    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
-            except Exception:
-                pass
-            return (255, 255, 255)
-
-        cfg = PreviewConfig(
-            text=config_dict.get("text", DEFAULT_TEXT),
-            position="custom",
-            opacity=float(config_dict.get("opacity", 90)) / 100.0,
-            invert_triangles=bool(config_dict.get("invertTriangles", True)),
-            solid_color=hex_to_rgb(config_dict.get("solidColor", "#FFFFFF")),
-            text_color=hex_to_rgb(config_dict.get("textColor", "#FFFFFF")),
-            has_outline=bool(config_dict.get("hasOutline", True)),
-            outline_color=hex_to_rgb(config_dict.get("outlineColor", "#000000")),
-            outline_thickness=int(config_dict.get("outlineThickness", 2)),
-            font_scale=float(config_dict.get("fontScale", 100)) / 100.0,
-            yaw=float(config_dict.get("yaw", 45)),
-            pitch=float(config_dict.get("pitch", 30)),
-            text_pos_x=float(config_dict.get("textPosX", 5)) / 100.0,
-            text_pos_y=float(config_dict.get("textPosY", 5)) / 100.0,
-            logo_path=str(config_dict.get("logoPath", "")),
-            logo_scale=float(config_dict.get("logoScale", 100)) / 100.0,
-            logo_opacity=float(config_dict.get("logoOpacity", 90)) / 100.0,
-            logo_pos_x=float(config_dict.get("logoPosX", 88)) / 100.0,
-            logo_pos_y=float(config_dict.get("logoPosY", 5)) / 100.0,
-            font_path=str(config_dict.get("fontPath", "")),
-        )
+        cfg = PreviewConfig.from_mapping(config_dict)
+        cfg.position = "custom"
 
         def run_worker() -> None:
             def on_progress(cur: int, tot: int, msg: str) -> None:
@@ -478,7 +459,7 @@ class DesktopApi:
                     self.window.evaluate_js(f"window.__onBatchProgress({int(cur)}, {int(tot)}, {msg_json})")
 
             try:
-                success, failed, errors = process_folder(
+                summary = process_folder(
                     Path(input_folder),
                     Path(output_folder),
                     cfg,
@@ -486,14 +467,23 @@ class DesktopApi:
                     self.cancel_event.is_set,
                 )
                 if self.window:
-                    err_json = json.dumps(errors[:20])
-                    cancelled_str = "true" if self.cancel_event.is_set() else "false"
-                    self.window.evaluate_js(f"window.__onBatchFinished({success}, {failed}, {err_json}, {cancelled_str})")
+                    summary_json = json.dumps(summary)
+                    self.window.evaluate_js(f"window.__onBatchFinishedSummary({summary_json})")
             except Exception as e:
                 logging.exception("Batch execution failed")
                 if self.window:
-                    err_json = json.dumps([str(e)])
-                    self.window.evaluate_js(f"window.__onBatchFinished(0, 1, {err_json}, false)")
+                    fail_summary = {
+                        "planned": 1,
+                        "processed": 0,
+                        "success": 0,
+                        "failed": 1,
+                        "skipped": 0,
+                        "cancelled": False,
+                        "errors": [str(e)],
+                        "duration": 0.0,
+                    }
+                    fail_json = json.dumps(fail_summary)
+                    self.window.evaluate_js(f"window.__onBatchFinishedSummary({fail_json})")
 
         self.batch_thread = threading.Thread(target=run_worker, daemon=True)
         self.batch_thread.start()
@@ -507,7 +497,7 @@ class DesktopApi:
 
 def main() -> int:
     log_file = configure_logging()
-    ensure_desktop_shortcut()
+# Desktop shortcut ensure removed
     is_frozen = getattr(sys, "frozen", False)
     dev_mode = os.environ.get("PREVIEWGEN_DEV") == "1"
 
@@ -552,7 +542,7 @@ def main() -> int:
         except Exception:
             target_url = None
 
-    if "--smoke-test" in sys.argv or "--version" in sys.argv:
+    if "--smoke-test" in sys.argv and "--gui-smoke-test" not in sys.argv:
         from processor import PreviewConfig, compose_preview, SUPPORTED_EXTENSIONS
         from PIL import Image
         assert html_dist is not None and html_dist.is_file(), f"Frontend bundle missing: {candidates}"
@@ -591,7 +581,29 @@ def main() -> int:
         min_size=(1020, 720),
         background_color="#D6E6EF",
     )
-    api.set_window(window)
+    if window is not None:
+        api.set_window(window)
+
+    # P0-3: Explicit navigation lockdown to packaged local HTML
+    # Block navigation away from target_url and launch external links in native OS browser
+    def on_navigating(url: str) -> None:
+        if not url:
+            return
+        target_base = target_url.split("#")[0].split("?")[0].rstrip("/") if target_url else ""
+        clean_url = url.split("#")[0].split("?")[0].rstrip("/")
+        if target_base and clean_url != target_base:
+            logging.warning("Prevented privileged window navigation to external origin: %s", url)
+            import webbrowser
+            try:
+                webbrowser.open(url)
+            except Exception as e:
+                logging.debug("Could not open external URL: %s", e)
+
+    if window is not None:
+        try:
+            window.events.navigating += on_navigating
+        except Exception:
+            pass
 
     try:
         webview.start(debug=False)

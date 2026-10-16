@@ -30,14 +30,30 @@ export interface PreviewState {
   pitch: number;
   modelColor?: string;
   theme: "light" | "dark";
+  overwritePolicy?: "overwrite" | "skip" | "rename";
 }
 
-export interface RenderPreviewResult {
-  dataUrl?: string;
-  width?: number;
-  height?: number;
-  name?: string;
-  error?: string;
+export interface BatchSummary {
+  planned: number;
+  processed: number;
+  success: number;
+  failed: number;
+  skipped: number;
+  cancelled: boolean;
+  errors: string[];
+  duration: number;
+}
+
+export interface ApiResponse<T> {
+  ok: boolean;
+  value: T;
+  error: string | null;
+}
+
+export interface RenderPreviewData {
+  dataUrl: string;
+  width: number;
+  height: number;
 }
 
 export interface ScanFolderResult {
@@ -46,24 +62,25 @@ export interface ScanFolderResult {
 }
 
 export interface PyWebViewApi {
-  get_initial_state: () => Promise<Partial<PreviewState>>;
+  frontend_ready: () => Promise<ApiResponse<string>>;
+  get_initial_state: () => Promise<ApiResponse<Partial<PreviewState>>>;
   browse_input_folder: () => Promise<string>;
   browse_output_folder: () => Promise<string>;
   browse_logo: () => Promise<string>;
   browse_font: () => Promise<string>;
-  open_folder: (path: string) => Promise<void>;
+  open_folder: (path: string) => Promise<boolean>;
   scan_folder: (path: string) => Promise<ScanFolderResult>;
   render_preview: (
     filePath: string,
     config: PreviewState
-  ) => Promise<RenderPreviewResult>;
+  ) => Promise<ApiResponse<RenderPreviewData | null>>;
   start_batch: (
     inputFolder: string,
     outputFolder: string,
     config: PreviewState
-  ) => Promise<{ success: number; failed: number }>;
+  ) => Promise<void>;
   cancel_batch: () => Promise<void>;
-  save_settings: (settings: PreviewState) => Promise<void>;
+  save_settings: (settings: PreviewState) => Promise<ApiResponse<boolean>>;
 }
 
 declare global {
@@ -72,6 +89,7 @@ declare global {
       api?: PyWebViewApi;
     };
     __onBatchProgress?: (current: number, total: number, message: string) => void;
+    __onBatchFinishedSummary?: (summary: BatchSummary) => void;
     __onBatchFinished?: (
       success: number,
       failed: number,

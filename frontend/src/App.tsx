@@ -15,7 +15,7 @@ import {
   Layers,
   Sparkles,
 } from "lucide-react";
-import { FileInfo, PreviewState } from "./types";
+import { FileInfo, PreviewState, BatchSummary, PyWebViewApi } from "./types";
 
 // Apple-calibrated spring physics
 const springTransition = {
@@ -49,6 +49,7 @@ const defaultState: PreviewState = {
   yaw: 45,
   pitch: 30,
   theme: "light",
+  overwritePolicy: "overwrite",
 };
 
 export default function App() {
@@ -87,7 +88,7 @@ export default function App() {
   }, [state.theme]);
 
   // Robust pywebview API accessor with retry
-  const getApi = async (maxWaitMs: number = 3000): Promise<any> => {
+  const getApi = async (maxWaitMs: number = 3000): Promise<PyWebViewApi | undefined> => {
     if (window.pywebview?.api) return window.pywebview.api;
     const start = Date.now();
     while (Date.now() - start < maxWaitMs) {
@@ -106,7 +107,12 @@ export default function App() {
       const api = await getApi(5000);
       if (api && !unmounted) {
         try {
-          const saved = await api.get_initial_state();
+          // P0-1: Notify backend that React frontend is mounted and interactive
+          if (api.frontend_ready) {
+            await api.frontend_ready().catch(() => {});
+          }
+          const res = await api.get_initial_state();
+          const saved = res?.value || res;
           if (saved && !unmounted) {
             setState((prev) => ({ ...prev, ...saved }));
             if (saved.inputFolder) {
@@ -124,6 +130,24 @@ export default function App() {
     // Register batch progress listeners from Python
     window.__onBatchProgress = (current: number, total: number, message: string) => {
       setProgress({ current, total, message });
+    };
+
+    window.__onBatchFinishedSummary = (summary: BatchSummary) => {
+      setIsProcessing(false);
+      const { success, failed, skipped, cancelled, errors, duration } = summary;
+      setProgress({
+        current: success + failed + (skipped || 0),
+        total: summary.planned || (success + failed + (skipped || 0)),
+        message: cancelled
+          ? `Cancelled after ${duration}s. (${success} saved, ${failed} failed, ${skipped || 0} skipped)`
+          : failed > 0
+          ? `Completed with issues in ${duration}s: ${success} succeeded, ${failed} failed, ${skipped || 0} skipped.`
+          : `Completed in ${duration}s! ${success} previews saved (${skipped || 0} skipped).`,
+      });
+      setStats({ success, failed });
+      if (errors && errors.length > 0) {
+        setBatchErrors(errors);
+      }
     };
 
     window.__onBatchFinished = (success: number, failed: number, errors: string[], cancelled: boolean) => {
@@ -183,12 +207,13 @@ export default function App() {
         if (api) {
           const res = await api.render_preview(activeFile.path, state);
           if (cancelled) return;
-          if (res?.dataUrl) {
-            setPreviewDataUrl(res.dataUrl);
-            setPreviewMeta({ width: res.width || 0, height: res.height || 0, name: activeFile.name });
+          const val = res?.value !== undefined ? res.value : res;
+          if (val?.dataUrl) {
+            setPreviewDataUrl(val.dataUrl);
+            setPreviewMeta({ width: val.width || 0, height: val.height || 0, name: activeFile.name });
             setRenderError(null);
-          } else if (res?.error) {
-            setRenderError(res.error);
+          } else if (res?.error || val?.error) {
+            setRenderError(res?.error || val?.error);
           }
         }
       } catch (err: unknown) {

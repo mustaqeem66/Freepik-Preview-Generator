@@ -6,7 +6,7 @@ import zipfile
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -77,9 +77,166 @@ class PreviewConfig:
     logo_pos_y: float = 0.05              # Logo vertical position (0.0 to 1.0)
     # Custom Font Support
     font_path: str = ""                   # Path to custom .ttf/.otf font file
+    overwrite_policy: str = "overwrite"   # overwrite, skip, rename
+
+    @classmethod
+    def from_mapping(cls, mapping: dict[str, Any] | None) -> PreviewConfig:
+        """Strictly parse, validate, and sanitize config from JS API or external dict."""
+        if not isinstance(mapping, dict):
+            return cls()
+
+        def _safe_float(val: Any, default: float, min_val: float, max_val: float) -> float:
+            try:
+                if val is None or val == "":
+                    return default
+                f = float(val)
+                if not (f == f) or f == float("inf") or f == float("-inf"):  # NaN or Inf check
+                    return default
+                return max(min_val, min(max_val, f))
+            except (ValueError, TypeError):
+                return default
+
+        def _safe_int(val: Any, default: int, min_val: int, max_val: int) -> int:
+            try:
+                if val is None or val == "":
+                    return default
+                i = int(round(float(val)))
+                return max(min_val, min(max_val, i))
+            except (ValueError, TypeError):
+                return default
+
+        def _safe_bool(val: Any, default: bool) -> bool:
+            if isinstance(val, bool):
+                return val
+            if isinstance(val, (int, float)):
+                return bool(val)
+            if isinstance(val, str):
+                v = val.strip().lower()
+                if v in ("true", "1", "yes", "y", "on"):
+                    return True
+                if v in ("false", "0", "no", "n", "off"):
+                    return False
+            return default
+
+        def _safe_color(val: Any, default: tuple[int, int, int]) -> tuple[int, int, int]:
+            if isinstance(val, (tuple, list)) and len(val) >= 3:
+                try:
+                    return (
+                        max(0, min(255, int(val[0]))),
+                        max(0, min(255, int(val[1]))),
+                        max(0, min(255, int(val[2]))),
+                    )
+                except (ValueError, TypeError):
+                    return default
+            if isinstance(val, str):
+                h = val.strip().lstrip("#")
+                if len(h) == 3:
+                    h = "".join(c * 2 for c in h)
+                if len(h) == 6:
+                    try:
+                        return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+                    except ValueError:
+                        return default
+            return default
+
+        def _safe_path(val: Any, allowed_exts: tuple[str, ...]) -> str:
+            if not isinstance(val, str) or not val.strip():
+                return ""
+            clean = val.strip()
+            try:
+                p = Path(clean)
+                if p.suffix.lower() in allowed_exts and p.is_file():
+                    return str(p.resolve())
+            except Exception:
+                return ""
+            return ""
+
+        # Text with length limit (max 100 chars to prevent memory/render DOS)
+        raw_text = mapping.get("text", DEFAULT_TEXT)
+        text = str(raw_text)[:100] if raw_text is not None else DEFAULT_TEXT
+
+        # Allowed position presets
+        raw_pos = str(mapping.get("position", "custom")).strip().lower()
+        valid_positions = {"top-left", "top-right", "center", "bottom-left", "bottom-right", "custom"}
+        position = raw_pos if raw_pos in valid_positions else "custom"
+
+        # Overwrite policy
+        raw_policy = str(mapping.get("overwritePolicy") or mapping.get("overwrite_policy", "overwrite")).strip().lower()
+        overwrite_policy = raw_policy if raw_policy in {"overwrite", "skip", "rename"} else "overwrite"
+
+        # Opacity: supports 0.0-1.0 or 0-100 percent
+        raw_opacity = mapping.get("opacity", 90)
+        op_val = float(raw_opacity) if isinstance(raw_opacity, (int, float, str)) and str(raw_opacity).replace('.', '', 1).isdigit() else 90.0
+        opacity = (op_val / 100.0) if op_val > 1.0 else op_val
+        opacity = max(0.0, min(1.0, opacity))
+
+        # Scale values (0.1 to 3.0)
+        raw_font_scale = mapping.get("fontScale", mapping.get("font_scale", 100))
+        fs_val = float(raw_font_scale) if isinstance(raw_font_scale, (int, float, str)) and str(raw_font_scale).replace('.', '', 1).isdigit() else 100.0
+        font_scale = (fs_val / 100.0) if fs_val > 5.0 else fs_val
+        font_scale = max(0.2, min(3.0, font_scale))
+
+        raw_logo_scale = mapping.get("logoScale", mapping.get("logo_scale", 100))
+        ls_val = float(raw_logo_scale) if isinstance(raw_logo_scale, (int, float, str)) and str(raw_logo_scale).replace('.', '', 1).isdigit() else 100.0
+        logo_scale = (ls_val / 100.0) if ls_val > 5.0 else ls_val
+        logo_scale = max(0.2, min(3.0, logo_scale))
+
+        raw_logo_op = mapping.get("logoOpacity", mapping.get("logo_opacity", 90))
+        lop_val = float(raw_logo_op) if isinstance(raw_logo_op, (int, float, str)) and str(raw_logo_op).replace('.', '', 1).isdigit() else 90.0
+        logo_opacity = (lop_val / 100.0) if lop_val > 1.0 else lop_val
+        logo_opacity = max(0.0, min(1.0, logo_opacity))
+
+        # Coordinates: 0.0 to 1.0 ratio
+        def _to_ratio(val: Any, default: float) -> float:
+            v = _safe_float(val, default * 100.0, 0.0, 100.0)
+            return (v / 100.0) if v > 1.0 else max(0.0, min(1.0, v))
+
+        text_pos_x = _to_ratio(mapping.get("textPosX", mapping.get("text_pos_x")), 0.05)
+        text_pos_y = _to_ratio(mapping.get("textPosY", mapping.get("text_pos_y")), 0.05)
+        logo_pos_x = _to_ratio(mapping.get("logoPosX", mapping.get("logo_pos_x")), 0.88)
+        logo_pos_y = _to_ratio(mapping.get("logoPosY", mapping.get("logo_pos_y")), 0.05)
+
+        # 3D Yaw & Pitch
+        yaw = _safe_float(mapping.get("yaw"), 45.0, -360.0, 360.0) % 360.0
+        pitch = _safe_float(mapping.get("pitch"), 30.0, -85.0, 85.0)
+
+        # Validated paths
+        logo_path = _safe_path(
+            mapping.get("logoPath", mapping.get("logo_path")),
+            (".png", ".webp", ".svg", ".ico", ".jpg", ".jpeg"),
+        )
+        font_path = _safe_path(
+            mapping.get("fontPath", mapping.get("font_path")),
+            (".ttf", ".otf", ".woff", ".woff2"),
+        )
+
+        return cls(
+            text=text,
+            position=position,
+            opacity=opacity,
+            invert_triangles=_safe_bool(mapping.get("invertTriangles", mapping.get("invert_triangles")), True),
+            solid_color=_safe_color(mapping.get("solidColor", mapping.get("solid_color")), (255, 255, 255)),
+            text_color=_safe_color(mapping.get("textColor", mapping.get("text_color")), (255, 255, 255)),
+            has_outline=_safe_bool(mapping.get("hasOutline", mapping.get("has_outline")), True),
+            outline_color=_safe_color(mapping.get("outlineColor", mapping.get("outline_color")), (0, 0, 0)),
+            outline_thickness=_safe_int(mapping.get("outlineThickness", mapping.get("outline_thickness")), 2, 1, 10),
+            font_scale=font_scale,
+            yaw=yaw,
+            pitch=pitch,
+            model_color=_safe_color(mapping.get("modelColor", mapping.get("model_color")), (120, 130, 160)),
+            text_pos_x=text_pos_x,
+            text_pos_y=text_pos_y,
+            logo_path=logo_path,
+            logo_scale=logo_scale,
+            logo_opacity=logo_opacity,
+            logo_pos_x=logo_pos_x,
+            logo_pos_y=logo_pos_y,
+            font_path=font_path,
+            overwrite_policy=overwrite_policy,
+        )
 
 
-def _font(size: int, font_path: str = "") -> ImageFont.ImageFont:
+def _font(size: int, font_path: str = "") -> Any:
     if font_path and Path(font_path).is_file():
         try:
             return ImageFont.truetype(str(font_path), size=size)
@@ -299,7 +456,7 @@ def compose_preview(
             y = max(0, min(height - th, round((height - th) * max(0.0, min(1.0, config.text_pos_y)))))
         else:
             obj_bounds = original.getchannel("A").getbbox()
-            x, y = _calculate_text_position(result.size, (tw, th), config.position, obj_bounds)
+            x, y = _calculate_text_position(result.size, (int(tw), int(th)), config.position, obj_bounds)
 
         text_layer = Image.new("RGBA", result.size, (0, 0, 0, 0))
         t_draw = ImageDraw.Draw(text_layer)
@@ -397,7 +554,7 @@ def _load_dxf(source_path: Path, target_dimension: int = 2400) -> Image.Image:
         dpi = 150
         size_in = max(4.0, min(16.0, target_dimension / dpi))
         fig = Figure(figsize=(size_in, size_in), dpi=dpi)
-        ax = fig.add_axes([0, 0, 1, 1])
+        ax = fig.add_axes((0.0, 0.0, 1.0, 1.0))
 
         ctx = RenderContext(doc)
         backend = MatplotlibBackend(ax)
@@ -615,7 +772,7 @@ def _load_cad_solid(source_path: Path, config: PreviewConfig, target_dimension: 
             mesh = _MESH_CACHE[key]
         else:
             import cascadio
-            glb_bytes = cascadio.to_glb_bytes(str(source_path))
+            glb_bytes = cascadio.to_glb_bytes(source_path.read_bytes())
             import trimesh
             mesh = trimesh.load(BytesIO(glb_bytes), file_type="glb")
             if isinstance(mesh, trimesh.Scene):
@@ -780,7 +937,7 @@ def render_3d_mesh(
         else:
             base_c = default_base
 
-        lit_val = np.nan_to_num(base_c * intensity[idx], nan=default_base)
+        lit_val = np.nan_to_num(base_c * intensity[idx], nan=0.0)
         lit = tuple(np.clip(lit_val, 0, 255).astype(int))
         poly = [(float(pts_2d[v][0]), float(pts_2d[v][1])) for v in face]
         draw.polygon(poly, fill=lit)
@@ -933,7 +1090,7 @@ def _load_3d(source_path: Path, config: PreviewConfig, target_dimension: int = 2
         # Pre-convert visual colors once so we never repeat it during orbit
         if hasattr(mesh, "visual") and mesh.visual is not None:
             try:
-                mesh.visual = mesh.visual.to_color()
+                getattr(mesh, "visual", None) and setattr(mesh, "visual", mesh.visual.to_color())
             except Exception:
                 pass
 
@@ -963,7 +1120,9 @@ def generate_file(
     output = compose_preview(source, config)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    import uuid
+    temp_name = f".tmp_{output_path.stem}_{uuid.uuid4().hex[:8]}.jpg"
+    temp_path = output_path.parent / temp_name
     try:
         output.save(temp_path, format="JPEG", quality=96, subsampling=0, optimize=True)
         temp_path.replace(output_path)
@@ -1086,7 +1245,7 @@ def process_folder(
     config: PreviewConfig,
     progress: Callable[[int, int, str], None],
     is_cancelled: Callable[[], bool],
-) -> tuple[int, int, list[str]]:
+) -> dict[str, Any]:
     raw_files = sorted(
         p for p in input_folder.rglob("*.*")
         if p.is_file()
@@ -1103,7 +1262,10 @@ def process_folder(
     output_folder.mkdir(parents=True, exist_ok=True)
     success = 0
     failed = 0
+    skipped = 0
     errors: list[str] = []
+    import time
+    start_time = time.time()
 
     work_items: list[tuple[Path, str]] = []
     allocated_names: set[str] = set()
@@ -1143,10 +1305,12 @@ def process_folder(
                         rel_parts = inner.relative_to(zip_tmp).parent.parts
                         slug = f"_{'_'.join(rel_parts)}" if rel_parts else ""
                         candidate_stem = f"{src.stem}{slug}_{inner.stem}"
+                        counter = 1
                         out_name = f"{candidate_stem}.jpg"
-                        if out_name in allocated_names:
-                            out_name = f"{candidate_stem}_{inner.suffix.lstrip('.')}.jpg"
-                        allocated_names.add(out_name)
+                        while out_name.lower() in allocated_names:
+                            out_name = f"{candidate_stem}_{inner.suffix.lstrip('.')}_{counter}.jpg"
+                            counter += 1
+                        allocated_names.add(out_name.lower())
                         work_items.append((inner, out_name))
                 except Exception as exc:
                     failed += 1
@@ -1156,21 +1320,37 @@ def process_folder(
                 prefix = f"{'_'.join(rel_parts)}_" if rel_parts else ""
                 candidate_stem = f"{prefix}{src.stem}"
                 out_name = f"{candidate_stem}.jpg"
-                if out_name in allocated_names:
-                    out_name = f"{candidate_stem}_{src.suffix.lstrip('.')}.jpg"
-                allocated_names.add(out_name)
+                counter = 1
+                while out_name.lower() in allocated_names:
+                    out_name = f"{candidate_stem}_{src.suffix.lstrip('.')}_{counter}.jpg"
+                    counter += 1
+                allocated_names.add(out_name.lower())
                 work_items.append((src, out_name))
 
         total = max(1, len(work_items) + failed)
         completed = failed
-
+        cancelled = False
         for item_path, out_name in work_items:
             if is_cancelled():
+                cancelled = True
                 break
+            target_file = output_folder / out_name
+            if target_file.exists():
+                if config.overwrite_policy == "skip":
+                    skipped += 1
+                    completed += 1
+                    progress(completed, total, f"Skipped (exists) {out_name}")
+                    continue
+                elif config.overwrite_policy == "rename":
+                    r_count = 1
+                    while target_file.exists():
+                        target_file = output_folder / f"{target_file.stem}_copy{r_count}.jpg"
+                        r_count += 1
+
             try:
-                generate_file(item_path, output_folder / out_name, config)
+                generate_file(item_path, target_file, config)
                 success += 1
-                status = f"Created {out_name}"
+                status = f"Created {target_file.name}"
             except Exception as exc:
                 failed += 1
                 status = f"Failed {item_path.name}"
@@ -1183,4 +1363,15 @@ def process_folder(
         for t in temp_dirs:
             shutil.rmtree(t, ignore_errors=True)
 
-    return success, failed, errors
+    duration = round(time.time() - start_time, 2)
+    planned = len(work_items) + failed
+    return {
+        "planned": planned,
+        "processed": success + failed,
+        "success": success,
+        "failed": failed,
+        "skipped": skipped,
+        "cancelled": cancelled,
+        "errors": errors,
+        "duration": duration,
+    }
