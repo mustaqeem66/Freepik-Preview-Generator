@@ -70,6 +70,8 @@ export interface PyWebViewApi {
   browse_font: () => Promise<string>;
   open_folder: (path: string) => Promise<boolean>;
   scan_folder: (path: string) => Promise<ScanFolderResult>;
+  start_scan: (path: string) => Promise<{ ok: boolean; scanId: string }>;
+  cancel_scan: () => Promise<void>;
   render_preview: (
     filePath: string,
     config: PreviewState
@@ -88,6 +90,8 @@ declare global {
     pywebview?: {
       api?: PyWebViewApi;
     };
+    __onScanProgress?: (scanId: string, count: number) => void;
+    __onScanFinished?: (scanId: string, result: ScanFolderResult) => void;
     __onBatchProgress?: (current: number, total: number, message: string) => void;
     __onBatchFinishedSummary?: (summary: BatchSummary) => void;
     __onBatchFinished?: (

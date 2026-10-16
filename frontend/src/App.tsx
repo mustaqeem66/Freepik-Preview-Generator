@@ -79,6 +79,8 @@ export default function App() {
   const [stats, setStats] = useState<{ success: number; failed: number }>({ success: 0, failed: 0 });
   const [batchErrors, setBatchErrors] = useState<string[]>([]);
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(true);
+  const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [scannedCount, setScannedCount] = useState<number>(0);
   // 3D drag ref & settings loaded gate
   const dragStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isLoadedRef = useRef<boolean>(false);
@@ -116,6 +118,24 @@ export default function App() {
         }
       } else if (!api && !unmounted) {
         setIsBackendConnected(false);
+      }
+    };
+
+    // Register async scan progress & completion listeners
+    window.__onScanProgress = (_scanId: string, count: number) => {
+      setScannedCount(count);
+    };
+
+    window.__onScanFinished = (_scanId: string, result: { files: FileInfo[]; total: number }) => {
+      setIsScanning(false);
+      if (result?.files) {
+        setFileList(result.files);
+        setCurrentIdx(0);
+        if (result.files.length === 0) {
+          setPreviewDataUrl(null);
+          setPreviewMeta({ width: 0, height: 0, name: "" });
+          setRenderError(null);
+        }
       }
     };
 
@@ -247,25 +267,46 @@ export default function App() {
     state.pitch,
   ]);
 
-  // Folder scanning
+  // Asynchronous cancellable folder scanning
   const scanFolder = async (folderPath: string) => {
     if (!folderPath) return;
+    setIsScanning(true);
+    setScannedCount(0);
     try {
       const api = await ApiBridge.getApi(3000);
       if (api) {
-        const res = await api.scan_folder(folderPath);
-        if (res?.files) {
-          setFileList(res.files);
-          setCurrentIdx(0);
-          if (res.files.length === 0) {
-            setPreviewDataUrl(null);
-            setPreviewMeta({ width: 0, height: 0, name: "" });
-            setRenderError(null);
+        if (api.start_scan) {
+          await api.start_scan(folderPath);
+        } else {
+          const res = await api.scan_folder(folderPath);
+          setIsScanning(false);
+          if (res?.files) {
+            setFileList(res.files);
+            setCurrentIdx(0);
+            if (res.files.length === 0) {
+              setPreviewDataUrl(null);
+              setPreviewMeta({ width: 0, height: 0, name: "" });
+              setRenderError(null);
+            }
           }
         }
       }
     } catch (e) {
+      setIsScanning(false);
       console.error("Scan folder failed:", e);
+    }
+  };
+
+  const handleCancelScan = async () => {
+    try {
+      const api = await ApiBridge.getApi(3000);
+      if (api?.cancel_scan) {
+        await api.cancel_scan();
+      }
+    } catch (e) {
+      console.debug("Cancel scan notice:", e);
+    } finally {
+      setIsScanning(false);
     }
   };
 
@@ -529,6 +570,37 @@ export default function App() {
                 Browse…
               </motion.button>
             </div>
+            {isScanning && (
+              <div
+                style={{
+                  marginTop: "6px",
+                  padding: "6px 10px",
+                  background: "var(--chip-bg)",
+                  borderRadius: "6px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  fontSize: "11px",
+                  color: "var(--accent)",
+                }}
+              >
+                <span>Scanning assets… {scannedCount > 0 ? `(${scannedCount} discovered)` : ""}</span>
+                <button
+                  type="button"
+                  onClick={handleCancelScan}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#EF4444",
+                    cursor: "pointer",
+                    fontWeight: 700,
+                    fontSize: "11px",
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
             <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", cursor: "pointer", marginTop: "4px" }}>
               <input
                 type="checkbox"

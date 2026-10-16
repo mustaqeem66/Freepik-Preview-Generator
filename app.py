@@ -12,6 +12,8 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -138,6 +140,7 @@ class DesktopApi:
         self.cancel_event = threading.Event()
         self.scan_cancel_event = threading.Event()
         self.batch_thread: threading.Thread | None = None
+        self.scan_thread: threading.Thread | None = None
     def set_window(self, win: webview.Window) -> None:
         self.window = win
 
@@ -322,9 +325,35 @@ class DesktopApi:
         """Signal active folder scan to stop."""
         self.scan_cancel_event.set()
 
-    def scan_folder(self, folder_path: str) -> dict[str, Any]:
-        """Scan folder for supported 2D and 3D assets, indexing zip files with quotas, depth bounds, and cancellation."""
+    def start_scan(self, folder_path: str) -> dict[str, Any]:
+        """Start background asynchronous folder scan with progress and cancellation events."""
+        self.scan_cancel_event.set()
+        if self.scan_thread and self.scan_thread.is_alive():
+            self.scan_thread.join(timeout=0.5)
         self.scan_cancel_event.clear()
+
+        scan_id = uuid.uuid4().hex[:8]
+
+        def _scan_worker() -> None:
+            res = self._execute_scan(folder_path, scan_id)
+            if self.window and not self.scan_cancel_event.is_set():
+                try:
+                    payload_json = json.dumps(res)
+                    self.window.evaluate_js(f"window.__onScanFinished && window.__onScanFinished('{scan_id}', {payload_json})")
+                except Exception as exc:
+                    logging.debug("Scan finished event dispatch notice: %s", exc)
+
+        self.scan_thread = threading.Thread(target=_scan_worker, daemon=True)
+        self.scan_thread.start()
+        return {"ok": True, "scanId": scan_id}
+
+    def scan_folder(self, folder_path: str) -> dict[str, Any]:
+        """Synchronous wrapper for folder scanning with strict bounds and cancellation."""
+        self.scan_cancel_event.clear()
+        return self._execute_scan(folder_path)
+
+    def _execute_scan(self, folder_path: str, scan_id: str = "") -> dict[str, Any]:
+        """Internal scan engine bounded by directory count, file count, and timeouts."""
         if not isinstance(folder_path, str) or not folder_path.strip():
             return {"files": [], "total": 0}
 
@@ -332,27 +361,29 @@ class DesktopApi:
         if not p.is_dir():
             return {"files": [], "total": 0}
 
-        # Clean prior session zip temp
         if self.session_zip_dir and self.session_zip_dir.exists():
             shutil.rmtree(self.session_zip_dir, ignore_errors=True)
             self.session_zip_dir = None
 
         files_payload: list[dict[str, Any]] = []
         MAX_SCANNED_ITEMS = 5000
+        MAX_SCAN_SECONDS = 20.0
+        start_time = time.time()
         item_count = 0
 
         try:
             for root, dirs, files in os.walk(p, topdown=True, followlinks=False):
-                if self.scan_cancel_event.is_set():
-                    logging.info("Folder scan cancelled by user.")
+                if self.scan_cancel_event.is_set() or (time.time() - start_time) > MAX_SCAN_SECONDS:
+                    logging.info("Folder scan stopped: cancelled or time limit exceeded.")
                     break
                 rel_root = Path(root).relative_to(p)
-                # Skip hidden directories & macOS metadata
                 dirs[:] = [
                     d for d in dirs
                     if not d.startswith(".") and d != "__MACOSX" and len(rel_root.parts) < 15
                 ]
                 for f_name in sorted(files):
+                    if self.scan_cancel_event.is_set():
+                        break
                     if f_name.startswith(".") or f_name == "Thumbs.db":
                         continue
                     item_count += 1
@@ -372,11 +403,10 @@ class DesktopApi:
                             "is_3d": is_3d,
                         })
                     elif ext == ".zip":
-                        # Bounded zip indexing
                         try:
                             import zipfile
                             with zipfile.ZipFile(f_path, "r") as zf:
-                                members = zf.infolist()[:1000]  # Cap per archive
+                                members = zf.infolist()[:1000]
                                 for member in members:
                                     if self.scan_cancel_event.is_set():
                                         break
@@ -401,6 +431,13 @@ class DesktopApi:
                                             break
                         except Exception as exc:
                             logging.warning("Could not index archive %s: %s", f_path.name, exc)
+
+                # Notify frontend of scan progress every 100 items
+                if scan_id and self.window and item_count % 100 == 0:
+                    try:
+                        self.window.evaluate_js(f"window.__onScanProgress && window.__onScanProgress('{scan_id}', {len(files_payload)})")
+                    except Exception:
+                        pass
 
                 if item_count > MAX_SCANNED_ITEMS:
                     break
@@ -614,21 +651,26 @@ def main() -> int:
     if window is not None:
         api.set_window(window)
 
-    # P0-3: Explicit navigation lockdown to packaged local HTML
-    # Block navigation away from target_url and launch external links in native OS browser
-    def on_navigating(url: str) -> None:
+    # P0-Nav: Explicit navigation allowlist
+    # Allow ONLY the packaged local origin (or localhost:5173 strictly in explicit PREVIEWGEN_DEV=1 mode)
+    def on_navigating(url: str) -> bool:
         if not url:
-            return
+            return False
         target_base = target_url.split("#")[0].split("?")[0].rstrip("/") if target_url else ""
         clean_url = url.split("#")[0].split("?")[0].rstrip("/")
-        if target_base and clean_url != target_base:
-            logging.warning("Prevented privileged window navigation to external origin: %s", url)
-            import webbrowser
-            try:
-                webbrowser.open(url)
-            except Exception as e:
-                logging.debug("Could not open external URL: %s", e)
+        is_dev = dev_mode and clean_url.startswith("http://localhost:5173")
+        is_local_packaged = target_base and (clean_url == target_base or clean_url.startswith(target_base))
 
+        if is_dev or is_local_packaged:
+            return True
+
+        logging.warning("Blocked privileged window navigation to untrusted URL: %s", url)
+        import webbrowser
+        try:
+            webbrowser.open(url)
+        except Exception as e:
+            logging.debug("Could not open external URL in browser: %s", e)
+        return False
     if window is not None:
         try:
             window.events.navigating += on_navigating
