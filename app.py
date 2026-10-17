@@ -3,7 +3,7 @@ PreviewGen - Desktop Studio
 Backend Engine for pywebview + React + Framer Motion
 """
 from __future__ import annotations
-
+from dataclasses import dataclass
 import base64
 import json
 import os
@@ -28,6 +28,13 @@ from processor import (
     SUPPORTED_3D_EXTENSIONS,
     SUPPORTED_CAD_EXTENSIONS,
 )
+
+@dataclass
+class ScanContext:
+    scan_id: str
+    root: Path
+    cancel_event: threading.Event
+    temp_root: Path
 
 def get_settings_directory() -> Path:
     if sys.platform == "win32":
@@ -137,10 +144,11 @@ class DesktopApi:
     def __init__(self) -> None:
         self.window: webview.Window | None = None
         self.session_zip_dir: Path | None = None
+        self.active_scan_context: ScanContext | None = None
+        self.active_scan_thread: threading.Thread | None = None
+        self.scan_lock = threading.Lock()
         self.cancel_event = threading.Event()
-        self.scan_cancel_event = threading.Event()
         self.batch_thread: threading.Thread | None = None
-        self.scan_thread: threading.Thread | None = None
     def set_window(self, win: webview.Window) -> None:
         self.window = win
 
@@ -323,47 +331,78 @@ class DesktopApi:
 
     def cancel_scan(self) -> None:
         """Signal active folder scan to stop."""
-        self.scan_cancel_event.set()
+        with self.scan_lock:
+            if self.active_scan_context:
+                self.active_scan_context.cancel_event.set()
+                logging.info("Cancel signal dispatched to scan %s", self.active_scan_context.scan_id)
 
     def start_scan(self, folder_path: str) -> dict[str, Any]:
-        """Start background asynchronous folder scan with progress and cancellation events."""
-        self.scan_cancel_event.set()
-        if self.scan_thread and self.scan_thread.is_alive():
-            self.scan_thread.join(timeout=0.5)
-        self.scan_cancel_event.clear()
+        """Start background asynchronous folder scan with independent context and cancellation token."""
+        with self.scan_lock:
+            # 1. Signal any existing active scan to stop (its private cancel_event stays set)
+            if self.active_scan_context:
+                self.active_scan_context.cancel_event.set()
 
-        scan_id = uuid.uuid4().hex[:8]
+            # 2. Allocate fresh, completely isolated context for the new scan
+            scan_id = uuid.uuid4().hex[:8]
+            scan_cancel_event = threading.Event()
+            p = Path(folder_path).resolve()
+            temp_root = Path(tempfile.mkdtemp(prefix=f"previewgen_scan_{scan_id}_"))
 
-        def _scan_worker() -> None:
-            res = self._execute_scan(folder_path, scan_id)
-            if self.window and not self.scan_cancel_event.is_set():
-                try:
-                    payload_json = json.dumps(res)
-                    self.window.evaluate_js(f"window.__onScanFinished && window.__onScanFinished('{scan_id}', {payload_json})")
-                except Exception as exc:
-                    logging.debug("Scan finished event dispatch notice: %s", exc)
+            ctx = ScanContext(
+                scan_id=scan_id,
+                root=p,
+                cancel_event=scan_cancel_event,
+                temp_root=temp_root,
+            )
+            self.active_scan_context = ctx
 
-        self.scan_thread = threading.Thread(target=_scan_worker, daemon=True)
-        self.scan_thread.start()
+        def _scan_worker(scan_ctx: ScanContext) -> None:
+            try:
+                res = self._execute_scan(scan_ctx)
+                # Only notify frontend if this scan was NOT cancelled and is still the active scan
+                if not scan_ctx.cancel_event.is_set():
+                    with self.scan_lock:
+                        is_current = self.active_scan_context and self.active_scan_context.scan_id == scan_ctx.scan_id
+                    if is_current and self.window:
+                        try:
+                            payload_json = json.dumps(res)
+                            self.window.evaluate_js(f"window.__onScanFinished && window.__onScanFinished('{scan_ctx.scan_id}', {payload_json})")
+                        except Exception as exc:
+                            logging.debug("Scan finished event dispatch notice: %s", exc)
+            finally:
+                # Clean up this scan's private temp directory
+                if scan_ctx.temp_root.exists():
+                    shutil.rmtree(scan_ctx.temp_root, ignore_errors=True)
+
+        scan_thread = threading.Thread(target=_scan_worker, args=(ctx,), daemon=True)
+        with self.scan_lock:
+            self.active_scan_thread = scan_thread
+        scan_thread.start()
+
         return {"ok": True, "scanId": scan_id}
 
     def scan_folder(self, folder_path: str) -> dict[str, Any]:
-        """Synchronous wrapper for folder scanning with strict bounds and cancellation."""
-        self.scan_cancel_event.clear()
-        return self._execute_scan(folder_path)
+        """Synchronous wrapper for folder scanning with strict bounds and isolated context."""
+        scan_id = uuid.uuid4().hex[:8]
+        temp_root = Path(tempfile.mkdtemp(prefix=f"previewgen_sync_scan_{scan_id}_"))
+        ctx = ScanContext(
+            scan_id=scan_id,
+            root=Path(folder_path).resolve(),
+            cancel_event=threading.Event(),
+            temp_root=temp_root,
+        )
+        try:
+            return self._execute_scan(ctx)
+        finally:
+            if temp_root.exists():
+                shutil.rmtree(temp_root, ignore_errors=True)
 
-    def _execute_scan(self, folder_path: str, scan_id: str = "") -> dict[str, Any]:
+    def _execute_scan(self, ctx: ScanContext) -> dict[str, Any]:
         """Internal scan engine bounded by directory count, file count, and timeouts."""
-        if not isinstance(folder_path, str) or not folder_path.strip():
-            return {"files": [], "total": 0}
-
-        p = Path(folder_path).resolve()
+        p = ctx.root
         if not p.is_dir():
             return {"files": [], "total": 0}
-
-        if self.session_zip_dir and self.session_zip_dir.exists():
-            shutil.rmtree(self.session_zip_dir, ignore_errors=True)
-            self.session_zip_dir = None
 
         files_payload: list[dict[str, Any]] = []
         MAX_SCANNED_ITEMS = 5000
@@ -373,8 +412,8 @@ class DesktopApi:
 
         try:
             for root, dirs, files in os.walk(p, topdown=True, followlinks=False):
-                if self.scan_cancel_event.is_set() or (time.time() - start_time) > MAX_SCAN_SECONDS:
-                    logging.info("Folder scan stopped: cancelled or time limit exceeded.")
+                if ctx.cancel_event.is_set() or (time.time() - start_time) > MAX_SCAN_SECONDS:
+                    logging.info("Folder scan %s stopped: cancelled or time limit exceeded.", ctx.scan_id)
                     break
                 rel_root = Path(root).relative_to(p)
                 dirs[:] = [
@@ -382,7 +421,7 @@ class DesktopApi:
                     if not d.startswith(".") and d != "__MACOSX" and len(rel_root.parts) < 15
                 ]
                 for f_name in sorted(files):
-                    if self.scan_cancel_event.is_set():
+                    if ctx.cancel_event.is_set():
                         break
                     if f_name.startswith(".") or f_name == "Thumbs.db":
                         continue
@@ -408,7 +447,7 @@ class DesktopApi:
                             with zipfile.ZipFile(f_path, "r") as zf:
                                 members = zf.infolist()[:1000]
                                 for member in members:
-                                    if self.scan_cancel_event.is_set():
+                                    if ctx.cancel_event.is_set():
                                         break
                                     if member.is_dir() or member.file_size > 250 * 1024 * 1024:
                                         continue
@@ -432,10 +471,10 @@ class DesktopApi:
                         except Exception as exc:
                             logging.warning("Could not index archive %s: %s", f_path.name, exc)
 
-                # Notify frontend of scan progress every 100 items
-                if scan_id and self.window and item_count % 100 == 0:
+                # Notify frontend of scan progress every 100 items (with scan_id)
+                if self.window and item_count % 100 == 0:
                     try:
-                        self.window.evaluate_js(f"window.__onScanProgress && window.__onScanProgress('{scan_id}', {len(files_payload)})")
+                        self.window.evaluate_js(f"window.__onScanProgress && window.__onScanProgress('{ctx.scan_id}', {len(files_payload)})")
                     except Exception:
                         pass
 

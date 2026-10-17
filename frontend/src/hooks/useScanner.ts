@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { FileInfo } from "../types";
 import { ApiBridge } from "../api/bridge";
 
@@ -7,16 +7,19 @@ export function useScanner() {
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scannedCount, setScannedCount] = useState<number>(0);
   const [scanError, setScanError] = useState<string | null>(null);
+  const activeScanIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    window.__onScanProgress = (_scanId: string, count: number) => {
+    window.__onScanProgress = (scanId: string, count: number) => {
+      if (scanId !== activeScanIdRef.current) return;
       setScannedCount(count);
     };
 
     window.__onScanFinished = (
-      _scanId: string,
+      scanId: string,
       result: { files: FileInfo[]; total: number }
     ) => {
+      if (scanId !== activeScanIdRef.current) return;
       setIsScanning(false);
       if (result?.files) {
         setFileList(result.files);
@@ -34,7 +37,8 @@ export function useScanner() {
       const api = await ApiBridge.getApi(3000);
       if (api) {
         if (api.start_scan) {
-          await api.start_scan(folderPath);
+          const res = await api.start_scan(folderPath);
+          activeScanIdRef.current = res.scanId;
         } else {
           const res = await api.scan_folder(folderPath);
           setIsScanning(false);
@@ -50,6 +54,7 @@ export function useScanner() {
   }, []);
 
   const cancelScan = useCallback(async () => {
+    activeScanIdRef.current = null;
     try {
       const api = await ApiBridge.getApi(2000);
       if (api?.cancel_scan) {
