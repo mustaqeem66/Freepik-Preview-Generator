@@ -51,8 +51,11 @@ SUPPORTED_EXTENSIONS: tuple[str, ...] = (
     ".zip",
 )
 
-MAX_SOURCE_FILE_BYTES = 500 * 1024 * 1024   # 500 MB max input asset
-MAX_IMAGE_PIXELS = 100_000_000               # 100 MP decompression bomb safety
+MAX_SOURCE_FILE_BYTES: int = 500 * 1024 * 1024   # 500 MB max input asset
+MAX_IMAGE_PIXELS: int = 100_000_000              # 100 MP decompression bomb safety
+MAX_SVG_DIMENSION: int = 16_384                   # 16K max vector bounds
+MAX_PSD_DIMENSION: int = 30_000                   # 30K max layered canvas
+MAX_3D_FACES: int = 2_000_000                     # 2M max polygonal faces for real-time orbit
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
@@ -1521,7 +1524,10 @@ def process_folder(
 
     finally:
         for t in temp_dirs:
-            shutil.rmtree(t, ignore_errors=True)
+            try:
+                shutil.rmtree(t)
+            except Exception as clean_err:
+                logging.warning("Temp directory cleanup notice: %s (%s)", t, clean_err)
         if lock_handle:
             try:
                 if sys.platform != "win32":
@@ -1543,7 +1549,8 @@ def process_folder(
 
     import uuid
     batch_id = uuid.uuid4().hex[:12]
-    summary_payload = {
+    report_err_msg: str | None = None
+    summary_payload: dict[str, Any] = {
         "batchId": batch_id,
         "startedAt": started_at_iso,
         "finishedAt": finished_at_iso,
@@ -1554,25 +1561,41 @@ def process_folder(
         "failed": failed,
         "skipped": skipped,
         "cancelled": cancelled,
+        "generationStatus": "cancelled" if cancelled else ("completed" if failed == 0 else "completed_with_errors"),
+        "reportStatus": "pending",
+        "reportError": report_err_msg,
         "errors": errors,
         "duration": duration,
         "files": file_records,
     }
 
-    # P0 Issue 7: Write both previewgen-report.json and previewgen-report.csv
+    # P0 Issue 7: Write both previewgen-report.json and previewgen-report.csv atomically
     try:
         import json
         import csv
-        json_report = output_folder / "previewgen-report.json"
-        json_report.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
+        json_tmp = output_folder / f".previewgen_report_{batch_id}.json.tmp"
+        csv_tmp = output_folder / f".previewgen_report_{batch_id}.csv.tmp"
 
+        json_report = output_folder / "previewgen-report.json"
         csv_report = output_folder / "previewgen-report.csv"
-        with open(csv_report, "w", newline="", encoding="utf-8") as f:
+
+        summary_payload["reportStatus"] = "written"
+        json_tmp.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
+
+        with open(csv_tmp, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(["source", "output", "status", "duration_sec", "error"])
             for rec in file_records:
-                writer.writerow([rec.get("source"), rec.get("output"), rec.get("status"), rec.get("duration"), rec.get("error") or ""])
-    except Exception as report_err:
-        logging.warning("Could not persist durable batch reports: %s", report_err)
+                # Sanitize paths to filenames/clean relative stems
+                writer.writerow([Path(rec.get("source", "")).name, Path(rec.get("output", "")).name, rec.get("status"), rec.get("duration"), rec.get("error") or ""])
 
+        json_tmp.replace(json_report)
+        csv_tmp.replace(csv_report)
+    except Exception as report_err:
+        summary_payload["reportStatus"] = "failed"
+        summary_payload["reportError"] = str(report_err)
+        logging.warning("Could not persist durable batch reports: %s", report_err)
+    finally:
+        (output_folder / f".previewgen_report_{batch_id}.json.tmp").unlink(missing_ok=True)
+        (output_folder / f".previewgen_report_{batch_id}.csv.tmp").unlink(missing_ok=True)
     return summary_payload

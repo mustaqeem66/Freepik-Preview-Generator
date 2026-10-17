@@ -631,8 +631,40 @@ class DesktopApi:
         self.cancel_event.set()
 
     def cleanup(self) -> None:
+        """Orderly shutdown sequence for workers, file writes, and temp directories."""
+        logging.info("Initiating orderly DesktopApi shutdown sequence...")
+        # 1. Signal cancellation to all workers
+        self.cancel_event.set()
+        with self.scan_lock:
+            if self.active_scan_context:
+                self.active_scan_context.cancel_event.set()
+
+        # 2. Wait bounded time for batch thread
+        if self.batch_thread and self.batch_thread.is_alive():
+            logging.info("Waiting for batch thread termination...")
+            self.batch_thread.join(timeout=2.0)
+
+        # 3. Wait bounded time for scan thread
+        with self.scan_lock:
+            scan_t = self.active_scan_thread
+        if scan_t and scan_t.is_alive():
+            logging.info("Waiting for scan thread termination...")
+            scan_t.join(timeout=1.0)
+
+        # 4. Clean active session directories with logging
+        with self.scan_lock:
+            if self.active_scan_context and self.active_scan_context.temp_root.exists():
+                try:
+                    shutil.rmtree(self.active_scan_context.temp_root)
+                except Exception as clean_err:
+                    logging.warning("Shutdown scan temp cleanup notice: %s", clean_err)
+
         if self.session_zip_dir and self.session_zip_dir.exists():
-            shutil.rmtree(self.session_zip_dir, ignore_errors=True)
+            try:
+                shutil.rmtree(self.session_zip_dir)
+            except Exception as clean_err:
+                logging.warning("Shutdown session temp cleanup notice: %s", clean_err)
+        logging.info("Orderly DesktopApi shutdown complete.")
 
 
 def main() -> int:
