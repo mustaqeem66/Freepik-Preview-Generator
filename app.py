@@ -173,35 +173,52 @@ class DesktopApi:
             self.window.destroy()
 
     def get_initial_state(self) -> dict[str, Any]:
-        """Load persistent user preferences with atomic schema validation."""
-        if SETTINGS_FILE.is_file():
+        """Load persistent user preferences with schemaVersion 2 validation and corrupt quarantine."""
+        def _load_and_validate(f_path: Path) -> dict[str, Any] | None:
             try:
-                data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    # Strip corrupted or unexpected top-level fields
-                    clean_settings = {k: v for k, v in data.items() if isinstance(k, str) and not k.startswith("_")}
-                    return {"ok": True, "value": clean_settings, "error": None}
+                raw = json.loads(f_path.read_text(encoding="utf-8"))
+                if not isinstance(raw, dict):
+                    return None
+                # Schema version migration / verification
+                version = raw.get("schemaVersion") or raw.get("_schema_version", 1)
+                clean = {k: v for k, v in raw.items() if isinstance(k, str) and not k.startswith("_")}
+                clean["schemaVersion"] = 2
+                return clean
             except Exception as exc:
-                logging.warning("Primary settings corrupt: %s. Attempting backup.", exc)
-                if SETTINGS_BACKUP.is_file():
-                    try:
-                        data = json.loads(SETTINGS_BACKUP.read_text(encoding="utf-8"))
-                        if isinstance(data, dict):
-                            clean_settings = {k: v for k, v in data.items() if isinstance(k, str) and not k.startswith("_")}
-                            return {"ok": True, "value": clean_settings, "error": None}
-                    except Exception:
-                        pass
-        return {"ok": True, "value": {}, "error": None}
+                logging.warning("Failed parsing settings file %s: %s", f_path, exc)
+                return None
+
+        if SETTINGS_FILE.is_file():
+            validated = _load_and_validate(SETTINGS_FILE)
+            if validated is not None:
+                return {"ok": True, "value": validated, "error": None}
+            else:
+                # Quarantine corrupted primary settings file
+                try:
+                    quarantine_name = f"settings.corrupt.{int(time.time())}.json"
+                    shutil.move(SETTINGS_FILE, SETTINGS_DIR / quarantine_name)
+                    logging.warning("Quarantined corrupt settings file to %s", quarantine_name)
+                except Exception:
+                    pass
+
+        # Attempt fallback to backup
+        if SETTINGS_BACKUP.is_file():
+            backup_val = _load_and_validate(SETTINGS_BACKUP)
+            if backup_val is not None:
+                logging.info("Successfully recovered preferences from settings.v1.json.bak")
+                return {"ok": True, "value": backup_val, "error": None}
+
+        return {"ok": True, "value": {"schemaVersion": 2}, "error": None}
 
     def save_settings(self, settings_dict: dict[str, Any]) -> dict[str, Any]:
-        """Save user preferences atomically to disk with backup and schema version."""
+        """Save user preferences atomically to disk with backup and schemaVersion: 2."""
         if not isinstance(settings_dict, dict):
-            return {"ok": False, "value": False, "error": "Invalid settings payload"}
+            return {"ok": False, "value": False, "error": "Invalid settings payload: must be dictionary"}
         try:
             SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
             payload = {
-                "_schema_version": 1,
-                **{k: v for k, v in settings_dict.items() if isinstance(k, str) and not k.startswith("_")}
+                "schemaVersion": 2,
+                **{k: v for k, v in settings_dict.items() if isinstance(k, str) and not k.startswith("_") and k != "schemaVersion"}
             }
             serialized = json.dumps(payload, indent=2)
             temp_file = SETTINGS_DIR / f"settings_{os.getpid()}_{threading.get_ident()}.tmp"

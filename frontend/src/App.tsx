@@ -22,7 +22,18 @@ const springTransition = {
 
 export default function App() {
   const { isConnected } = useBackend();
-  const { state, setState } = useSettings();
+  const handleSaveError = (_err: string) => {
+    setNotices((prev) => [
+      ...prev.filter((n) => n.id !== "save-err"),
+      {
+        id: "save-err",
+        type: "warning",
+        message: "Settings could not be saved",
+        details: "Your current session can continue, but changes may not persist.",
+      },
+    ]);
+  };
+  const { state, setState } = useSettings(handleSaveError);
   const { fileList, isScanning, scannedCount, scanError, scanFolder, cancelScan } = useScanner();
   const [currentIdx, setCurrentIdx] = useState<number>(0);
   const [notices, setNotices] = useState<NoticeMessage[]>([]);

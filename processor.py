@@ -3,6 +3,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 import zipfile
 from dataclasses import dataclass
 from io import BytesIO
@@ -1211,6 +1212,33 @@ def generate_file(
     finally:
         temp_path.unlink(missing_ok=True)
 
+def render_file_with_timeout(
+    source_path: Path,
+    output_path: Path,
+    config: PreviewConfig,
+    timeout_seconds: float = 60.0,
+    is_cancelled: Callable[[], bool] | None = None,
+) -> None:
+    """
+    Execute render with per-file timeout and hard cancellation capability.
+    Guarantees that a blocked or hung external parser/renderer cannot lock the worker indefinitely.
+    """
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(generate_file, source_path, output_path, config, None, is_cancelled)
+        start_t = time.time()
+        while True:
+            if is_cancelled and is_cancelled():
+                future.cancel()
+                raise RuntimeError("Batch render cancelled by user")
+            try:
+                future.result(timeout=0.25)
+                break
+            except concurrent.futures.TimeoutError:
+                if (time.time() - start_t) > timeout_seconds:
+                    future.cancel()
+                    raise TimeoutError(f"Rendering exceeded timeout threshold of {timeout_seconds}s for {source_path.name}")
+
 
 def preview_jpeg_bytes(
     source_path: Path | str,
@@ -1466,7 +1494,7 @@ def process_folder(
                     file_rec["status"] = "cancelled"
                     file_records.append(file_rec)
                     break
-                generate_file(item_path, target_file, config, is_cancelled=is_cancelled)
+                render_file_with_timeout(item_path, target_file, config, timeout_seconds=60.0, is_cancelled=is_cancelled)
                 file_duration = round(time.time() - file_start, 3)
                 file_rec["status"] = "success"
                 file_rec["duration"] = file_duration
