@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 import os
 import shutil
 import sys
@@ -48,6 +49,10 @@ SUPPORTED_EXTENSIONS: tuple[str, ...] = (
     *SUPPORTED_CAD_EXTENSIONS,
     ".zip",
 )
+
+MAX_SOURCE_FILE_BYTES = 500 * 1024 * 1024   # 500 MB max input asset
+MAX_IMAGE_PIXELS = 100_000_000               # 100 MP decompression bomb safety
+Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
 @dataclass
@@ -870,8 +875,11 @@ def load_source_image(
 ) -> Image.Image:
     """Load an input file (2D images, PSD, 3D meshes, CAD files) into a verified RGBA PIL Image."""
     source_path = Path(source_path)
+    if source_path.is_file():
+        size_bytes = source_path.stat().st_size
+        if size_bytes > MAX_SOURCE_FILE_BYTES:
+            raise ValueError(f"Source file exceeds maximum size limit ({size_bytes // (1024*1024)} MB > 500 MB): {source_path.name}")
     ext = source_path.suffix.lower()
-
     if ext in (".svg", ".svgz"):
         return _load_svg(source_path, max_dimension=max_dimension)
 
@@ -1334,13 +1342,35 @@ def process_folder(
         raise ValueError(f"No supported images ({ext_list}) found in the input folder")
 
     output_folder.mkdir(parents=True, exist_ok=True)
+
+    # P0 Issue 6: Output directory locking to prevent concurrent instances conflicting
+    lock_file = output_folder / ".previewgen.lock"
+    lock_handle = None
+    try:
+        lock_handle = open(lock_file, "w")
+        if sys.platform != "win32":
+            import fcntl
+            fcntl.flock(lock_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        else:
+            import msvcrt
+            msvcrt.locking(lock_handle.fileno(), msvcrt.LK_NBLCK, 1)
+    except (BlockingIOError, OSError) as lock_err:
+        if lock_handle:
+            try:
+                lock_handle.close()
+            except Exception:
+                pass
+        raise RuntimeError(f"Output directory is currently locked by another PreviewGen process: {output_folder}") from lock_err
+
     success = 0
     failed = 0
     skipped = 0
     errors: list[str] = []
+    file_records: list[dict[str, Any]] = []
     import time
+    import datetime
     start_time = time.time()
-
+    started_at_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     work_items: list[tuple[Path, str]] = []
     allocated_names: set[str] = set()
     temp_dirs: list[Path] = []
@@ -1421,33 +1451,74 @@ def process_folder(
                         target_file = output_folder / f"{target_file.stem}_copy{r_count}.jpg"
                         r_count += 1
 
+            file_start = time.time()
+            file_rec: dict[str, Any] = {
+                "source": item_path.name,
+                "output": target_file.name,
+                "status": "pending",
+                "duration": 0.0,
+                "error": None,
+            }
             try:
                 # Checkpoint right before generating file
                 if is_cancelled():
                     cancelled = True
+                    file_rec["status"] = "cancelled"
+                    file_records.append(file_rec)
                     break
                 generate_file(item_path, target_file, config, is_cancelled=is_cancelled)
+                file_duration = round(time.time() - file_start, 3)
+                file_rec["status"] = "success"
+                file_rec["duration"] = file_duration
+                file_records.append(file_rec)
                 success += 1
                 status = f"Created {target_file.name}"
             except Exception as exc:
+                file_duration = round(time.time() - file_start, 3)
                 if is_cancelled():
                     cancelled = True
+                    file_rec["status"] = "cancelled"
+                    file_rec["duration"] = file_duration
+                    file_records.append(file_rec)
                     break
                 failed += 1
                 status = f"Failed {item_path.name}"
                 errors.append(f"{item_path.name}: {exc}")
+                file_rec["status"] = "failed"
+                file_rec["duration"] = file_duration
+                file_rec["error"] = str(exc)
+                file_records.append(file_rec)
             completed += 1
             progress(completed, total, status)
 
     finally:
         for t in temp_dirs:
             shutil.rmtree(t, ignore_errors=True)
+        if lock_handle:
+            try:
+                if sys.platform != "win32":
+                    import fcntl
+                    fcntl.flock(lock_handle, fcntl.LOCK_UN)
+                else:
+                    import msvcrt
+                    msvcrt.locking(lock_handle.fileno(), msvcrt.LK_UNLCK, 1)
+                lock_handle.close()
+            except Exception:
+                pass
+            lock_file.unlink(missing_ok=True)
 
+    finished_at_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     duration = round(time.time() - start_time, 2)
     planned = len(work_items) + failed
     processed = success + failed + skipped
     remaining = max(0, planned - processed)
-    return {
+
+    import uuid
+    batch_id = uuid.uuid4().hex[:12]
+    summary_payload = {
+        "batchId": batch_id,
+        "startedAt": started_at_iso,
+        "finishedAt": finished_at_iso,
         "planned": planned,
         "processed": processed,
         "remaining": remaining,
@@ -1457,4 +1528,23 @@ def process_folder(
         "cancelled": cancelled,
         "errors": errors,
         "duration": duration,
+        "files": file_records,
     }
+
+    # P0 Issue 7: Write both previewgen-report.json and previewgen-report.csv
+    try:
+        import json
+        import csv
+        json_report = output_folder / "previewgen-report.json"
+        json_report.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
+
+        csv_report = output_folder / "previewgen-report.csv"
+        with open(csv_report, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["source", "output", "status", "duration_sec", "error"])
+            for rec in file_records:
+                writer.writerow([rec.get("source"), rec.get("output"), rec.get("status"), rec.get("duration"), rec.get("error") or ""])
+    except Exception as report_err:
+        logging.warning("Could not persist durable batch reports: %s", report_err)
+
+    return summary_payload

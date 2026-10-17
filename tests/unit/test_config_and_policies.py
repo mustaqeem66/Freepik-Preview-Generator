@@ -111,7 +111,66 @@ def test_batch_collision_resolution_and_overwrite_policies():
         # Verify consistent batch accounting: processed = success + failed + skipped
         assert summary_rename["processed"] == summary_rename["success"] + summary_rename["failed"] + summary_rename["skipped"]
         assert summary_rename["remaining"] == 0
+        # Verify durable reports generated in both JSON and CSV format
+        assert (out_dir / "previewgen-report.json").is_file()
+        assert (out_dir / "previewgen-report.csv").is_file()
+        report_content = (out_dir / "previewgen-report.json").read_text(encoding="utf-8")
+        assert '"batchId":' in report_content
+        assert '"files":' in report_content
+        csv_content = (out_dir / "previewgen-report.csv").read_text(encoding="utf-8")
+        assert "source,output,status,duration_sec,error" in csv_content
 
+
+def test_output_directory_locking_prevents_concurrent_runs():
+    """Verify concurrent batch process targeting same directory raises locked error."""
+    with tempfile.TemporaryDirectory() as tmp_in, tempfile.TemporaryDirectory() as tmp_out:
+        in_dir = Path(tmp_in)
+        out_dir = Path(tmp_out)
+
+        img = Image.new("RGBA", (50, 50), (255, 255, 0, 255))
+        img.save(in_dir / "item.png")
+
+        lock_path = out_dir / ".previewgen.lock"
+        with open(lock_path, "w") as f:
+            import sys
+            if sys.platform != "win32":
+                import fcntl
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            else:
+                import msvcrt
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+
+            with pytest.raises(RuntimeError, match="locked by another PreviewGen process"):
+                process_folder(
+                    in_dir,
+                    out_dir,
+                    PreviewConfig(),
+                    progress=lambda c, t, s: None,
+                    is_cancelled=lambda: False,
+                )
+
+            if sys.platform != "win32":
+                fcntl.flock(f, fcntl.LOCK_UN)
+            else:
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+
+
+def test_global_resource_limit_oversized_file():
+    """Verify source files exceeding MAX_SOURCE_FILE_BYTES are rejected safely."""
+    from processor import load_source_image
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        huge_file = Path(tmp_dir) / "huge.png"
+        huge_file.write_bytes(b"0" * 1024)
+
+        # Patch MAX_SOURCE_FILE_BYTES for testing
+        import processor
+        orig = processor.MAX_SOURCE_FILE_BYTES
+        setattr(processor, "MAX_SOURCE_FILE_BYTES", 512)
+        try:
+            with pytest.raises(ValueError, match="exceeds maximum size limit"):
+                load_source_image(huge_file)
+        finally:
+            setattr(processor, "MAX_SOURCE_FILE_BYTES", orig)
 
 def test_cancellation_checkpoints_during_file_generation():
     """Verify cancellation checkpoint interrupts generate_file immediately."""
