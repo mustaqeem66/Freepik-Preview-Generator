@@ -25,6 +25,11 @@ export function useScanner() {
         setFileList(result.files);
       }
     };
+
+    return () => {
+      delete window.__onScanProgress;
+      delete window.__onScanFinished;
+    };
   }, []);
 
   const scanFolder = useCallback(async (folderPath: string) => {

@@ -27,7 +27,10 @@ export class ApiBridge {
         window.setTimeout(resolve, 50);
       });
     }
-
     return undefined;
+  }
+
+  static clearCache(): void {
+    this.cachedApi = null;
   }
 }

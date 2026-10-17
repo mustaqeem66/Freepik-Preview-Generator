@@ -34,6 +34,11 @@ export function useBatch() {
         setBatchErrors(errors);
       }
     };
+
+    return () => {
+      delete window.__onBatchProgress;
+      delete window.__onBatchFinishedSummary;
+    };
   }, []);
 
   const startBatch = useCallback(

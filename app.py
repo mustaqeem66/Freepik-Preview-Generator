@@ -684,6 +684,40 @@ def main() -> int:
             pass
         return 0
 
+    # P0: Frozen-artifact render test CLI gate
+    # Usage: PreviewGen --render-test <file_path> [<output_jpg>]
+    if "--render-test" in sys.argv:
+        idx = sys.argv.index("--render-test")
+        if idx + 1 >= len(sys.argv):
+            sys.stderr.write("ERROR: --render-test requires an input file argument\n")
+            return 2
+        input_file = Path(sys.argv[idx + 1]).resolve()
+        if not input_file.is_file():
+            sys.stderr.write(f"ERROR: Input test fixture does not exist: {input_file}\n")
+            return 1
+
+        out_file = Path(sys.argv[idx + 2]).resolve() if idx + 2 < len(sys.argv) and not sys.argv[idx + 2].startswith("--") else input_file.with_suffix(".jpg")
+
+        from processor import PreviewConfig, generate_file
+        from PIL import Image
+        try:
+            cfg = PreviewConfig.from_mapping({"overwritePolicy": "overwrite"})
+            generate_file(input_file, out_file, cfg)
+            if not out_file.is_file() or out_file.stat().st_size == 0:
+                sys.stderr.write(f"ERROR: Rendered output missing or empty: {out_file}\n")
+                return 1
+            with Image.open(out_file) as im:
+                if im.format != "JPEG" or im.width <= 0 or im.height <= 0:
+                    sys.stderr.write(f"ERROR: Invalid JPEG output: format={im.format}, size={im.size}\n")
+                    return 1
+            sys.stdout.write(f"[RENDER-TEST-PASS] {input_file.name} -> {out_file.name} ({im.size[0]}x{im.size[1]}, {out_file.stat().st_size} bytes)\n")
+            sys.stdout.flush()
+            return 0
+        except Exception as exc:
+            logging.exception("Render test failed for %s", input_file)
+            sys.stderr.write(f"ERROR: Render test exception: {exc}\n")
+            return 1
+
     if not target_url:
         err_msg = (
             "PreviewGen could not locate its required frontend bundle.\n\n"

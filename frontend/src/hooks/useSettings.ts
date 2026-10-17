@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { PreviewState } from "../types";
 import { ApiBridge } from "../api/bridge";
 
@@ -31,7 +31,7 @@ export const defaultState: PreviewState = {
 
 export function useSettings() {
   const [state, setState] = useState<PreviewState>(defaultState);
-  const isLoadedRef = useRef<boolean>(false);
+  const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
   useEffect(() => {
     let unmounted = false;
@@ -49,7 +49,7 @@ export function useSettings() {
         } catch (e) {
           console.error("Failed to restore settings:", e);
         } finally {
-          isLoadedRef.current = true;
+          setIsLoaded(true);
         }
       }
     };
@@ -61,7 +61,7 @@ export function useSettings() {
   }, []);
 
   useEffect(() => {
-    if (!isLoadedRef.current) return;
+    if (!isLoaded) return;
     const timer = setTimeout(async () => {
       const api = await ApiBridge.getApi(1000);
       if (api) {
@@ -74,7 +74,7 @@ export function useSettings() {
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [state]);
+  }, [state, isLoaded]);
 
-  return { state, setState, isLoaded: isLoadedRef.current };
+  return { state, setState, isLoaded };
 }
