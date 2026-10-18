@@ -18,6 +18,8 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
+import webview
+
 from previewgen.api import DesktopApi
 from previewgen.resources import get_html_dist
 
@@ -71,8 +73,6 @@ def start_desktop_app() -> int:
         logging.info("GUI smoke test mode enabled")
         # Smoke test fallback for Linux without system webview installed
         if sys.platform.startswith("linux"):
-            with contextlib.suppress(Exception):
-                import webview.guilib
             has_gtk = bool(__import__("importlib.util").util.find_spec("gi"))
             has_qt = bool(__import__("importlib.util").util.find_spec("qtpy"))
             if not has_gtk and not has_qt:
