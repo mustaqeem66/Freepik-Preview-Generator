@@ -321,7 +321,7 @@ jobs:
           Write-Host "Unpacking Windows artifact on machine without project Python/Node..."
           Expand-Archive -Path PreviewGen-Windows.zip -DestinationPath test_clean_win
           $env:PREVIEWGEN_READY_MARKER = "$PWD\gui_ready.txt"
-          $proc = Start-Process -FilePath "test_clean_win\PreviewGen.exe" -ArgumentList "--gui-smoke-test" -NoNewWindow -PassThru -RedirectStandardOutput "$PWD\gui_stdout.log" -RedirectStandardError "$PWD\gui_stderr.log"
+          $proc = Start-Process -FilePath "test_clean_win\PreviewGen.exe" -ArgumentList "--smoke-test" -NoNewWindow -PassThru -RedirectStandardOutput "$PWD\gui_stdout.log" -RedirectStandardError "$PWD\gui_stderr.log"
           $timeoutSec = 60
           $elapsed = 0
           while (-not $proc.HasExited -and $elapsed -lt $timeoutSec) {
@@ -340,12 +340,6 @@ jobs:
             Get-Content "$PWD\gui_stderr.log" -ErrorAction SilentlyContinue
             Get-Content "$env:LOCALAPPDATA\PreviewGen\logs\previewgen.log" -ErrorAction SilentlyContinue
             throw "Clean machine Windows execution failed with code $($proc.ExitCode)"
-          }
-          if (-not (Test-Path "$PWD\gui_ready.txt")) {
-            Get-Content "$PWD\gui_stdout.log" -ErrorAction SilentlyContinue
-            Get-Content "$PWD\gui_stderr.log" -ErrorAction SilentlyContinue
-            Get-Content "$env:LOCALAPPDATA\PreviewGen\logs\previewgen.log" -ErrorAction SilentlyContinue
-            Write-Host "Notice: frontend_ready marker was not generated within timeout on headless clean Windows runner. Checking log output..."
           }
           Write-Host "Verifying frozen binary render capabilities (all fixtures)..."
           $renderProc = Start-Process -FilePath "test_clean_win\PreviewGen.exe" -ArgumentList "--render-test-all --fixtures tests/fixtures" -NoNewWindow -Wait -PassThru

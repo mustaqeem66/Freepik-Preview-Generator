@@ -22,9 +22,6 @@ const LIFECYCLE_LABELS: Record<LifecycleState, string> = {
   "batch-cancelling": "Cancelling batch", cancelled: "Batch cancelled", completed: "Completed",
   "completed-with-warnings": "Completed with warnings", "completed-with-errors": "Completed with errors", failed: "Failed",
 };
-const DONT_PROBE_PROPERTIES: Record<string, true> = {
-  native: true, document: true, window: true, location: true, top: true, parent: true, self: true,
-};
 
 export default function App() {
   const { status, capabilities, retry } = useBackend();
@@ -42,22 +39,6 @@ export default function App() {
   const currentIdx = Math.max(0, fileList.findIndex((file) => file.path === selectedPath));
   const activeFile = fileList[currentIdx];
   const scanReady = !isScanning && (scanStatus === "completed" || scanStatus === "scan-truncated");
-  useEffect(() => {
-    // Prevent pywebview Windows WinForms recursive reflection inspection on native handle
-    if (typeof window !== "undefined" && window.pywebview?.api) {
-      for (const prop of Object.keys(DONT_PROBE_PROPERTIES)) {
-        try {
-          Object.defineProperty(window.pywebview.api, prop, {
-            value: undefined,
-            writable: false,
-            configurable: false,
-          });
-        } catch {
-          // Ignore if unconfigurable
-        }
-      }
-    }
-  }, []);
   const previewFile = capabilities.canPreview && scanReady ? activeFile : undefined;
   const { previewUrl, previewMeta, isLoading, renderError } = usePreview(previewFile, state);
   const probeFile = capabilities.canProbe && scanReady ? activeFile : undefined;
