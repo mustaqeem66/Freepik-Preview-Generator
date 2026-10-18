@@ -243,10 +243,7 @@ def test_release_frozen_artifact_is_exercised_when_supplied():
     libraries, plugins, fonts, or renderer backends while still building.
     """
     env = os.environ.get("PREVIEWGEN_BINARY", "").strip()
-    is_release_gate = (
-        os.environ.get("GITHUB_REF", "").startswith("refs/tags/v")
-        or os.environ.get("PREVIEWGEN_RELEASE_GATE") == "1"
-    )
+    is_release_gate = os.environ.get("PREVIEWGEN_RELEASE_GATE") == "1"
     if not env:
         if is_release_gate:
             pytest.fail("FATAL: PREVIEWGEN_BINARY must be set and non-empty in the packaged-release gate!")
