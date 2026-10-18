@@ -178,6 +178,12 @@ export interface PyWebViewApi {
   scan_folder: (path: string) => Promise<ScanFolderResult>;
   start_scan: (path: string) => Promise<{ ok: boolean; scanId: string }>;
   cancel_scan: () => Promise<void>;
+  start_preview?: (
+    filePath: string,
+    config: PreviewState,
+    requestId?: number
+  ) => Promise<{ ok: boolean; operationId?: string; status?: string; error?: string }>;
+  cancel_preview?: (operationId?: string) => Promise<{ ok: boolean }>;
   render_preview: (
     filePath: string,
     config: PreviewState,
@@ -185,6 +191,11 @@ export interface PyWebViewApi {
   ) => Promise<ApiResponse<RenderPreviewData | null>>;
   release_preview: (url: string) => Promise<ApiResponse<boolean>>;
   retain_preview?: (handle: string) => Promise<ApiResponse<boolean>>;
+  start_probe?: (
+    filePath: string,
+    requestId?: number
+  ) => Promise<{ ok: boolean; operationId?: string; status?: string; error?: string }>;
+  cancel_probe?: (operationId?: string) => Promise<{ ok: boolean }>;
   probe_asset?: (filePath: string, requestId?: number) => Promise<ApiResponse<AssetProbe | null>>;
   calculate_export_dimensions?: (
     filePath: string,

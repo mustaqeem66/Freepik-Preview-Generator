@@ -26,14 +26,15 @@ def launched(monkeypatch):
     """Capture any attempt to hand a path to the OS file explorer."""
     calls: list = []
 
-    def fake_run(args, *a, **k):
+    def fake_popen(args, *a, **k):
         calls.append(args)
         return None
 
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(subprocess, "run", fake_popen)
     def fake_startfile(path):  # pragma: no cover - win32 only
         calls.append(path)
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setattr("os.startfile", fake_startfile, raising=False)
     return calls
 

@@ -113,5 +113,6 @@ def preview_jpeg_bytes(
     preview = compose_preview(source, config)
 
     buffer = BytesIO()
-    preview.save(buffer, format="JPEG", quality=85, subsampling=0)
+    # P1 root cause 11: fast preview JPEG encoding without expensive optimization passes
+    preview.save(buffer, format="JPEG", quality=80, optimize=False)
     return buffer.getvalue(), orig_w, orig_h

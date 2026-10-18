@@ -3,7 +3,7 @@ import { renderHook, waitFor, act } from "@testing-library/react";
 import { usePreview } from "./usePreview";
 import { defaultState } from "./useSettings";
 import { ApiBridge } from "../api/bridge";
-import { FileInfo, PreviewState } from "../types";
+import type { FileInfo, PreviewState } from "../types";
 
 const fileA: FileInfo = { name: "a.png", path: "/a.png", ext: "PNG", is_3d: false };
 const fileB: FileInfo = { name: "b.png", path: "/b.png", ext: "PNG", is_3d: false };
@@ -32,8 +32,11 @@ describe("usePreview concurrency", () => {
     const pending: PendingRequest[] = [];
     const releasePreview = vi.fn(async () => ({ ok: true, value: true, error: null }));
     const fakeApi = {
-      render_preview: (_path: string, _state: PreviewState, requestId: number) =>
-        new Promise((resolve) => pending.push({ requestId, resolve })),
+      render_preview: (_path: string, _state: PreviewState, requestId: number) => {
+        const { promise, resolve } = Promise.withResolvers<unknown>();
+        pending.push({ requestId, resolve });
+        return promise;
+      },
       release_preview: releasePreview,
     };
     // @ts-expect-error mock window.pywebview
@@ -44,26 +47,20 @@ describe("usePreview concurrency", () => {
       { initialProps: { file: fileA, state: baseState() } }
     );
 
-    // Allow the debounce timer (40ms) to fire the first request.
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 60));
-    });
-    expect(pending).toHaveLength(1);
+    // Wait for the hook debounce timer (120ms) to trigger render_preview
+    await waitFor(() => expect(pending).toHaveLength(1));
 
-    // Supersede with a different active file before the first request resolves.
+    // Supersede with a different active file before the first request resolves
     rerender({ file: fileB, state: baseState() });
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 60));
-    });
-    expect(pending).toHaveLength(2);
+    await waitFor(() => expect(pending).toHaveLength(2));
 
-    // Newest request resolves first and wins.
+    // Newest request resolves first and wins
     await act(async () => {
       pending[1].resolve({ ok: true, value: { url: "http://x/2.jpg", width: 10, height: 10 }, error: null });
     });
     await waitFor(() => expect(result.current.previewUrl).toBe("http://x/2.jpg"));
 
-    // The stale result arrives afterwards; it must be ignored and its file released.
+    // The stale result arrives afterwards; it must be ignored and its file released
     await act(async () => {
       pending[0].resolve({ ok: true, value: { url: "http://x/1.jpg", width: 10, height: 10 }, error: null });
     });
@@ -132,9 +129,7 @@ describe("usePreview concurrency", () => {
     window.pywebview = { api: fakeApi };
 
     const { result } = renderHook(() => usePreview(undefined, baseState()));
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 60));
-    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 150));
 
     expect(result.current.previewUrl).toBeNull();
     expect(fakeApi.render_preview).not.toHaveBeenCalled();

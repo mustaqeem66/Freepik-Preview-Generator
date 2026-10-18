@@ -26,7 +26,9 @@ if TYPE_CHECKING:
 from previewgen import limits
 from previewgen.assets import calculate_export_dimensions as _calc_export_dimensions
 from previewgen.lifecycle import ActiveOperation, LifecycleManager
+from previewgen.preview_coordinator import PreviewCoordinator
 from previewgen.preview_server import PreviewFileServer
+from previewgen.probe_coordinator import ProbeCoordinator
 from previewgen.probe_process import probe_asset_isolated
 from previewgen.scanner import get_scanner
 from previewgen.settings import load_settings, save_settings
@@ -50,6 +52,10 @@ class DesktopApi:
         self.lifecycle = LifecycleManager()
         self.lifecycle.set_scanner(self.scanner)
         self.preview_server = PreviewFileServer()
+        self.preview_coordinator = PreviewCoordinator(self.preview_server)
+        self.preview_coordinator.set_dispatch_fn(self._dispatch_envelope)
+        self.probe_coordinator = ProbeCoordinator()
+        self.probe_coordinator.set_dispatch_fn(self._dispatch_envelope)
         self._preview_request_lock = threading.Lock()
         self._latest_preview_request_id = 0
         self._batch_start_lock = threading.Lock()
@@ -238,10 +244,22 @@ class DesktopApi:
                 os.startfile(target)  # type: ignore
             elif sys.platform == "darwin":
                 import subprocess
-                subprocess.run(["open", str(target)], check=False)
+                subprocess.Popen(
+                    ["open", str(target)],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
             else:
                 import subprocess
-                subprocess.run(["xdg-open", str(target)], check=False)
+                subprocess.Popen(
+                    ["xdg-open", str(target)],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
             return {"ok": True, "error": None}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
@@ -258,10 +276,55 @@ class DesktopApi:
         """Signal active folder scan to stop."""
         self.scanner.cancel_scan()
 
+    def start_preview(
+        self, file_path: str, config_dict: dict[str, Any], request_id: int | None = None
+    ) -> dict[str, Any]:
+        """
+        Asynchronous preview request (P0 fix: non-blocking control plane).
+        Validates request parameters immediately without decoding, rendering, or
+        extracting any archive member, submits the latest request to the isolated
+        worker, and returns right away. Results are dispatched via the typed event
+        envelope: preview.completed / preview.failed.
+        """
+        if not isinstance(file_path, str) or not file_path.strip():
+            return {"ok": False, "error": "Empty file path"}
+
+        op_id = f"preview_{request_id or uuid.uuid4().hex[:6]}"
+        try:
+            # Cheap synchronous validation only. Archive members are extracted on
+            # the worker thread so a large zip:// member never blocks the bridge.
+            if file_path.startswith("zip://"):
+                import urllib.parse
+                parsed = urllib.parse.urlparse(file_path)
+                zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
+                entry_name = urllib.parse.parse_qs(parsed.query).get("entry", [""])[0]
+                if not zip_path.is_file() or not entry_name:
+                    return {"ok": False, "error": "Invalid zip entry URI"}
+            else:
+                source_path = Path(file_path).resolve()
+                if not source_path.is_file():
+                    return {"ok": False, "error": f"File does not exist: {source_path.name}"}
+
+            self.preview_coordinator.submit_preview(
+                operation_id=op_id,
+                source=file_path,
+                config_dict=config_dict,
+                max_dimension=850,
+            )
+            return {"ok": True, "operationId": op_id, "status": "queued"}
+        except Exception as exc:
+            logging.warning("start_preview submission notice: %s", exc)
+            return {"ok": False, "error": str(exc)}
+
+    def cancel_preview(self, operation_id: str | None = None) -> dict[str, Any]:
+        """Cancel running and queued live preview generation."""
+        self.preview_coordinator.cancel_active(operation_id)
+        return {"ok": True}
+
     def render_preview(
         self, file_path: str, config_dict: dict[str, Any], request_id: int | None = None
     ) -> dict[str, Any]:
-        """Render live preview asynchronously with strict config parsing and active tracking."""
+        """Synchronous preview fallback retained strictly for test/CLI compatibility."""
         op_id = f"render_preview_{request_id or uuid.uuid4().hex[:6]}"
         op = ActiveOperation(operation_id=op_id, kind="preview_render")
         self.lifecycle.register_operation(op)
@@ -284,22 +347,24 @@ class DesktopApi:
                 target_file = temp_dir / Path(entry_name).name
                 with zipfile.ZipFile(zip_path, "r") as zf:
                     limits.extract_zip_member_bounded(zf, entry_name, target_file)
+                source_path = target_file
             else:
                 source_path = Path(file_path).resolve()
 
             if not source_path.is_file():
                 return {"ok": False, "value": None, "error": f"File does not exist: {source_path.name}"}
 
-            # Parse via strict PreviewConfig.from_mapping in preview mode
             cfg = PreviewConfig.from_mapping(config_dict, mode="preview")
             cfg.position = "custom"
 
             jpeg_bytes, orig_w, orig_h = preview_jpeg_bytes(source_path, cfg, max_dimension=850)
             preview_url = self.preview_server.publish_jpeg(jpeg_bytes)
+            preview_id = preview_url.split("/")[-1] if "/" in preview_url else preview_url
             return {
                 "ok": True,
                 "value": {
                     "url": preview_url,
+                    "previewId": preview_id,
                     "width": orig_w,
                     "height": orig_h,
                 },
@@ -320,8 +385,44 @@ class DesktopApi:
         return {"ok": True, "value": removed, "error": None}
 
 
+    def start_probe(self, file_path: str, request_id: int | None = None) -> dict[str, Any]:
+        """
+        Asynchronous asset probe request (P0 fix: non-blocking control plane).
+        Validates path immediately, submits to isolated probe coordinator, and returns.
+        Results are dispatched via typed event envelope: probe.completed / probe.failed.
+        """
+        if not isinstance(file_path, str) or not file_path.strip():
+            return {"ok": False, "error": "Empty file path"}
+
+        op_id = f"probe_{request_id or uuid.uuid4().hex[:6]}"
+        try:
+            if file_path.startswith("zip://"):
+                import urllib.parse
+                parsed = urllib.parse.urlparse(file_path)
+                zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
+                entry_name = urllib.parse.parse_qs(parsed.query).get("entry", [""])[0]
+                if not zip_path.is_file() or not entry_name:
+                    return {"ok": False, "error": "Invalid zip entry URI"}
+            else:
+                source_path = Path(file_path).resolve()
+                if not source_path.is_file():
+                    return {"ok": False, "error": f"File does not exist: {source_path.name}"}
+
+            self.probe_coordinator.submit_probe(
+                operation_id=op_id,
+                source=file_path,
+            )
+            return {"ok": True, "operationId": op_id, "status": "queued"}
+        except Exception as exc:
+            logging.warning("start_probe submission notice: %s", exc)
+            return {"ok": False, "error": str(exc)}
+    def cancel_probe(self, operation_id: str | None = None) -> dict[str, Any]:
+        """Cancel running and queued asset probing."""
+        self.probe_coordinator.cancel_active(operation_id)
+        return {"ok": True}
+
     def probe_asset(self, file_path: str, request_id: int | None = None) -> dict[str, Any]:
-        """Report an asset's export-size capability and native pixel dimensions with operation tracking."""
+        """Synchronous asset probe fallback retained for test/CLI compatibility."""
         op_id = f"probe_{request_id or uuid.uuid4().hex[:6]}"
         op = ActiveOperation(operation_id=op_id, kind="asset_probe")
         self.lifecycle.register_operation(op)
@@ -344,6 +445,7 @@ class DesktopApi:
                 target_file = temp_dir / Path(entry_name).name
                 with zipfile.ZipFile(zip_path, "r") as zf:
                     limits.extract_zip_member_bounded(zf, entry_name, target_file)
+                source_path = target_file
             else:
                 source_path = Path(file_path).resolve()
 
@@ -384,6 +486,7 @@ class DesktopApi:
                 target_file = temp_dir / Path(entry_name).name
                 with zipfile.ZipFile(zip_path, "r") as zf:
                     limits.extract_zip_member_bounded(zf, entry_name, target_file)
+                source_path = target_file
             else:
                 source_path = Path(file_path).resolve()
 
@@ -527,8 +630,9 @@ class DesktopApi:
 
     def cleanup(self) -> None:
         """Orderly shutdown sequence."""
+        self.preview_coordinator.shutdown()
+        self.probe_coordinator.shutdown()
         self.lifecycle.cleanup()
-
 
 # Note: Desktop shortcut management is the responsibility of system installers
 # Runtime auto-shortcut creation removed per security and packaging best practices.

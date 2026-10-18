@@ -1,10 +1,14 @@
-import { BatchSummary, PyWebViewApi, ScanFolderResult } from "../types";
+import type { AssetProbe, BatchSummary, PyWebViewApi, ScanFolderResult } from "../types";
 
 export type BridgeEventMap = {
   "scan.progress": { scanId: string; count: number };
   "scan.finished": { scanId: string; result: ScanFolderResult };
   "batch.progress": { current: number; total: number; message: string; seq?: number };
   "batch.finished": BatchSummary;
+  "preview.completed": { operationId: string; url: string; previewId: string; width: number; height: number };
+  "preview.failed": { operationId: string; error: string; code?: string };
+  "probe.completed": { operationId: string; probe: AssetProbe };
+  "probe.failed": { operationId: string; error: string; code?: string };
 };
 
 export type BridgeEnvelope<K extends BridgeEventName = BridgeEventName> = {

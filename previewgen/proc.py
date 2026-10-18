@@ -21,6 +21,7 @@ import os
 import subprocess
 import sys
 import time
+from typing import Any
 
 _IS_WINDOWS = sys.platform == "win32"
 
@@ -246,6 +247,27 @@ def terminate_process_tree(pid: int, kill_timeout: float = 5.0) -> set[int]:
     if survivors:
         logging.warning("Process tree %s left surviving descendants: %s", pid, sorted(survivors))
     return survivors
+
+
+def reap_process_tree(process: Any, job: Any = None, kill_timeout: float = 5.0) -> None:
+    """Terminate ``process`` and its descendants, then close its job handle.
+
+    Lock-free by design: callers invoke this off the control-plane (pywebview
+    bridge) thread so the bounded kill/join never stalls a UI-facing API call.
+    Passing ``None`` is safe (no-op).
+    """
+    if process is None:
+        if job is not None and hasattr(job, "close"):
+            job.close()
+        return
+    if process.is_alive():
+        pid = process.pid
+        if pid is not None and pid > 0:
+            terminate_process_tree(pid, kill_timeout=kill_timeout)
+        with contextlib.suppress(Exception):
+            process.join(timeout=kill_timeout)
+    if job is not None and hasattr(job, "close"):
+        job.close()
 
 
 def apply_memory_limit(limit_bytes: int) -> bool:

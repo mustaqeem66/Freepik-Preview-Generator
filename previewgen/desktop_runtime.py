@@ -150,12 +150,9 @@ def start_desktop_app() -> int:
                 # Terminate smoke test process so host subshell is never left waiting on Cocoa/Win32 event loops
                 threading.Timer(1.0, lambda: os._exit(0)).start()
             threading.Thread(target=_auto_close_smoke, daemon=True).start()
-        try:
-            webview.start(**start_kwargs)
-        except Exception as gui_exc:
-            # Gracefully fall back to default platform GUI if edgechromium or cocoa fails
-            logging.warning("Platform GUI '%s' startup encountered notice: %s. Retrying default...", gui_type, gui_exc)
-            webview.start(debug=False)
+        # P1 root cause 8: Do not attempt to re-start pywebview in the same process
+        # after a failure. A partial initialization leaves native state that causes hangs.
+        webview.start(**start_kwargs)
     except Exception as exc:
         show_fatal_error("PreviewGen - GUI Failure", f"Failed to initialize webview window: {exc}")
         raise
