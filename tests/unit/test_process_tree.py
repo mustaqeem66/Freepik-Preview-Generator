@@ -104,7 +104,7 @@ def test_apply_memory_limit_noop_for_non_positive():
     assert proc.apply_memory_limit(0) is False
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="RLIMIT_AS is POSIX-only")
+@pytest.mark.skipif(sys.platform == "win32" or sys.platform == "darwin", reason="RLIMIT_AS is Linux-only")
 def test_apply_memory_limit_enforced_in_subprocess():
     script = (
         "import sys\n"

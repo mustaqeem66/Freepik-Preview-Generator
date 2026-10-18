@@ -139,7 +139,20 @@ def is_alive(pid: int) -> bool:
             rparen = stat_contents.rfind(")")
             if rparen >= 0 and stat_contents[rparen + 2 : rparen + 3] == "Z":
                 return False
+    elif sys.platform == "darwin":
+        try:
+            res = subprocess.run(["ps", "-o", "state=", "-p", str(pid)], capture_output=True, text=True, timeout=1)
+            state = res.stdout.strip()
+            if not state or state.startswith("Z"):
+                return False
+        except Exception:
+            pass
     try:
+        # Reap child if it was spawned by this process
+        with contextlib.suppress(ChildProcessError, OSError):
+            waited_pid, _ = os.waitpid(pid, os.WNOHANG)
+            if waited_pid == pid:
+                return False
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
@@ -244,7 +257,8 @@ def apply_memory_limit(limit_bytes: int) -> bool:
     """
     if limit_bytes <= 0:
         return False
-    if _IS_WINDOWS:
+    if _IS_WINDOWS or sys.platform == "darwin":
+        # macOS Darwin kernels do not enforce RLIMIT_AS on memory allocations
         return False
     try:
         import resource
