@@ -1,23 +1,26 @@
 """
 PreviewGen Live Preview Isolation and Coordination
 
-Executes interactive live preview rendering in an isolated, supervised child
-process with latest-wins queue semantics and process tree termination on timeout
-or cancellation.
+Executes interactive live preview rendering in a single long-lived, supervised
+child process ("worker slot") with latest-wins queue semantics and process tree
+termination on timeout or cancellation.
 
 Prevents GUI thread hangs:
-- Returns an operationId immediately to pywebview.
+- Returns an operationId immediately to pywebview (control plane).
 - Dispatches preview.completed or preview.failed via the typed event envelope.
 - Drops superseded/stale queued requests instantly.
-- Signals termination to active child workers when a newer request arrives.
+- Keeps one warm worker between jobs so interactive changes do not pay
+  process-startup cost on every request; the worker is reaped only on crash,
+  timeout, supersede/cancel while busy, or shutdown.
+
+Queue policy: at most one active job and one pending request; the newest request
+replaces the pending one. There is never an unbounded backlog.
 """
 from __future__ import annotations
 
 import contextlib
 import logging
-import multiprocessing as mp
 import os
-import queue as queue_module
 import sys
 import tempfile
 import threading
@@ -29,8 +32,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from previewgen import config as previewgen_config
-from previewgen import proc
 from previewgen.tempfiles import safe_rmtree
+from previewgen.worker_slot import WorkerSlot
 
 if TYPE_CHECKING:
     from previewgen.preview_server import PreviewFileServer
@@ -39,72 +42,82 @@ DEFAULT_PREVIEW_TIMEOUT_SECONDS = 10.0
 _KILL_TIMEOUT_SECONDS = 3.0
 
 
-def _preview_worker(
-    source_spec: str,
-    config_dict: dict[str, Any],
-    max_dimension: int,
-    result_queue: Any,
-) -> None:  # pragma: no cover - runs in child process
-    """Child worker process that extracts archives, decodes, composes, and encodes the preview JPEG."""
+def _preview_worker(job_queue: Any, result_queue: Any) -> None:  # pragma: no cover - child process
+    """Long-lived child worker: extract archives, decode, compose, encode JPEG.
+
+    Consumes ``(job_id, payload)`` tuples until it is killed or sent ``None``.
+    The process stays warm between jobs; the parent reaps it when a job is
+    superseded, times out, or crashes.
+    """
     if sys.platform != "win32":
         with contextlib.suppress(Exception):
             os.setsid()
 
-    proc.apply_memory_limit(previewgen_config.MAX_RENDERER_MEMORY_BYTES)
-    extracted_temp: Path | None = None
+    proc_limit = previewgen_config.MAX_RENDERER_MEMORY_BYTES
+    from previewgen import proc as proc_module
 
-    try:
-        from previewgen.config import PreviewConfig
-        from previewgen.renderers.pipeline import preview_jpeg_bytes
+    proc_module.apply_memory_limit(proc_limit)
 
-        if source_spec.startswith("zip://"):
-            import urllib.parse
-            import zipfile
+    from previewgen.config import PreviewConfig
+    from previewgen.renderers.pipeline import preview_jpeg_bytes
 
+    while True:
+        job = job_queue.get()
+        if job is None:
+            return
+        job_id, payload = job
+        extracted_temp: Path | None = None
+        try:
             from previewgen import limits
 
-            parsed = urllib.parse.urlparse(source_spec)
-            zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
-            entry_name = urllib.parse.parse_qs(parsed.query).get("entry", [""])[0]
-            if not zip_path.is_file() or not entry_name:
-                raise ValueError("Invalid zip entry URI")
+            source_spec = str(payload["source"])
+            if source_spec.startswith("zip://"):
+                parsed = urllib.parse.urlparse(source_spec)
+                zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
+                entry_name = urllib.parse.parse_qs(parsed.query).get("entry", [""])[0]
+                if not zip_path.is_file() or not entry_name:
+                    raise ValueError("Invalid zip entry URI")
 
-            extracted_temp = Path(tempfile.mkdtemp(prefix="previewgen_worker_zip_"))
-            target_file = extracted_temp / Path(entry_name).name
-            with zipfile.ZipFile(zip_path, "r") as zf:
-                limits.extract_zip_member_bounded(zf, entry_name, target_file)
-            source_path = target_file
-        else:
-            source_path = Path(source_spec)
+                extracted_temp = Path(tempfile.mkdtemp(prefix="previewgen_worker_zip_"))
+                target_file = extracted_temp / Path(entry_name).name
+                with zipfile.ZipFile(zip_path, "r") as zf:
+                    limits.extract_zip_member_bounded(zf, entry_name, target_file)
+                source_path = target_file
+            else:
+                source_path = Path(source_spec)
 
-        cfg = PreviewConfig.from_mapping(config_dict, mode="preview")
-        cfg.position = "custom"
+            cfg = PreviewConfig.from_mapping(payload["config_dict"], mode="preview")
+            cfg.position = "custom"
 
-        jpeg_bytes, orig_w, orig_h = preview_jpeg_bytes(source_path, cfg, max_dimension=max_dimension)
-        result_queue.put({
-            "status": "success",
-            "jpeg_bytes": jpeg_bytes,
-            "width": orig_w,
-            "height": orig_h,
-        })
-    except Exception as exc:
-        with contextlib.suppress(Exception):
+            jpeg_bytes, orig_w, orig_h = preview_jpeg_bytes(
+                source_path, cfg, max_dimension=payload["max_dimension"]
+            )
             result_queue.put({
-                "status": "error",
-                "error": str(exc),
-                "error_type": type(exc).__name__,
+                "job_id": job_id,
+                "status": "success",
+                "jpeg_bytes": jpeg_bytes,
+                "width": orig_w,
+                "height": orig_h,
             })
-    finally:
-        if extracted_temp and extracted_temp.exists():
-            safe_rmtree(extracted_temp, "child worker zip temp")
+        except Exception as exc:
+            with contextlib.suppress(Exception):
+                result_queue.put({
+                    "job_id": job_id,
+                    "status": "error",
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                })
+        finally:
+            if extracted_temp and extracted_temp.exists():
+                safe_rmtree(extracted_temp, "child worker zip temp")
+
 
 def _materialize_source(source: str | Path) -> tuple[Path, Path | None]:
     """Resolve a plain path or ``zip://`` URI to a concrete file to render.
 
-    This runs on the coordinator worker thread (never the pywebview bridge
-    thread), so extracting a large archive member cannot stall the GUI. Returns
-    the resolved source path and, when an extraction occurred, the temp root the
-    caller must remove.
+    Returns the resolved source path and, when an extraction occurred, the temp
+    root the caller must remove. (The live worker performs its own extraction;
+    this helper is retained for direct callers/tests.)
     """
     text = str(source)
     if not text.startswith("zip://"):
@@ -132,15 +145,19 @@ def _materialize_source(source: str | Path) -> tuple[Path, Path | None]:
 class PreviewCoordinator:
     """
     Supervises live preview requests with latest-wins semantics.
-    Ensures at most one active preview process and one pending latest request.
+    Ensures at most one active preview job and one pending latest request.
     """
 
     def __init__(self, preview_server: PreviewFileServer) -> None:
         self.preview_server = preview_server
         self._lock = threading.Lock()
         self._worker_thread: threading.Thread | None = None
-        self._active_process: mp.Process | None = None
-        self._active_job: Any | None = None
+        self._slot = WorkerSlot(
+            _preview_worker,
+            name="preview",
+            memory_limit_bytes=previewgen_config.MAX_RENDERER_MEMORY_BYTES,
+            kill_timeout=_KILL_TIMEOUT_SECONDS,
+        )
         self._active_op_id: str | None = None
         self._pending_task: dict[str, Any] | None = None
         self._cancel_requested = False
@@ -157,14 +174,14 @@ class PreviewCoordinator:
         config_dict: dict[str, Any],
         max_dimension: int = 850,
     ) -> None:
-        """Submit a preview request. Cancels any stale active render and queues newest.
+        """Submit a preview request. Queues the newest and returns immediately.
 
         ``source`` may be a filesystem path or a ``zip://`` URI; archive members
-        are extracted on the worker thread, never on the pywebview bridge thread.
+        are extracted in the child worker, never on the pywebview bridge thread.
 
-        This is a control-plane call: it only records the newest request and
-        returns. The supervisor thread observes the new pending request and reaps
-        any running worker off-thread, so this never blocks the bridge.
+        Control-plane call: it only records the newest request and returns. The
+        supervisor thread observes the new pending request and reaps any running
+        worker off-thread, so this never blocks the bridge.
         """
         with self._lock:
             # Latest-wins: replace the single pending slot. There is never more
@@ -194,19 +211,6 @@ class PreviewCoordinator:
                 # the render process is gone.
                 self._cancel_requested = True
 
-    def _take_active_worker(self) -> tuple[mp.Process | None, Any | None]:
-        with self._lock:
-            proc_ref = self._active_process
-            job_ref = self._active_job
-            self._active_process = None
-            self._active_job = None
-        return proc_ref, job_ref
-
-    def _terminate_active_worker(self) -> None:
-        """Reap the active worker process tree. Never call while holding the lock."""
-        proc_ref, job_ref = self._take_active_worker()
-        proc.reap_process_tree(proc_ref, job_ref, kill_timeout=_KILL_TIMEOUT_SECONDS)
-
     def _run_loop(self) -> None:
         while self._running:
             with self._lock:
@@ -220,13 +224,11 @@ class PreviewCoordinator:
                 self._active_op_id = task["operation_id"]
 
             op_id = task["operation_id"]
-            source = task["source"]
-            config_dict = task["config_dict"]
-            max_dimension = task["max_dimension"]
-            temp_root: Path | None = None
 
             try:
-                res = self._render_isolated(op_id, source, config_dict, max_dimension)
+                res = self._render_isolated(
+                    op_id, task["source"], task["config_dict"], task["max_dimension"]
+                )
                 # Check if this task was superseded while running
                 with self._lock:
                     superseded = (
@@ -278,9 +280,6 @@ class PreviewCoordinator:
                         },
                         op_id,
                     )
-            finally:
-                if temp_root is not None and temp_root.exists():
-                    safe_rmtree(temp_root, "on-demand preview temp")
 
     def _render_isolated(
         self,
@@ -289,25 +288,17 @@ class PreviewCoordinator:
         config_dict: dict[str, Any],
         max_dimension: int,
     ) -> dict[str, Any]:
-        result_queue: Any = mp.Queue()
-        p = mp.Process(
-            target=_preview_worker,
-            args=(str(source), config_dict, max_dimension, result_queue),
-            daemon=True,
-        )
-        p.start()
-        job_ref: Any = None
-        if sys.platform == "win32" and p.pid is not None:
-            job_ref = proc.WindowsJob(previewgen_config.MAX_RENDERER_MEMORY_BYTES)
-            if job_ref.active:
-                job_ref.assign(p.pid)
-        with self._lock:
-            self._active_process = p
-            self._active_job = job_ref
+        self._slot.ensure_started()
+        job_id = self._slot.send({
+            "source": str(source),
+            "config_dict": config_dict,
+            "max_dimension": max_dimension,
+        })
 
+        display_name = Path(str(source)).name or str(source)
         start_t = time.time()
         timeout = DEFAULT_PREVIEW_TIMEOUT_SECONDS
-        while p.is_alive():
+        while True:
             with self._lock:
                 superseded = (
                     self._active_op_id != op_id
@@ -316,37 +307,33 @@ class PreviewCoordinator:
                 )
             if superseded:
                 # Cancelled or superseded: reap off-thread (never under the lock).
-                self._terminate_active_worker()
+                self._slot.kill()
                 return {"status": "error", "error": "superseded", "error_type": "CANCELLED"}
 
             if (time.time() - start_t) > timeout:
-                src_name = Path(str(source)).name
-                logging.warning("Live preview timeout for %s after %.1fs", src_name, timeout)
-                self._terminate_active_worker()
+                logging.warning("Live preview timeout for %s after %.1fs", display_name, timeout)
+                self._slot.kill()
                 return {"status": "error", "error": f"Preview timed out ({timeout}s)", "error_type": "TIMEOUT"}
-            time.sleep(0.04)
 
-        try:
-            res = result_queue.get(timeout=1.0)
-            return res
-        except queue_module.Empty:
-            exit_code = p.exitcode
-            return {
-                "status": "error",
-                "error": f"Worker exited with code {exit_code}",
-                "error_type": "PROCESS_EXIT",
-            }
-        finally:
-            with contextlib.suppress(Exception):
-                result_queue.close()
-                result_queue.join_thread()
+            res = self._slot.poll(job_id, timeout=0.04)
+            if res is not None:
+                return res
+
+            if not self._slot.alive():
+                exit_code = self._slot.exitcode
+                self._slot.kill()
+                return {
+                    "status": "error",
+                    "error": f"Preview worker exited with code {exit_code}",
+                    "error_type": "PROCESS_EXIT",
+                }
 
     def shutdown(self) -> None:
         with self._lock:
             self._running = False
             self._pending_task = None
             self._cancel_requested = True
-        self._terminate_active_worker()
+        self._slot.kill()
         worker = self._worker_thread
         if worker is not None and worker.is_alive():
             with contextlib.suppress(Exception):

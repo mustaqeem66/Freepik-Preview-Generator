@@ -10,7 +10,6 @@ import itertools
 import json
 import logging
 import os
-import shutil
 import sys
 import tempfile
 import threading
@@ -32,6 +31,7 @@ from previewgen.probe_coordinator import ProbeCoordinator
 from previewgen.probe_process import probe_asset_isolated
 from previewgen.scanner import get_scanner
 from previewgen.settings import load_settings, save_settings
+from previewgen.tempfiles import safe_rmtree
 from processor import (
     PreviewConfig,
     preview_jpeg_bytes,
@@ -372,11 +372,13 @@ class DesktopApi:
             }
         except Exception as exc:
             logging.warning("render_preview failure: %s", exc)
-            return {"ok": False, "value": None, "error": str(exc)}
+            from previewgen.errors import classify_exception
+            code, msg = classify_exception(exc)
+            return {"ok": False, "value": None, "error": msg, "code": code}
         finally:
             self.lifecycle.unregister_operation(op_id)
             if temp_dir and temp_dir.exists():
-                shutil.rmtree(temp_dir, ignore_errors=True)
+                safe_rmtree(temp_dir, "on-demand preview temp", operation_id=op_id)
     def release_preview(self, handle: str) -> dict[str, Any]:
         """Release a preview handle and reclaim storage."""
         if not isinstance(handle, str) or not handle.strip():
@@ -458,11 +460,13 @@ class DesktopApi:
             return {"ok": True, "value": probe_data, "error": None}
         except Exception as exc:
             logging.warning("probe_asset failure: %s", exc)
-            return {"ok": False, "value": None, "error": str(exc)}
+            from previewgen.errors import classify_exception
+            code, msg = classify_exception(exc)
+            return {"ok": False, "value": None, "error": msg, "code": code}
         finally:
             self.lifecycle.unregister_operation(op_id)
             if temp_dir and temp_dir.exists():
-                shutil.rmtree(temp_dir, ignore_errors=True)
+                safe_rmtree(temp_dir, "on-demand probe temp", operation_id=op_id)
 
     def calculate_export_dimensions(
         self, file_path: str, requested_width: int = 0, requested_height: int = 0
@@ -499,10 +503,12 @@ class DesktopApi:
             return {"ok": True, "value": dims, "error": None}
         except Exception as exc:
             logging.warning("calculate_export_dimensions failure: %s", exc)
-            return {"ok": False, "value": None, "error": str(exc)}
+            from previewgen.errors import classify_exception
+            code, msg = classify_exception(exc)
+            return {"ok": False, "value": None, "error": msg, "code": code}
         finally:
             if temp_dir and temp_dir.exists():
-                shutil.rmtree(temp_dir, ignore_errors=True)
+                safe_rmtree(temp_dir, "on-demand dimension temp")
     def export_preview(self, file_path: str, config_dict: dict[str, Any]) -> dict[str, Any]:
         """Render a single asset to a JPG at the configured export size."""
         temp_dir: Path | None = None
@@ -557,10 +563,12 @@ class DesktopApi:
             }
         except Exception as exc:
             logging.warning("export_preview failure: %s", exc)
-            return {"ok": False, "value": None, "error": str(exc)}
+            from previewgen.errors import classify_exception
+            code, msg = classify_exception(exc)
+            return {"ok": False, "value": None, "error": msg, "code": code}
         finally:
             if temp_dir and temp_dir.exists():
-                shutil.rmtree(temp_dir, ignore_errors=True)
+                safe_rmtree(temp_dir, "on-demand export temp")
 
     def start_batch(self, input_folder: str, output_folder: str, config_dict: dict[str, Any]) -> None:
         """Start asynchronous batch processing on a dedicated worker thread."""

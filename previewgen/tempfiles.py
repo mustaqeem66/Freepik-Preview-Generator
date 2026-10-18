@@ -90,18 +90,33 @@ def _safe_user() -> str:
         return "unknown"
 
 
-def safe_rmtree(path: Path | str, description: str = "temp directory") -> bool:
-    """Remove a directory tree, logging (never silently swallowing) failures."""
+def safe_rmtree(
+    path: Path | str,
+    description: str = "temp directory",
+    operation_id: str | None = None,
+) -> bool:
+    """Remove a directory tree with retries and structured failure diagnostics."""
     p = Path(path)
-    try:
-        if not p.exists():
+    op_tag = f" [op={operation_id}]" if operation_id else ""
+    for attempt in range(3):
+        try:
+            if not p.exists():
+                return True
+            shutil.rmtree(p)
             return True
-        shutil.rmtree(p)
-        return True
-    except Exception as exc:
-        logging.warning("Cleanup failure for %s %s: %s", description, p, exc)
-        return False
-
+        except Exception as exc:
+            if attempt < 2:
+                time.sleep(0.05 * (attempt + 1))
+            else:
+                logging.warning(
+                    "Cleanup failure for %s %s%s: %s (error=%s, retry_exhausted=True)",
+                    description,
+                    p,
+                    op_tag,
+                    exc,
+                    type(exc).__name__,
+                )
+    return False
 
 def cleanup_stale_temp_dirs(
     base: Path | None = None,
