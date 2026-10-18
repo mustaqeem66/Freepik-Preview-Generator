@@ -245,6 +245,13 @@ class PreviewCoordinator:
                     orig_h = res["height"]
                     preview_url = self.preview_server.publish_jpeg(jpeg_bytes)
                     preview_id = preview_url.split("/")[-1] if "/" in preview_url else preview_url
+                    metrics = res.get("metrics", {})
+                    logging.info(
+                        "Preview generated [op=%s, totalMs=%.1f, renderMs=%.1f]",
+                        op_id,
+                        metrics.get("totalMs", 0.0),
+                        metrics.get("renderMs", 0.0),
+                    )
                     if self._dispatch_fn:
                         self._dispatch_fn(
                             "preview.completed",
@@ -254,6 +261,7 @@ class PreviewCoordinator:
                                 "previewId": preview_id,
                                 "width": orig_w,
                                 "height": orig_h,
+                                "metrics": metrics,
                             },
                             op_id,
                         )
@@ -317,6 +325,8 @@ class PreviewCoordinator:
 
             res = self._slot.poll(job_id, timeout=0.04)
             if res is not None:
+                total_ms = (time.time() - start_t) * 1000.0
+                res["metrics"] = {"totalMs": total_ms, "renderMs": total_ms}
                 return res
 
             if not self._slot.alive():

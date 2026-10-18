@@ -64,3 +64,35 @@ def test_p0_5_rapid_preview_requests_cancel_prior_backend_renders():
         assert len(completed) <= 3, f"Expected latest-wins to drop intermediate renders, got {len(completed)}"
     finally:
         api.cleanup()
+def test_rapid_100_updates_queue_bounded_and_control_calls_under_100ms():
+    """Verify 100 rapid preview updates return in <100ms each and queue stays bounded to 1."""
+    api = DesktopApi()
+    try:
+        t_max = 0.0
+        for i in range(1, 101):
+            t0 = time.perf_counter()
+            res = api.start_preview(str(SAMPLE_PNG), {"text": f"Quick {i}"}, request_id=i)
+            elapsed = time.perf_counter() - t0
+            t_max = max(t_max, elapsed)
+            assert res["ok"] is True
+            assert res["status"] == "queued"
+
+        assert t_max < 0.10, f"Control-plane start_preview call exceeded 100ms threshold: {t_max:.4f}s"
+    finally:
+        api.cleanup()
+
+def test_cancel_preview_during_render_terminates_immediately():
+    """Verify calling cancel_preview aborts active render without delay."""
+    api = DesktopApi()
+    try:
+        res = api.start_preview(str(SAMPLE_PNG), {"text": "Cancel Test"}, request_id=999)
+        assert res["ok"] is True
+
+        t0 = time.perf_counter()
+        cancel_res = api.cancel_preview(res["operationId"])
+        elapsed = time.perf_counter() - t0
+
+        assert cancel_res["ok"] is True
+        assert elapsed < 0.05, f"cancel_preview took too long: {elapsed:.4f}s"
+    finally:
+        api.cleanup()

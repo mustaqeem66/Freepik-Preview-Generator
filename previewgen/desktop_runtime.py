@@ -14,6 +14,7 @@ import threading
 
 # THIS IS THE ONLY MODULE THAT IMPORTS WEBVIEW AT MODULE SCOPE
 import time
+import traceback
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -134,11 +135,25 @@ def start_desktop_app() -> int:
     with contextlib.suppress(Exception):
         window.events.navigating += on_navigating
 
+    # Phase 4 Watchdog: monitor bridge responsiveness and log thread stacks if frozen
+    watchdog_stop = threading.Event()
+
+    def _watchdog_loop() -> None:
+        while not watchdog_stop.wait(5.0):
+            last_hb = getattr(api, "_last_heartbeat_time", 0.0)
+            if last_hb > 0 and (time.time() - last_hb) > 15.0:
+                logging.error(
+                    "WATCHDOG: Bridge responsiveness stalled (>15s without activity). Thread stack dump:"
+                )
+                for thread_id, frame in sys._current_frames().items():
+                    logging.error("Thread %s:\n%s", thread_id, "".join(traceback.format_stack(frame)))
+
+    threading.Thread(target=_watchdog_loop, name="previewgen-watchdog", daemon=True).start()
+
     try:
         start_kwargs: dict[str, Any] = {"debug": False}
         if gui_type:
             start_kwargs["gui"] = gui_type
-        if is_smoke:
             def _auto_close_smoke() -> None:
                 marker = os.environ.get("PREVIEWGEN_READY_MARKER")
                 for _ in range(30):
@@ -157,10 +172,8 @@ def start_desktop_app() -> int:
         show_fatal_error("PreviewGen - GUI Failure", f"Failed to initialize webview window: {exc}")
         raise
     finally:
+        watchdog_stop.set()
         api.cleanup()
-
-    return 0
-
 
 def main() -> int:
     """
