@@ -56,6 +56,29 @@ try {
         $Nested = Get-ChildItem -Path $InstallDir -Filter "$AppName.exe" -Recurse | Select-Object -First 1
         if ($Nested) { $ExePath = $Nested.FullName }
     }
+    # Create Windows Desktop and Start Menu Shortcuts
+    try {
+        $WshShell = New-Object -ComObject WScript.Shell
+        $DesktopPath = [Environment]::GetFolderPath("Desktop")
+        $ShortcutPath = Join-Path $DesktopPath "$AppName.lnk"
+        $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
+        $Shortcut.TargetPath = $ExePath
+        $Shortcut.WorkingDirectory = $InstallDir
+        $Shortcut.Description = "PreviewGen Studio"
+        $Shortcut.Save()
+        Write-Host "Created Desktop shortcut: $ShortcutPath"
+
+        $ProgramsPath = [Environment]::GetFolderPath("Programs")
+        $StartMenuPath = Join-Path $ProgramsPath "$AppName.lnk"
+        $StartShortcut = $WshShell.CreateShortcut($StartMenuPath)
+        $StartShortcut.TargetPath = $ExePath
+        $StartShortcut.WorkingDirectory = $InstallDir
+        $StartShortcut.Description = "PreviewGen Studio"
+        $StartShortcut.Save()
+        Write-Host "Created Start Menu shortcut: $StartMenuPath"
+    } catch {
+        Write-Warning "Could not create desktop shortcut: $_"
+    }
 
     Write-Host "PreviewGen installed to $InstallDir"
 } finally {

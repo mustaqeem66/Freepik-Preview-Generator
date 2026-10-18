@@ -183,7 +183,10 @@ class DesktopApi:
             return ""
         try:
             res = self.window.create_file_dialog(int(__import__('webview').FOLDER_DIALOG))
-            return res[0] if res else ""
+            path = res[0] if res else ""
+            if path:
+                self.add_authorized_folder(path)
+            return path
         except Exception as exc:
             logging.warning("Folder dialog failed: %s", exc)
             return ""
@@ -194,11 +197,13 @@ class DesktopApi:
             return ""
         try:
             res = self.window.create_file_dialog(int(__import__('webview').FOLDER_DIALOG))
-            return res[0] if res else ""
+            path = res[0] if res else ""
+            if path:
+                self.add_authorized_folder(path)
+            return path
         except Exception as exc:
             logging.warning("Folder dialog failed: %s", exc)
             return ""
-
     def browse_logo(self) -> str:
         """Open native file picker for logo."""
         if not self.window:
@@ -270,6 +275,8 @@ class DesktopApi:
 
     def start_scan(self, folder_path: str) -> dict[str, Any]:
         """Start background asynchronous folder scan."""
+        if folder_path and Path(folder_path).is_dir():
+            self.add_authorized_folder(folder_path)
         return self.scanner.start_scan(folder_path)
 
     def cancel_scan(self) -> None:
@@ -572,6 +579,10 @@ class DesktopApi:
 
     def start_batch(self, input_folder: str, output_folder: str, config_dict: dict[str, Any]) -> None:
         """Start asynchronous batch processing on a dedicated worker thread."""
+        if input_folder and Path(input_folder).is_dir():
+            self.add_authorized_folder(input_folder)
+        if output_folder and Path(output_folder).is_dir():
+            self.add_authorized_folder(output_folder)
         if not self.window:
             return
 

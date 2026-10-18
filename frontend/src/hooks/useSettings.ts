@@ -80,7 +80,7 @@ export function useSettings(onSaveError?: (err: string) => void, enabled = true)
     const currentRev = ++revisionRef.current;
     const timer = setTimeout(async () => {
       const api = await ApiBridge.getApi(1000);
-      if (api && currentRev === revisionRef.current) {
+      if (api && typeof api.save_settings === "function" && currentRev === revisionRef.current) {
         try {
           const res = await api.save_settings({ ...state, revision: currentRev });
           if (currentRev === revisionRef.current && res && "ok" in res && res.ok === false) {
