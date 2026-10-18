@@ -376,6 +376,8 @@ class WindowsJob:  # pragma: no cover - Windows only
         with contextlib.suppress(Exception):
             import ctypes
 
+            # Explicitly terminate the entire job object tree before closing the handle
+            ctypes.__dict__["windll"].kernel32.TerminateJobObject(ctypes.c_void_p(self._handle), 1)
             ctypes.__dict__["windll"].kernel32.CloseHandle(ctypes.c_void_p(self._handle))
         self._handle = None
 
