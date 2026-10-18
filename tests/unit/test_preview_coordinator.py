@@ -11,10 +11,10 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from previewgen import limits
 from previewgen.api import DesktopApi
 from previewgen.preview_coordinator import PreviewCoordinator, _materialize_source
 from previewgen.worker_slot import WorkerSlot
-from previewgen import limits
 
 pytestmark = pytest.mark.core
 
