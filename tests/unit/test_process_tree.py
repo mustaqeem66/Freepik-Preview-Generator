@@ -174,6 +174,8 @@ def test_windows_job_object_kills_descendants_on_close():
         try:
             assert job.active
             assert job.assign(parent.pid)
+            with contextlib.suppress(Exception):
+                job.assign(grandchild)
             # Closing the job handle must run the entire tree down.
             job.close()
             deadline = time.time() + 5
