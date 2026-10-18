@@ -1,0 +1,25 @@
+# Top-level runtime dependencies (intentionally loose bounds).
+#
+# Reproducible, hash-pinned installs use the generated lock file instead:
+#
+#   pip install --require-hashes -r requirements-lock.txt          # runtime
+#   pip install --require-hashes -r requirements-dev-lock.txt      # runtime + build tooling
+#
+# Regenerate the locks (universal: cross-platform markers + SHA-256 hashes) with:
+#
+#   uv pip compile --universal --generate-hashes --python-version 3.12 \
+#       --output-file requirements-lock.txt requirements.in
+#   uv pip compile --universal --generate-hashes --python-version 3.12 \
+#       --output-file requirements-dev-lock.txt requirements-dev.in
+resvg-py>=0.5.0
+matplotlib>=3.7.0
+Pillow>=10.0.0
+psd-tools>=1.9.0
+trimesh>=4.0.0
+numpy>=1.24.0
+pywebview>=5.0.0
+ezdxf>=1.1.0
+olefile>=0.46
+cascadio>=0.1.1
+pypdfium2>=4.30
+fonttools[woff]>=4.0

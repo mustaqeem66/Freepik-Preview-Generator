@@ -1,13 +1,16 @@
-from pathlib import Path
 import sys
 import tempfile
+from pathlib import Path
+
 import pytest
 from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from processor import PreviewConfig, process_folder, generate_file
+from processor import PreviewConfig, generate_file, process_folder
+
+pytestmark = pytest.mark.core
 
 
 def test_preview_config_from_mapping_strictness():
@@ -109,16 +112,31 @@ def test_batch_collision_resolution_and_overwrite_policies():
         assert (out_dir / "sub1_asset_copy1.jpg").is_file()
         assert (out_dir / "sub2_asset_copy1.jpg").is_file()
         # Verify consistent batch accounting: processed = success + failed + skipped
-        assert summary_rename["processed"] == summary_rename["success"] + summary_rename["failed"] + summary_rename["skipped"]
+        assert (
+            summary_rename["processed"]
+            == summary_rename["success"] + summary_rename["failed"] + summary_rename["skipped"]
+        )
         assert summary_rename["remaining"] == 0
-        # Verify durable reports generated in both JSON and CSV format
-        assert (out_dir / "previewgen-report.json").is_file()
-        assert (out_dir / "previewgen-report.csv").is_file()
-        report_content = (out_dir / "previewgen-report.json").read_text(encoding="utf-8")
+        # Verify durable reports are versioned by batch ID and both formats exist
+        assert summary_rename["reportStatus"] == "written"
+        json_report = out_dir / summary_rename["reportJson"]
+        csv_report = out_dir / summary_rename["reportCsv"]
+        assert json_report.is_file()
+        assert csv_report.is_file()
+        report_content = json_report.read_text(encoding="utf-8")
         assert '"batchId":' in report_content
         assert '"files":' in report_content
-        csv_content = (out_dir / "previewgen-report.csv").read_text(encoding="utf-8")
-        assert "source,output,status,duration_sec,error" in csv_content
+        csv_content = csv_report.read_text(encoding="utf-8")
+        assert "source,output,status,duration_sec,error_code,error" in csv_content
+
+        # A latest pointer is published only after both reports are written
+        latest = out_dir / "previewgen-report-latest.json"
+        assert latest.is_file()
+        import json as _json
+        latest_payload = _json.loads(latest.read_text(encoding="utf-8"))
+        assert latest_payload["batchId"] == summary_rename["reportId"]
+        assert latest_payload["json"] == summary_rename["reportJson"]
+        assert latest_payload["csv"] == summary_rename["reportCsv"]
 
 
 def test_output_directory_locking_prevents_concurrent_runs():
@@ -163,14 +181,14 @@ def test_global_resource_limit_oversized_file():
         huge_file.write_bytes(b"0" * 1024)
 
         # Patch MAX_SOURCE_FILE_BYTES for testing
-        import processor
-        orig = processor.MAX_SOURCE_FILE_BYTES
-        setattr(processor, "MAX_SOURCE_FILE_BYTES", 512)
+        import previewgen.config
+        orig = previewgen.config.MAX_SOURCE_FILE_BYTES
+        previewgen.config.MAX_SOURCE_FILE_BYTES = 512
         try:
             with pytest.raises(ValueError, match="exceeds maximum size limit"):
                 load_source_image(huge_file)
         finally:
-            setattr(processor, "MAX_SOURCE_FILE_BYTES", orig)
+            previewgen.config.MAX_SOURCE_FILE_BYTES = orig
 
 def test_cancellation_checkpoints_during_file_generation():
     """Verify cancellation checkpoint interrupts generate_file immediately."""

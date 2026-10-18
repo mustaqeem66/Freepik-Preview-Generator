@@ -1,14 +1,16 @@
-from pathlib import Path
 import sys
 import tempfile
-import time
+from pathlib import Path
+
+import pytest
 from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from previewgen.api import DesktopApi
-from previewgen.scanner import ScanContext
+
+pytestmark = pytest.mark.core
 
 
 def test_desktop_api_overlapping_scan_race_prevention():

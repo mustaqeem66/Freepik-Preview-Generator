@@ -1,5 +1,5 @@
-import React from "react";
-import { FolderOpen } from "lucide-react";
+import { useEffect, useState } from "react";
+import { FolderOpen, FolderOutput } from "lucide-react";
 
 interface FolderPickerProps {
   inputFolder: string;
@@ -8,99 +8,42 @@ interface FolderPickerProps {
   onBrowseInput: () => void;
   onBrowseOutput: () => void;
   onToggleSameFolder: (checked: boolean) => void;
+  onCommitInput?: (path: string) => void;
+  onCommitOutput?: (path: string) => void;
+  disabled?: boolean;
 }
 
-export const FolderPicker: React.FC<FolderPickerProps> = ({
-  inputFolder,
-  outputFolder,
-  sameFolder,
-  onBrowseInput,
-  onBrowseOutput,
-  onToggleSameFolder,
-}) => {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <button
-          type="button"
-          onClick={onBrowseInput}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "6px",
-            padding: "8px 14px",
-            background: "var(--accent)",
-            color: "#FFFFFF",
-            border: "none",
-            borderRadius: "8px",
-            cursor: "pointer",
-            fontWeight: 600,
-            fontSize: "13px",
-          }}
-        >
-          <FolderOpen size={16} />
-          Choose Input Folder
-        </button>
-        <span
-          style={{
-            fontSize: "12px",
-            color: "var(--text-sec)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            maxWidth: "350px",
-          }}
-          title={inputFolder || "No folder selected"}
-        >
-          {inputFolder || "No folder selected"}
-        </span>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <button
-          type="button"
-          onClick={onBrowseOutput}
-          disabled={sameFolder}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "6px",
-            padding: "8px 14px",
-            background: sameFolder ? "var(--btn-disabled)" : "var(--surface)",
-            color: "var(--text-main)",
-            border: "1px solid var(--card-border)",
-            borderRadius: "8px",
-            cursor: sameFolder ? "not-allowed" : "pointer",
-            fontWeight: 600,
-            fontSize: "13px",
-            opacity: sameFolder ? 0.6 : 1.0,
-          }}
-        >
-          <FolderOpen size={16} />
-          Choose Output Folder
-        </button>
-        <span
-          style={{
-            fontSize: "12px",
-            color: "var(--text-sec)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            maxWidth: "280px",
-          }}
-          title={sameFolder ? "Saving alongside source" : outputFolder || "Defaults to input folder"}
-        >
-          {sameFolder ? "Saving alongside source" : outputFolder || "Defaults to input folder"}
-        </span>
-        <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer", marginLeft: "8px" }}>
-          <input
-            type="checkbox"
-            checked={sameFolder}
-            onChange={(e) => onToggleSameFolder(e.target.checked)}
-          />
-          Same as input
-        </label>
-      </div>
-    </div>
-  );
-};
+export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseInput,
+  onBrowseOutput, onToggleSameFolder, onCommitInput, onCommitOutput, disabled = false }: FolderPickerProps) {
+  const [input, setInput] = useState(inputFolder);
+  const [output, setOutput] = useState(outputFolder);
+  useEffect(() => setInput(inputFolder), [inputFolder]);
+  useEffect(() => setOutput(outputFolder), [outputFolder]);
+  return <div className="folder-picker">
+    <div className="section-heading"><FolderOpen size={16} /><h2>Source folder</h2></div>
+    <p className="muted">Your artwork stays on this computer.</p>
+    <label className="sr-only" htmlFor="input-folder">Input folder path</label>
+    <input id="input-folder" type="text" value={input} placeholder="Paste a folder path…"
+      disabled={disabled} readOnly={!onCommitInput} title={inputFolder}
+      onChange={(e) => setInput(e.target.value)}
+      onBlur={() => { if (input.trim() !== inputFolder) onCommitInput?.(input.trim()); }}
+      onKeyDown={(e) => { if (e.key === "Enter") onCommitInput?.(input.trim()); }} />
+    <button type="button" className="button" disabled={disabled} onClick={onBrowseInput}>
+      <FolderOpen size={15} />Choose Input Folder
+    </button>
+    <div className="section-heading destination-heading"><FolderOutput size={16} /><h2>Destination</h2></div>
+    <label className="check-row"><input type="checkbox" checked={sameFolder} disabled={disabled}
+      onChange={(e) => onToggleSameFolder(e.target.checked)} />Same as input</label>
+    {sameFolder ? <p className="path-hint" title={inputFolder}>Saving in the source folder</p> : <>
+      <label className="sr-only" htmlFor="output-folder">Output folder path</label>
+      <input id="output-folder" type="text" value={output} placeholder="Defaults to source folder"
+        disabled={disabled} readOnly={!onCommitOutput} title={outputFolder}
+        onChange={(e) => setOutput(e.target.value)}
+        onBlur={() => { if (output.trim() !== outputFolder) onCommitOutput?.(output.trim()); }}
+        onKeyDown={(e) => { if (e.key === "Enter") onCommitOutput?.(output.trim()); }} />
+    </>}
+    <button type="button" className="button" disabled={disabled || sameFolder} onClick={onBrowseOutput}>
+      <FolderOutput size={15} />Choose Output Folder
+    </button>
+  </div>;
+}

@@ -1,13 +1,14 @@
-from pathlib import Path
 import sys
 import tempfile
-from PIL import Image, ImageDraw
+from pathlib import Path
+
 import pytest
+from PIL import Image, ImageDraw
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-
-psd_tools = pytest.importorskip("psd_tools")
+pytestmark = pytest.mark.full_runtime
+pytest.importorskip("psd_tools")
 from psd_tools import PSDImage
 
 from processor import PreviewConfig, generate_file

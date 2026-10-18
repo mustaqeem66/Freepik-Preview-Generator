@@ -1,13 +1,16 @@
-from pathlib import Path
 import sys
 import tempfile
-from PIL import Image, ImageDraw
+from pathlib import Path
+
 import pytest
+from PIL import Image, ImageDraw
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from processor import PreviewConfig, generate_file
+
+pytestmark = pytest.mark.core
 
 
 def test_aspect_ratios_preserved_exactly():

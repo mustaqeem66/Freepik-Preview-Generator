@@ -206,7 +206,12 @@ python -m venv .venv
 source .venv/bin/activate       # On Windows: .venv\Scripts\activate
 
 # Install dependencies
-pip install -r requirements.txt
+# Reproducible, hash-pinned install (recommended, byte-for-byte reproducible builds):
+pip install --require-hashes -r requirements-lock.txt
+# Or, for development/build work (adds pytest, ruff, pyinstaller at pinned versions):
+# pip install --require-hashes -r requirements-dev-lock.txt
+# Loose top-level spec (resolves to the latest matching versions):
+# pip install -r requirements.txt
 
 # Run Desktop Studio (pywebview + React + Framer Motion)
 python app.py
@@ -214,6 +219,32 @@ python app.py
 # Or run with Python launcher
 python main.py
 ```
+
+### ✅ Verifying a build (reproducible audit)
+
+Prove every advertised format works on a given machine with one command (no
+frozen build required):
+
+```bash
+# 1. Confirm all mandatory renderer engines resolve (raster, SVG, PSD, 3D, DXF, STEP, text)
+python scripts/verify_environment.py
+
+# 2. Run the full Python suite (add PREVIEWGEN_REQUIRE_FRONTEND_BUNDLE=1 to require the React bundle)
+python -m pytest tests/ -v
+
+# 3. Render every deterministic fixture through the real renderer stack
+python app.py --render-test-all --fixtures tests/fixtures
+```
+
+Notes for independent audits:
+
+- The **frontend** gate is Node 24.15.0: `cd frontend && npm ci && npm run typecheck && npm test && npm run build`.
+  `npm ci` must finish before `vitest`/`vite` exist; a time-limited sandbox should allow it to complete.
+- The **packaged gate** (`tests/integration/test_release_renderers_gate.py`) exercises the frozen
+  binary when `PREVIEWGEN_BINARY` points at a built `dist/PreviewGen/PreviewGen[.exe]` and
+  `PREVIEWGEN_RELEASE_GATE=1` is set; otherwise those tests skip.
+- `scripts/verify_environment.py` reports which optional engines (`olefile`, `pypdfium2`, `brotli`)
+  are missing; only the mandatory engines block a release.
 
 ---
 

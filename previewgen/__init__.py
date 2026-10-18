@@ -10,6 +10,10 @@ __all__ = [
     "settings",
     "api",
     "lifecycle",
+    "entrypoint",
+    "resources",
+    "tempfiles",
+    "renderer_process",
     "desktop_runtime",
     "renderers",
 ]

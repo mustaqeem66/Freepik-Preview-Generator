@@ -1,9 +1,29 @@
-import { useState, useEffect, useCallback } from "react";
-import { BatchSummary, PreviewState } from "../types";
-import { ApiBridge } from "../api/bridge";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { BatchStatus, BatchSummary, PreviewState } from "../types";
+import { ApiBridge, bridgeEvents } from "../api/bridge";
+
+function mapSummaryStatus(summary: BatchSummary): BatchStatus {
+  if (summary.cancelled || summary.status === "cancelled") return "cancelled";
+  switch (summary.status) {
+    case "completed_with_warnings":
+      return "completed-with-warnings";
+    case "completed_with_errors":
+      return "completed-with-errors";
+    case "failed":
+      return "failed";
+    case "completed":
+      return "completed";
+    default:
+      break;
+  }
+  if (summary.truncated) return "completed-with-warnings";
+  if (summary.failed > 0) return "completed-with-errors";
+  return "completed";
+}
 
 export function useBatch() {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [batchStatus, setBatchStatus] = useState<BatchStatus>("idle");
   const [progress, setProgress] = useState<{ current: number; total: number; message: string }>({
     current: 0,
     total: 0,
@@ -11,51 +31,91 @@ export function useBatch() {
   });
   const [stats, setStats] = useState<{ success: number; failed: number }>({ success: 0, failed: 0 });
   const [batchErrors, setBatchErrors] = useState<string[]>([]);
+  const [truncationReasons, setTruncationReasons] = useState<string[]>([]);
+  const [discovered, setDiscovered] = useState<number>(0);
+  // A truncated batch requires the operator to explicitly acknowledge that not
+  // every file was processed before further generation is allowed.
+  const [requiresTruncationAck, setRequiresTruncationAck] = useState<boolean>(false);
+  const latestSeqRef = useRef<number>(0);
+  const activeOpIdRef = useRef<string | null>(null);
+  const isTerminalRef = useRef<boolean>(false);
 
   useEffect(() => {
-    window.__onBatchProgress = (current: number, total: number, message: string) => {
+    const unsubProgress = bridgeEvents.subscribe("batch.progress", ({ current, total, message }, meta) => {
+      // Reject nonterminal progress events after a terminal event has arrived (Finding 8)
+      if (isTerminalRef.current) return;
+      if (meta?.operationId && activeOpIdRef.current && meta.operationId !== activeOpIdRef.current) return;
+      if (typeof meta?.sequence === "number" && meta.sequence < latestSeqRef.current) return;
+      if (typeof meta?.sequence === "number") latestSeqRef.current = meta.sequence;
       setProgress({ current, total, message });
-    };
+    });
 
-    window.__onBatchFinishedSummary = (summary: BatchSummary) => {
+    const unsubFinished = bridgeEvents.subscribe("batch.finished", (summary: BatchSummary, meta) => {
+      if (meta?.operationId && activeOpIdRef.current && meta.operationId !== activeOpIdRef.current) return;
+      isTerminalRef.current = true;
+      if (typeof meta?.sequence === "number") latestSeqRef.current = Math.max(latestSeqRef.current, meta.sequence);
       setIsProcessing(false);
-      const { success, failed, skipped, cancelled, errors, duration } = summary;
+      const { success, failed, skipped, errors, duration } = summary;
+      const status = mapSummaryStatus(summary);
+      const reasons = Array.isArray(summary.truncationReasons) ? summary.truncationReasons : [];
+
+      setBatchStatus(status);
+      setTruncationReasons(reasons);
+      setDiscovered(typeof summary.discovered === "number" ? summary.discovered : summary.planned || 0);
+      setRequiresTruncationAck(summary.truncated === true || status === "completed-with-warnings");
+
+      const message =
+        status === "cancelled"
+          ? `Cancelled after ${duration}s. (${success} saved, ${failed} failed, ${skipped || 0} skipped)`
+          : status === "completed-with-warnings"
+            ? `Completed with warnings in ${duration}s: discovery was truncated (${reasons.join(", ") || "unknown"}). ` +
+              `${success} previews saved; other files were not processed.`
+            : status === "completed-with-errors"
+              ? `Completed with issues in ${duration}s: ${success} succeeded, ${failed} failed, ${skipped || 0} skipped.`
+              : status === "failed"
+                ? "Batch failed. Review the error below."
+                : `Completed in ${duration}s! ${success} previews saved (${skipped || 0} skipped).`;
+
       setProgress({
         current: success + failed + (skipped || 0),
         total: summary.planned || success + failed + (skipped || 0),
-        message: cancelled
-          ? `Cancelled after ${duration}s. (${success} saved, ${failed} failed, ${skipped || 0} skipped)`
-          : failed > 0
-          ? `Completed with issues in ${duration}s: ${success} succeeded, ${failed} failed, ${skipped || 0} skipped.`
-          : `Completed in ${duration}s! ${success} previews saved (${skipped || 0} skipped).`,
+        message,
       });
       setStats({ success, failed });
-      if (errors && errors.length > 0) {
-        setBatchErrors(errors);
-      }
-    };
+      setBatchErrors(errors && errors.length > 0 ? errors : []);
+    });
 
     return () => {
-      delete window.__onBatchProgress;
-      delete window.__onBatchFinishedSummary;
+      unsubProgress();
+      unsubFinished();
     };
+  }, []);
+
+  const acknowledgeTruncation = useCallback(() => {
+    setRequiresTruncationAck(false);
   }, []);
 
   const startBatch = useCallback(
     async (inputFolder: string, outputFolder: string, totalFiles: number, config: PreviewState) => {
       if (!inputFolder) return;
       setIsProcessing(true);
+      setBatchStatus("generating");
       setStats({ success: 0, failed: 0 });
       setBatchErrors([]);
+      setTruncationReasons([]);
+      latestSeqRef.current = 0;
+      isTerminalRef.current = false;
+      activeOpIdRef.current = null;
+      setRequiresTruncationAck(false);
       setProgress({ current: 0, total: totalFiles, message: "Starting batch generation…" });
 
       try {
         const api = await ApiBridge.getApi(3000);
-        if (api) {
-          await api.start_batch(inputFolder, outputFolder || inputFolder, config);
-        }
+        if (!api) throw new Error("Backend unavailable. Reconnect before generating previews.");
+        await api.start_batch(inputFolder, config.sameFolder ? inputFolder : outputFolder || inputFolder, config);
       } catch (err) {
         setIsProcessing(false);
+        setBatchStatus("failed");
         setBatchErrors([err instanceof Error ? err.message : "Failed to start batch"]);
       }
     },
@@ -63,15 +123,28 @@ export function useBatch() {
   );
 
   const cancelBatch = useCallback(async () => {
+    setBatchStatus("batch-cancelling");
     try {
       const api = await ApiBridge.getApi(3000);
-      if (api) {
-        await api.cancel_batch();
-      }
-    } catch {
-      // Ignored
+      if (!api) throw new Error("Backend unavailable. The batch cancellation was not delivered.");
+      await api.cancel_batch();
+    } catch (error) {
+      setBatchStatus("generating");
+      setBatchErrors([error instanceof Error ? error.message : "Could not cancel the batch"]);
     }
   }, []);
 
-  return { isProcessing, progress, stats, batchErrors, startBatch, cancelBatch };
+  return {
+    isProcessing,
+    batchStatus,
+    progress,
+    stats,
+    batchErrors,
+    truncationReasons,
+    discovered,
+    requiresTruncationAck,
+    acknowledgeTruncation,
+    startBatch,
+    cancelBatch,
+  };
 }

@@ -1,6 +1,5 @@
-import React from "react";
+import { Box, Image as ImageIcon, Palette, Type, X } from "lucide-react";
 import { PreviewState } from "../types";
-import { Type, Sparkles, Box, Image as ImageIcon } from "lucide-react";
 
 interface SettingsPanelProps {
   state: PreviewState;
@@ -10,204 +9,98 @@ interface SettingsPanelProps {
   is3D: boolean;
 }
 
-const cardStyle: React.CSSProperties = {
-  background: "var(--card-bg)",
-  border: "1px solid var(--card-border)",
-  borderRadius: "12px",
-  padding: "16px",
-  display: "flex",
-  flexDirection: "column",
-  gap: "12px",
-};
+function Slider({ label, value, min = 0, max = 100, unit = "%", onChange }: {
+  label: string; value: number; min?: number; max?: number; unit?: string; onChange: (value: number) => void;
+}) {
+  return <label className="slider-field"><span>{label}<output>{Math.round(value)}{unit}</output></span>
+    <input type="range" min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+  </label>;
+}
 
-const cardTitleStyle: React.CSSProperties = {
-  fontSize: "13px",
-  fontWeight: 700,
-  letterSpacing: "-0.2px",
-  display: "flex",
-  alignItems: "center",
-  gap: "6px",
-  color: "var(--text-main)",
-};
+function Color({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <label className="color-field"><span>{label}</span><span className="color-value">
+    <input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
+    <span>{value.toUpperCase()}</span></span></label>;
+}
 
-const labelStyle: React.CSSProperties = {
-  fontSize: "12px",
-  fontWeight: 600,
-  color: "var(--text-sec)",
-  marginBottom: "4px",
-  display: "block",
-};
+const CAMERA_VIEWS = [
+  { name: "Isometric", yaw: 45, pitch: 30 }, { name: "Front", yaw: 0, pitch: 0 },
+  { name: "Side", yaw: 90, pitch: 0 }, { name: "Top", yaw: 0, pitch: 85 },
+  { name: "Back", yaw: 180, pitch: 0 },
+];
+const COLORS = ["#FFFFFF", "#F5F1E9", "#D4D4D8", "#28282C"];
 
-export const SettingsPanel: React.FC<SettingsPanelProps> = ({
-  state,
-  onChange,
-  onBrowseLogo,
-  onBrowseFont,
-  is3D,
-}) => {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-      {/* CARD 2: Diagonal Background */}
-      <div style={cardStyle}>
-        <div style={cardTitleStyle}>
-          <Sparkles size={15} color="var(--accent)" /> 2 · Diagonal Split & Colors
-        </div>
-
-        <div>
-          <label style={labelStyle}>Solid Triangle Color</label>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <input
-              type="color"
-              value={state.solidColor}
-              onChange={(e) => onChange({ solidColor: e.target.value })}
-              style={{ width: "36px", height: "32px", border: "none", cursor: "pointer", background: "none" }}
-            />
-            <span style={{ fontSize: "12px", fontFamily: "monospace" }}>{state.solidColor}</span>
-          </div>
-        </div>
-
-        <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", cursor: "pointer" }}>
-          <input
-            type="checkbox"
-            checked={state.invertTriangles}
-            onChange={(e) => onChange({ invertTriangles: e.target.checked })}
-          />
-          Invert split (solid left, transparent right)
-        </label>
-
-        <div>
-          <label style={labelStyle}>Overwrite Export Policy</label>
-          <select
-            value={state.overwritePolicy || "rename"}
-            onChange={(e) => onChange({ overwritePolicy: e.target.value as "rename" | "skip" | "overwrite" })}
-            style={{ width: "100%", padding: "6px 10px", borderRadius: "8px", border: "1px solid var(--card-border)" }}
-          >
-            <option value="rename">Rename if exists (e.g. filename_copy1.jpg) [Recommended]</option>
-            <option value="skip">Skip if exists</option>
-            <option value="overwrite">Overwrite existing files</option>
-          </select>
-        </div>
+export function SettingsPanel({ state, onChange, onBrowseLogo, onBrowseFont, is3D }: SettingsPanelProps) {
+  return <div className="settings-panel">
+    <section className="inspector-section">
+      <div className="section-heading"><Palette size={16} /><h2>Background</h2></div>
+      <div className="segmented" aria-label="Solid background side">
+        <button type="button" aria-pressed={state.invertTriangles} onClick={() => onChange({ invertTriangles: true })}>Solid left</button>
+        <button type="button" aria-pressed={!state.invertTriangles} onClick={() => onChange({ invertTriangles: false })}>Solid right</button>
       </div>
+      <Color label="Solid color" value={state.solidColor} onChange={(solidColor) => onChange({ solidColor })} />
+      <div className="color-presets">{COLORS.map((color) => <button key={color} type="button"
+        className="color-swatch" style={{ background: color }} aria-label={`Set background ${color}`}
+        aria-pressed={state.solidColor.toUpperCase() === color} onClick={() => onChange({ solidColor: color })} />)}</div>
+      <p className="muted">The checkerboard demonstrates transparency. JPG exports have an opaque background.</p>
+    </section>
 
-      {/* CARD 3: Text Customization */}
-      <div style={cardStyle}>
-        <div style={cardTitleStyle}>
-          <Type size={15} color="var(--accent)" /> 3 · Branding Text
-        </div>
+    {is3D && <section className="inspector-section">
+      <div className="section-heading"><Box size={16} /><h2>3D camera</h2></div>
+      <p className="muted">Drag the preview to orbit, or choose a view.</p>
+      <div className="camera-presets">{CAMERA_VIEWS.map((view) => <button className="button" type="button" key={view.name}
+        aria-pressed={state.yaw === view.yaw && state.pitch === view.pitch}
+        onClick={() => onChange({ yaw: view.yaw, pitch: view.pitch })}>{view.name}</button>)}</div>
+      <Slider label="Yaw rotation" value={state.yaw} max={360} unit="°" onChange={(yaw) => onChange({ yaw })} />
+      <Slider label="Pitch elevation" value={state.pitch} min={-85} max={85} unit="°" onChange={(pitch) => onChange({ pitch })} />
+      <Color label="Untextured model color" value={state.modelColor || "#7882A0"} onChange={(modelColor) => onChange({ modelColor })} />
+    </section>}
 
-        <div>
-          <label style={labelStyle}>Banner Text (Max 100 characters)</label>
-          <input
-            type="text"
-            maxLength={100}
-            value={state.text}
-            onChange={(e) => onChange({ text: e.target.value })}
-            style={{ width: "100%", padding: "6px 10px", borderRadius: "8px", border: "1px solid var(--card-border)" }}
-          />
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-          <div>
-            <label style={labelStyle}>Text Color</label>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <input
-                type="color"
-                value={state.textColor}
-                onChange={(e) => onChange({ textColor: e.target.value })}
-                style={{ width: "32px", height: "28px", border: "none", cursor: "pointer", background: "none" }}
-              />
-              <span style={{ fontSize: "11px", fontFamily: "monospace" }}>{state.textColor}</span>
-            </div>
-          </div>
-          <div>
-            <label style={labelStyle}>Opacity ({state.opacity}%)</label>
-            <input
-              type="range"
-              min={10}
-              max={100}
-              value={state.opacity}
-              onChange={(e) => onChange({ opacity: Number(e.target.value) })}
-              style={{ width: "100%" }}
-            />
-          </div>
-        </div>
-
-        <div>
-          <label style={labelStyle}>Custom Font (.ttf, .otf, .woff)</label>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <input
-              type="text"
-              readOnly
-              placeholder="System default (Bold)"
-              value={state.fontPath}
-              style={{ flex: 1, padding: "6px 8px", borderRadius: "8px", border: "1px solid var(--card-border)", fontSize: "11px" }}
-            />
-            <button
-              type="button"
-              onClick={onBrowseFont}
-              style={{ padding: "6px 12px", background: "var(--surface)", border: "1px solid var(--card-border)", borderRadius: "8px", fontSize: "11px", cursor: "pointer" }}
-            >
-              Browse…
-            </button>
-          </div>
-        </div>
+    <section className="inspector-section">
+      <div className="section-heading"><Type size={16} /><h2>Watermark</h2></div>
+      <label className="field-label">Text<input type="text" maxLength={100} value={state.text}
+        placeholder="Leave empty for no text" onChange={(e) => onChange({ text: e.target.value })} /></label>
+      <Color label="Text color" value={state.textColor} onChange={(textColor) => onChange({ textColor })} />
+      <Slider label="Text opacity" value={state.opacity} onChange={(opacity) => onChange({ opacity })} />
+      <Slider label="Font scale" value={state.fontScale} min={20} max={300} onChange={(fontScale) => onChange({ fontScale })} />
+      <div className="paired-fields">
+        <Slider label="Text X" value={state.textPosX} onChange={(textPosX) => onChange({ textPosX })} />
+        <Slider label="Text Y" value={state.textPosY} onChange={(textPosY) => onChange({ textPosY })} />
       </div>
-
-      {/* CARD 4: Logo Branding */}
-      <div style={cardStyle}>
-        <div style={cardTitleStyle}>
-          <ImageIcon size={15} color="var(--accent)" /> 4 · Brand Logo
-        </div>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <input
-            type="text"
-            readOnly
-            placeholder="No custom logo chosen"
-            value={state.logoPath}
-            style={{ flex: 1, padding: "6px 8px", borderRadius: "8px", border: "1px solid var(--card-border)", fontSize: "11px" }}
-          />
-          <button
-            type="button"
-            onClick={onBrowseLogo}
-            style={{ padding: "6px 12px", background: "var(--surface)", border: "1px solid var(--card-border)", borderRadius: "8px", fontSize: "11px", cursor: "pointer" }}
-          >
-            Browse…
-          </button>
-        </div>
+      <label className="check-row"><input type="checkbox" checked={state.hasOutline}
+        onChange={(e) => onChange({ hasOutline: e.target.checked })} />Outline</label>
+      {state.hasOutline && <>
+        <Color label="Outline color" value={state.outlineColor} onChange={(outlineColor) => onChange({ outlineColor })} />
+        <Slider label="Outline thickness" value={state.outlineThickness} min={1} max={10} unit="" onChange={(outlineThickness) => onChange({ outlineThickness })} />
+      </>}
+      <div className="file-control"><span className="path-hint" title={state.fontPath}>{state.fontPath.split(/[\\/]/).pop() || "System font"}</span>
+        <button type="button" className="button" onClick={onBrowseFont}>Choose font…</button>
+        {state.fontPath && <button type="button" className="icon-button" aria-label="Remove custom font" onClick={() => onChange({ fontPath: "" })}><X size={14} /></button>}
       </div>
+    </section>
 
-      {/* CARD 5: 3D Camera Angles */}
-      {is3D && (
-        <div style={cardStyle}>
-          <div style={cardTitleStyle}>
-            <Box size={15} color="var(--accent)" /> 5 · 3D Orbit & Elevation
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-            <div>
-              <label style={labelStyle}>Yaw Rotation ({Math.round(state.yaw)}°)</label>
-              <input
-                type="range"
-                min={0}
-                max={360}
-                value={state.yaw}
-                onChange={(e) => onChange({ yaw: Number(e.target.value) })}
-                style={{ width: "100%" }}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Pitch Elevation ({Math.round(state.pitch)}°)</label>
-              <input
-                type="range"
-                min={-85}
-                max={85}
-                value={state.pitch}
-                onChange={(e) => onChange({ pitch: Number(e.target.value) })}
-                style={{ width: "100%" }}
-              />
-            </div>
-          </div>
+    <section className="inspector-section">
+      <div className="section-heading"><ImageIcon size={16} /><h2>Brand logo</h2></div>
+      <div className="file-control"><span className="path-hint" title={state.logoPath}>{state.logoPath.split(/[\\/]/).pop() || "No logo selected"}</span>
+        <button type="button" className="button" onClick={onBrowseLogo}>Choose logo…</button>
+        {state.logoPath && <button type="button" className="icon-button" aria-label="Remove logo" onClick={() => onChange({ logoPath: "" })}><X size={14} /></button>}
+      </div>
+      {state.logoPath && <>
+        <Slider label="Logo scale" value={state.logoScale} min={20} max={300} onChange={(logoScale) => onChange({ logoScale })} />
+        <Slider label="Logo opacity" value={state.logoOpacity} onChange={(logoOpacity) => onChange({ logoOpacity })} />
+        <div className="paired-fields">
+          <Slider label="Logo X" value={state.logoPosX} onChange={(logoPosX) => onChange({ logoPosX })} />
+          <Slider label="Logo Y" value={state.logoPosY} onChange={(logoPosY) => onChange({ logoPosY })} />
         </div>
-      )}
-    </div>
-  );
-};
+      </>}
+    </section>
+    <section className="inspector-section">
+      <div className="section-heading"><h2>Existing exports</h2></div>
+      <label className="field-label">When a JPG already exists<select value={state.overwritePolicy || "rename"}
+        onChange={(e) => onChange({ overwritePolicy: e.target.value as "rename" | "skip" | "overwrite" })}>
+        <option value="rename">Keep both — add a copy number</option><option value="skip">Skip existing JPGs</option>
+        <option value="overwrite">Replace existing JPGs</option>
+      </select></label>
+    </section>
+  </div>;
+}

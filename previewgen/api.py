@@ -4,36 +4,37 @@ Python-side API exposed to frontend via pywebview.
 Uses webview.Window type hints only (does not import webview at module scope).
 """
 from __future__ import annotations
-import base64
+
+import contextlib
+import itertools
 import json
 import logging
 import os
 import shutil
+import sys
 import tempfile
 import threading
-import sys
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Union
 
 # Use TYPE_CHECKING to avoid runtime webview import
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    import webview
+    pass
 
+from previewgen import limits
+from previewgen.assets import calculate_export_dimensions as _calc_export_dimensions
+from previewgen.lifecycle import ActiveOperation, LifecycleManager
+from previewgen.preview_server import PreviewFileServer
+from previewgen.probe_process import probe_asset_isolated
+from previewgen.scanner import get_scanner
+from previewgen.settings import load_settings, save_settings
 from processor import (
     PreviewConfig,
     preview_jpeg_bytes,
     process_folder,
-    SUPPORTED_EXTENSIONS,
-    SUPPORTED_3D_EXTENSIONS,
-    SUPPORTED_CAD_EXTENSIONS,
 )
-
-from previewgen.scanner import get_scanner
-from previewgen.settings import load_settings, save_settings, configure_logging, get_log_directory
-from previewgen.lifecycle import LifecycleManager
 
 
 class DesktopApi:
@@ -41,14 +42,22 @@ class DesktopApi:
     Main API exposed to the React frontend via pywebview.
     All GUI-dependent operations live here.
     """
-    
+
     def __init__(self) -> None:
-        self.window: Optional[Any] = None  # webview.Window when running
-        self.session_zip_dir: Optional[Path] = None
+        self.window: Any | None = None  # webview.Window when running
+        self.session_zip_dir: Path | None = None
         self.scanner = get_scanner()
         self.lifecycle = LifecycleManager()
         self.lifecycle.set_scanner(self.scanner)
-        
+        self.preview_server = PreviewFileServer()
+        self._preview_request_lock = threading.Lock()
+        self._latest_preview_request_id = 0
+        self._batch_start_lock = threading.Lock()
+        self._batch_operation_id = ""
+        self._sequence_counter = itertools.count(1)
+        self._authorized_folders: set[Path] = set()
+        self._register_default_authorized_paths()
+
         # Wire scanner callbacks to this API for JS dispatch
         self.scanner.set_callbacks(
             progress_callback=self._on_scan_progress,
@@ -61,36 +70,71 @@ class DesktopApi:
         self.window = win
         # Wire lifecycle scanner (already set)
 
+    def _register_default_authorized_paths(self) -> None:
+        from previewgen.settings import get_log_directory, get_settings_directory
+        self.add_authorized_folder(get_settings_directory())
+        self.add_authorized_folder(get_log_directory())
+
+    def add_authorized_folder(self, folder: Path | str) -> None:
+        with contextlib.suppress(Exception):
+            self._authorized_folders.add(Path(folder).resolve())
+
+    def is_authorized_path(self, path: Path | str) -> bool:
+        try:
+            target = Path(path).resolve()
+            for auth in self._authorized_folders:
+                try:
+                    target.relative_to(auth)
+                    return True
+                except ValueError:
+                    continue
+            return False
+        except Exception:
+            return False
+
+    def _dispatch_envelope(
+        self, event_name: str, payload: dict[str, Any], operation_id: str = "", terminal: bool = False
+    ) -> None:
+        """Send one serialized event envelope to the single frontend bridge receiver.
+
+        Python never assembles per-event JavaScript or knows per-event global
+        names; it emits the same ``{event, operationId, sequence, terminal,
+        payload}`` envelope consumed by the frontend typed event hub. ``terminal``
+        marks the final event of an operation so the frontend can reject any
+        non-terminal event that arrives late for a completed operation.
+        """
+        if not self.window:
+            return
+        seq = next(self._sequence_counter)
+        op_id = operation_id or self._batch_operation_id or payload.get("scanId") or f"op_{seq}"
+        envelope = {
+            "event": event_name,
+            "operationId": op_id,
+            "sequence": seq,
+            "terminal": terminal,
+            "payload": payload,
+        }
+        script = f"window.__onBridgeEvent && window.__onBridgeEvent({json.dumps(envelope)})"
+        with contextlib.suppress(Exception):
+            self.window.evaluate_js(script)
+
     def _on_scan_progress(self, scan_id: str, count: int) -> None:
-        """Dispatch scan progress to frontend."""
-        if self.window:
-            try:
-                self.window.evaluate_js(f"window.__onScanProgress && window.__onScanProgress('{scan_id}', {count})")
-            except Exception:
-                pass
+        self._dispatch_envelope("scan.progress", {"scanId": scan_id, "count": count}, operation_id=scan_id)
 
-    def _on_scan_finished(self, scan_id: str, result: Dict[str, Any]) -> None:
-        """Dispatch scan completion to frontend."""
-        if self.window:
-            try:
-                payload_json = json.dumps(result)
-                self.window.evaluate_js(f"window.__onScanFinished && window.__onScanFinished('{scan_id}', {payload_json})")
-            except Exception as exc:
-                logging.debug("Scan finished event dispatch notice: %s", exc)
+    def _on_scan_finished(self, scan_id: str, result: dict[str, Any]) -> None:
+        self._dispatch_envelope(
+            "scan.finished", {"scanId": scan_id, "result": result}, operation_id=scan_id, terminal=True
+        )
 
-    def _on_batch_finished(self, summary: Dict[str, Any]) -> None:
-        """Dispatch batch completion to frontend."""
-        if self.window:
-            try:
-                self.window.evaluate_js(f"window.__onBatchFinishedSummary({json.dumps(summary)})")
-            except Exception:
-                pass
-
+    def _on_batch_finished(self, summary: dict[str, Any]) -> None:
+        self._dispatch_envelope(
+            "batch.finished", summary, operation_id=self._batch_operation_id, terminal=True
+        )
     # ============================================================
     # Frontend-facing API methods
     # ============================================================
 
-    def frontend_ready(self) -> Dict[str, Any]:
+    def frontend_ready(self) -> dict[str, Any]:
         """Called by React frontend when mounted and interactive."""
         logging.info("Frontend mounted and reported ready.")
         import os
@@ -102,12 +146,12 @@ class DesktopApi:
                 logging.warning("Could not write ready marker: %s", exc)
         return {"ok": True, "value": "ready", "error": None}
 
-    def get_initial_state(self) -> Dict[str, Any]:
+    def get_initial_state(self) -> dict[str, Any]:
         """Load persistent user preferences with schema version validation."""
         validated = load_settings()
         return {"ok": True, "value": validated, "error": None}
 
-    def save_settings(self, settings_dict: Dict[str, Any]) -> Dict[str, Any]:
+    def save_settings(self, settings_dict: dict[str, Any]) -> dict[str, Any]:
         """Save user preferences atomically to disk with backup and schema version."""
         if not isinstance(settings_dict, dict):
             return {"ok": False, "value": False, "error": "Invalid settings payload"}
@@ -115,6 +159,12 @@ class DesktopApi:
             if save_settings(settings_dict):
                 return {"ok": True, "value": True, "error": None}
             else:
+                from previewgen.settings import get_current_revision
+                curr_rev = get_current_revision()
+                req_rev = settings_dict.get("revision")
+                if req_rev is not None and isinstance(req_rev, (int, float)) and req_rev < curr_rev:
+                    msg = f"Stale settings write (rev {req_rev} < current {curr_rev})"
+                    return {"ok": False, "value": False, "error": msg}
                 return {"ok": False, "value": False, "error": "Atomic settings write failed"}
         except Exception as exc:
             logging.warning("Atomic settings write failed: %s", exc)
@@ -149,7 +199,10 @@ class DesktopApi:
         try:
             res = self.window.create_file_dialog(
                 int(__import__('webview').OPEN_DIALOG),
-                file_types=("Image Files (*.png;*.webp;*.svg;*.ico;*.jpg;*.jpeg)", "*.png;*.webp;*.svg;*.ico;*.jpg;*.jpeg")
+                file_types=(
+                    "Image Files (*.png;*.webp;*.svg;*.ico;*.jpg;*.jpeg)",
+                    "*.png;*.webp;*.svg;*.ico;*.jpg;*.jpeg",
+                )
             )
             return res[0] if res else ""
         except Exception as exc:
@@ -170,27 +223,33 @@ class DesktopApi:
             logging.warning("Font dialog failed: %s", exc)
             return ""
 
-    def open_folder(self, path: str) -> bool:
-        """Open folder in native file explorer."""
+    def open_folder(self, path: str) -> dict[str, Any]:
+        """Open folder in native file explorer with path authorization checks."""
+        if not isinstance(path, str) or not path.strip():
+            return {"ok": False, "error": "EMPTY_PATH"}
         try:
-            p = Path(path)
+            target = Path(path).resolve()
+            if not self.is_authorized_path(target):
+                return {"ok": False, "error": "UNAUTHORIZED_PATH"}
+            if not target.is_dir():
+                return {"ok": False, "error": "FOLDER_NOT_FOUND"}
             if sys.platform == "win32":
-                os.startfile(p)  # type: ignore
+                os.startfile(target)  # type: ignore
             elif sys.platform == "darwin":
                 import subprocess
-                subprocess.run(["open", str(p)], check=False)
+                subprocess.run(["open", str(target)], check=False)
             else:
                 import subprocess
-                subprocess.run(["xdg-open", str(p)], check=False)
-            return True
-        except Exception:
-            return False
+                subprocess.run(["xdg-open", str(target)], check=False)
+            return {"ok": True, "error": None}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
 
-    def scan_folder(self, folder_path: str) -> Dict[str, Any]:
+    def scan_folder(self, folder_path: str) -> dict[str, Any]:
         """Synchronous scan (used for initial load)."""
         return self.scanner.scan_folder(folder_path)
 
-    def start_scan(self, folder_path: str) -> Dict[str, Any]:
+    def start_scan(self, folder_path: str) -> dict[str, Any]:
         """Start background asynchronous folder scan."""
         return self.scanner.start_scan(folder_path)
 
@@ -198,9 +257,14 @@ class DesktopApi:
         """Signal active folder scan to stop."""
         self.scanner.cancel_scan()
 
-    def render_preview(self, file_path: str, config_dict: Dict[str, Any]) -> Dict[str, Any]:
-        """Render live preview asynchronously with strict config parsing."""
-        temp_dir: Optional[Path] = None
+    def render_preview(
+        self, file_path: str, config_dict: dict[str, Any], request_id: int | None = None
+    ) -> dict[str, Any]:
+        """Render live preview asynchronously with strict config parsing and active tracking."""
+        op_id = f"render_preview_{request_id or uuid.uuid4().hex[:6]}"
+        op = ActiveOperation(operation_id=op_id, kind="preview_render")
+        self.lifecycle.register_operation(op)
+        temp_dir: Path | None = None
         try:
             if not isinstance(file_path, str) or not file_path.strip():
                 return {"ok": False, "value": None, "error": "Empty file path"}
@@ -215,11 +279,10 @@ class DesktopApi:
                 if not zip_path.is_file() or not entry_name:
                     return {"ok": False, "value": None, "error": "Invalid zip entry URI"}
                 temp_dir = Path(tempfile.mkdtemp(prefix="previewgen_ondemand_"))
+                op.temp_roots.add(temp_dir)
                 target_file = temp_dir / Path(entry_name).name
                 with zipfile.ZipFile(zip_path, "r") as zf:
-                    with zf.open(entry_name) as src, open(target_file, "wb") as dst:
-                        shutil.copyfileobj(src, dst)
-                source_path = target_file
+                    limits.extract_zip_member_bounded(zf, entry_name, target_file)
             else:
                 source_path = Path(file_path).resolve()
 
@@ -231,11 +294,11 @@ class DesktopApi:
             cfg.position = "custom"
 
             jpeg_bytes, orig_w, orig_h = preview_jpeg_bytes(source_path, cfg, max_dimension=850)
-            b64 = base64.b64encode(jpeg_bytes).decode("ascii")
+            preview_url = self.preview_server.publish_jpeg(jpeg_bytes)
             return {
                 "ok": True,
                 "value": {
-                    "dataUrl": f"data:image/jpeg;base64,{b64}",
+                    "url": preview_url,
                     "width": orig_w,
                     "height": orig_h,
                 },
@@ -245,10 +308,157 @@ class DesktopApi:
             logging.warning("render_preview failure: %s", exc)
             return {"ok": False, "value": None, "error": str(exc)}
         finally:
+            self.lifecycle.unregister_operation(op_id)
+            if temp_dir and temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+    def release_preview(self, handle: str) -> dict[str, Any]:
+        """Release a preview handle and reclaim storage."""
+        if not isinstance(handle, str) or not handle.strip():
+            return {"ok": False, "value": False, "error": "Empty preview handle"}
+        removed = self.preview_server.release_jpeg(handle, force=True)
+        return {"ok": True, "value": removed, "error": None}
+
+
+    def probe_asset(self, file_path: str, request_id: int | None = None) -> dict[str, Any]:
+        """Report an asset's export-size capability and native pixel dimensions with operation tracking."""
+        op_id = f"probe_{request_id or uuid.uuid4().hex[:6]}"
+        op = ActiveOperation(operation_id=op_id, kind="asset_probe")
+        self.lifecycle.register_operation(op)
+        temp_dir: Path | None = None
+        try:
+            if not isinstance(file_path, str) or not file_path.strip():
+                return {"ok": False, "value": None, "error": "Empty file path"}
+
+            if file_path.startswith("zip://"):
+                import urllib.parse
+                import zipfile
+                parsed = urllib.parse.urlparse(file_path)
+                zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
+                qs = urllib.parse.parse_qs(parsed.query)
+                entry_name = qs.get("entry", [""])[0]
+                if not zip_path.is_file() or not entry_name:
+                    return {"ok": False, "value": None, "error": "Invalid zip entry URI"}
+                temp_dir = Path(tempfile.mkdtemp(prefix="previewgen_probe_"))
+                op.temp_roots.add(temp_dir)
+                target_file = temp_dir / Path(entry_name).name
+                with zipfile.ZipFile(zip_path, "r") as zf:
+                    limits.extract_zip_member_bounded(zf, entry_name, target_file)
+            else:
+                source_path = Path(file_path).resolve()
+
+            if not source_path.is_file():
+                return {"ok": False, "value": None, "error": f"File does not exist: {source_path.name}"}
+
+            probe_data = probe_asset_isolated(source_path)
+            if request_id is not None:
+                probe_data["requestId"] = request_id
+            return {"ok": True, "value": probe_data, "error": None}
+        except Exception as exc:
+            logging.warning("probe_asset failure: %s", exc)
+            return {"ok": False, "value": None, "error": str(exc)}
+        finally:
+            self.lifecycle.unregister_operation(op_id)
             if temp_dir and temp_dir.exists():
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def start_batch(self, input_folder: str, output_folder: str, config_dict: Dict[str, Any]) -> None:
+    def calculate_export_dimensions(
+        self, file_path: str, requested_width: int = 0, requested_height: int = 0
+    ) -> dict[str, Any]:
+        """Expose canonical export-dimension calculations to eliminate frontend/backend drift."""
+        temp_dir: Path | None = None
+        try:
+            if not isinstance(file_path, str) or not file_path.strip():
+                return {"ok": False, "value": None, "error": "Empty file path"}
+
+            if file_path.startswith("zip://"):
+                import urllib.parse
+                import zipfile
+                parsed = urllib.parse.urlparse(file_path)
+                zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
+                qs = urllib.parse.parse_qs(parsed.query)
+                entry_name = qs.get("entry", [""])[0]
+                if not zip_path.is_file() or not entry_name:
+                    return {"ok": False, "value": None, "error": "Invalid zip entry URI"}
+                temp_dir = Path(tempfile.mkdtemp(prefix="previewgen_dim_"))
+                target_file = temp_dir / Path(entry_name).name
+                with zipfile.ZipFile(zip_path, "r") as zf:
+                    limits.extract_zip_member_bounded(zf, entry_name, target_file)
+            else:
+                source_path = Path(file_path).resolve()
+
+            if not source_path.is_file():
+                return {"ok": False, "value": None, "error": f"File does not exist: {source_path.name}"}
+
+            dims = _calc_export_dimensions(
+                source_path, requested_width=requested_width, requested_height=requested_height
+            )
+            return {"ok": True, "value": dims, "error": None}
+        except Exception as exc:
+            logging.warning("calculate_export_dimensions failure: %s", exc)
+            return {"ok": False, "value": None, "error": str(exc)}
+        finally:
+            if temp_dir and temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+    def export_preview(self, file_path: str, config_dict: dict[str, Any]) -> dict[str, Any]:
+        """Render a single asset to a JPG at the configured export size."""
+        temp_dir: Path | None = None
+        try:
+            if not isinstance(file_path, str) or not file_path.strip():
+                return {"ok": False, "value": None, "error": "Empty file path"}
+
+            if file_path.startswith("zip://"):
+                import urllib.parse
+                import zipfile
+                parsed = urllib.parse.urlparse(file_path)
+                zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
+                qs = urllib.parse.parse_qs(parsed.query)
+                entry_name = qs.get("entry", [""])[0]
+                if not zip_path.is_file() or not entry_name:
+                    return {"ok": False, "value": None, "error": "Invalid zip entry URI"}
+                temp_dir = Path(tempfile.mkdtemp(prefix="previewgen_export_"))
+                target_file = temp_dir / Path(entry_name).name
+                with zipfile.ZipFile(zip_path, "r") as zf:
+                    limits.extract_zip_member_bounded(zf, entry_name, target_file)
+                source_path = target_file
+            else:
+                source_path = Path(file_path).resolve()
+
+            if not source_path.is_file():
+                return {"ok": False, "value": None, "error": f"File does not exist: {source_path.name}"}
+
+            cfg = PreviewConfig.from_mapping(config_dict, mode="strict-export")
+            out_dir = Path(config_dict.get("outputFolder") or source_path.parent).resolve()
+            out_dir.mkdir(parents=True, exist_ok=True)
+            self.add_authorized_folder(out_dir)
+
+            from processor import generate_file
+            dest_file = out_dir / f"{source_path.stem}.jpg"
+            generate_file(source_path, dest_file, cfg)
+            if not dest_file.is_file() or dest_file.stat().st_size == 0:
+                return {"ok": False, "value": None, "error": "Export failed"}
+
+            from PIL import Image
+            with Image.open(dest_file) as im:
+                w, h = im.size
+
+            return {
+                "ok": True,
+                "value": {
+                    "path": str(dest_file),
+                    "width": w,
+                    "height": h,
+                    "skipped": False,
+                },
+                "error": None,
+            }
+        except Exception as exc:
+            logging.warning("export_preview failure: %s", exc)
+            return {"ok": False, "value": None, "error": str(exc)}
+        finally:
+            if temp_dir and temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def start_batch(self, input_folder: str, output_folder: str, config_dict: dict[str, Any]) -> None:
         """Start asynchronous batch processing on a dedicated worker thread."""
         if not self.window:
             return
@@ -319,5 +529,5 @@ class DesktopApi:
         self.lifecycle.cleanup()
 
 
-# Note: Desktop shortcut management is the responsibility of system installers (Inno Setup / DMG / AppImage / setup scripts)
+# Note: Desktop shortcut management is the responsibility of system installers
 # Runtime auto-shortcut creation removed per security and packaging best practices.

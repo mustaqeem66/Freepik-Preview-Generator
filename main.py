@@ -3,7 +3,7 @@ PreviewGen Launcher
 Delegates directly to app.py (pywebview + React Studio)
 """
 from __future__ import annotations
-import sys
+
 import app
 
 if __name__ == "__main__":

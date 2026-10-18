@@ -1,8 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor, act } from "@testing-library/react";
 import { useSettings, parseAndValidateSettings } from "./useSettings";
+import { ApiBridge } from "../api/bridge";
 
 describe("useSettings hook", () => {
+
   it("parses and validates schema fields while dropping invalid properties", () => {
     const raw = {
       text: "Valid Watermark",
@@ -44,5 +46,36 @@ describe("useSettings hook", () => {
       },
       { timeout: 1500 }
     );
+  });
+
+  it("stamps every persisted update with a strictly increasing revision", async () => {
+    ApiBridge.clearCache();
+    const revisions: number[] = [];
+    const fakeApi = {
+      get_initial_state: async () => ({ ok: true, value: {}, error: null }),
+      save_settings: async (settings: { revision?: number }) => {
+        revisions.push(settings.revision as number);
+        return { ok: true, value: true, error: null };
+      },
+    };
+    // @ts-expect-error mock window.pywebview
+    window.pywebview = { api: fakeApi };
+
+    const { result } = renderHook(() => useSettings());
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    await waitFor(() => expect(revisions.length).toBeGreaterThanOrEqual(1), { timeout: 2000 });
+    await act(async () => {
+      result.current.setState((prev) => ({ ...prev, text: "first" }));
+    });
+    await waitFor(() => expect(revisions.length).toBeGreaterThanOrEqual(2), { timeout: 2000 });
+    await act(async () => {
+      result.current.setState((prev) => ({ ...prev, text: "second" }));
+    });
+    await waitFor(() => expect(revisions.length).toBeGreaterThanOrEqual(3), { timeout: 2000 });
+
+    for (let i = 1; i < revisions.length; i++) {
+      expect(revisions[i]).toBeGreaterThan(revisions[i - 1]);
+    }
   });
 });

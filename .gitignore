@@ -53,6 +53,11 @@ input_png/
 !preview-light.png
 !preview-dark.png
 !app.ico
+
+# Allow deterministic render fixtures (must ship for the release render gate)
+!tests/fixtures/*.jpg
+!tests/fixtures/*.png
+!tests/fixtures/*.psd
 # Build artifacts
 *.exe
 *.dmg
@@ -73,11 +78,18 @@ dist/
 .coverage
 htmlcov/
 .pytest_cache/
+.ruff_cache/
+frontend/dist/
 .tox/
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
+previewgen_report*.json
+previewgen_report*.csv
+*.tmp
 # Packaging
 *.tar.gz
 *.whl
+# Temporary archive artifacts
+*.tar.gz.b64.txt
+project.tar.gz.b64.txt

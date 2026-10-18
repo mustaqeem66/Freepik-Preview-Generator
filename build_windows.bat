@@ -10,11 +10,18 @@ if exist "frontend\package.json" (
   echo Building React + Framer frontend...
   cd frontend
   call npm ci
+  if errorlevel 1 exit /b 1
+  call npm run typecheck
+  if errorlevel 1 exit /b 1
+  call npm test
+  if errorlevel 1 exit /b 1
   call npm run build
+  if errorlevel 1 exit /b 1
   cd ..
 )
-python -m pip install --upgrade pyinstaller
-pyinstaller --noconsole --name PreviewGen --icon=app.ico --add-data "app.ico;." --add-data "frontend\dist;frontend\dist" --collect-all psd_tools --collect-all trimesh --collect-all webview --collect-all ezdxf --collect-all olefile --collect-all cascadio --collect-all resvg_py --collect-all matplotlib app.py --clean -y
+python -m pip install --require-hashes -r requirements-dev-lock.txt
+if errorlevel 1 exit /b 1
+pyinstaller --noconsole --name PreviewGen --icon=app.ico --add-data "app.ico;." --add-data "frontend\dist;frontend\dist" --add-data "previewgen\settings_schema.json;previewgen" --collect-all psd_tools --collect-all trimesh --collect-all webview --collect-all ezdxf --collect-all olefile --collect-all cascadio --collect-all resvg_py --collect-all matplotlib --collect-all pypdfium2 --collect-all pypdfium2_raw --collect-all fontTools --collect-all brotli app.py --clean -y
 if errorlevel 1 (
   echo Build failed. Read the error above.
   pause

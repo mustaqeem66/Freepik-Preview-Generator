@@ -1,112 +1,56 @@
-import React from "react";
-import { Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Image as ImageIcon, Loader2, Move3D } from "lucide-react";
 
 interface PreviewCanvasProps {
-  previewDataUrl: string | null;
+  previewUrl: string | null;
   isLoading: boolean;
   renderError: string | null;
   name: string;
   width: number;
   height: number;
+  is3D?: boolean;
+  yaw?: number;
+  pitch?: number;
+  onOrbit?: (yaw: number, pitch: number) => void;
 }
 
-export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
-  previewDataUrl,
-  isLoading,
-  renderError,
-  name,
-  width,
-  height,
-}) => {
-  return (
-    <div
-      style={{
-        position: "relative",
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        overflow: "hidden",
-        background: "var(--preview-bg)",
-        borderRadius: "12px",
-        border: "1px solid var(--card-border)",
-      }}
-    >
-      {isLoading && (
-        <div
-          style={{
-            position: "absolute",
-            zIndex: 10,
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            padding: "8px 16px",
-            background: "rgba(0, 0, 0, 0.75)",
-            color: "#FFFFFF",
-            borderRadius: "20px",
-            fontSize: "12px",
-          }}
-        >
-          <Loader2 size={16} className="animate-spin" />
-          Rendering preview…
-        </div>
-      )}
-
-      {renderError && (
-        <div
-          style={{
-            padding: "16px 20px",
-            background: "var(--error-bg, rgba(239, 68, 68, 0.1))",
-            color: "var(--error, #EF4444)",
-            border: "1px solid var(--error, #EF4444)",
-            borderRadius: "8px",
-            fontSize: "13px",
-            maxWidth: "80%",
-            textAlign: "center",
-          }}
-        >
-          <strong>Preview Error:</strong> {renderError}
-        </div>
-      )}
-
-      {!renderError && previewDataUrl && (
-        <img
-          src={previewDataUrl}
-          alt={name || "Preview"}
-          style={{
-            maxWidth: "100%",
-            maxHeight: "100%",
-            objectFit: "contain",
-            boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
-            borderRadius: "6px",
-          }}
-        />
-      )}
-
-      {!renderError && !previewDataUrl && !isLoading && (
-        <div style={{ color: "var(--text-sec)", fontSize: "13px" }}>
-          Select an asset to view preview
-        </div>
-      )}
-
-      {name && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: "12px",
-            left: "14px",
-            padding: "4px 10px",
-            background: "rgba(0,0,0,0.6)",
-            color: "#FFF",
-            borderRadius: "6px",
-            fontSize: "11px",
-            backdropFilter: "blur(4px)",
-          }}
-        >
-          {name} {width > 0 && height > 0 ? `(${width} × ${height})` : ""}
-        </div>
-      )}
-    </div>
-  );
-};
+export function PreviewCanvas({ previewUrl, isLoading, renderError, name, width, height,
+  is3D = false, yaw = 45, pitch = 30, onOrbit }: PreviewCanvasProps) {
+  const drag = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null);
+  const [imageError, setImageError] = useState(false);
+  useEffect(() => setImageError(false), [previewUrl]);
+  const orbit = (y: number, p: number) => onOrbit?.(((y % 360) + 360) % 360, Math.max(-85, Math.min(85, p)));
+  const error = renderError || (imageError ? "The rendered image could not be loaded. Select the asset again to retry." : null);
+  return <div className={`preview-canvas${is3D ? " orbit-canvas" : ""}`} aria-busy={isLoading}
+    role="group" aria-label={is3D ? "3D preview. Drag to orbit; Shift and arrow keys adjust the camera." : "Live preview"}
+    tabIndex={is3D ? 0 : undefined}
+    onKeyDown={(e) => {
+      if (!is3D || !e.shiftKey || !e.key.startsWith("Arrow")) return;
+      e.preventDefault(); e.stopPropagation();
+      orbit(yaw + (e.key === "ArrowRight" ? 5 : e.key === "ArrowLeft" ? -5 : 0),
+        pitch + (e.key === "ArrowUp" ? 5 : e.key === "ArrowDown" ? -5 : 0));
+    }}
+    onPointerDown={(e) => {
+      if (!is3D || !previewUrl || e.button !== 0) return;
+      drag.current = { x: e.clientX, y: e.clientY, yaw, pitch };
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }}
+    onPointerMove={(e) => {
+      const start = drag.current;
+      if (start) orbit(start.yaw + (e.clientX - start.x) * 0.5, start.pitch - (e.clientY - start.y) * 0.5);
+    }}
+    onPointerUp={() => { drag.current = null; }}
+    onPointerCancel={() => { drag.current = null; }}
+    onLostPointerCapture={() => { drag.current = null; }}>
+    {isLoading && <div className="rendering-indicator" role="status"><Loader2 size={15} className="animate-spin" />Rendering preview…</div>}
+    {error && <div className="preview-error" role="alert"><strong>Preview unavailable</strong><p>{error}</p></div>}
+    {!error && previewUrl && <img src={previewUrl} alt={name || "Preview"} draggable={false} onError={() => setImageError(true)} />}
+    {!error && !previewUrl && !isLoading && <div className="empty-canvas">
+      <span className="empty-canvas-icon"><ImageIcon size={32} strokeWidth={1.25} /></span>
+      <h2>Your artwork, ready to present</h2><p>Choose a source folder to start.<br />Preview, refine, then export your JPGs.</p>
+      <span className="empty-formats">Raster · Vector · 3D · Creator files</span>
+    </div>}
+    {name && <div className="canvas-caption"><span title={name}>{name}</span>{width > 0 && height > 0 && <span>{width} × {height} px</span>}</div>}
+    {is3D && previewUrl && <div className="orbit-hint"><Move3D size={14} />Drag to orbit · Shift + arrows</div>}
+  </div>;
+}

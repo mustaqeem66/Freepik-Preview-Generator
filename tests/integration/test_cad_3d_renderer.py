@@ -1,17 +1,24 @@
-from pathlib import Path
 import sys
 import tempfile
+from pathlib import Path
+
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+pytestmark = pytest.mark.full_runtime
+
+# Optional renderer engines: skip the module (rather than aborting collection)
+# when the full runtime is not installed.
+ezdxf = pytest.importorskip("ezdxf")
+trimesh = pytest.importorskip("trimesh")
+pytest.importorskip("matplotlib")
 
 from processor import PreviewConfig, generate_file
 
 
 def test_3d_mesh_rendering_integration():
     """Verify 3D GLB mesh preview generation."""
-    trimesh = pytest.importorskip("trimesh")
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
@@ -30,8 +37,6 @@ def test_3d_mesh_rendering_integration():
 
 def test_dxf_rendering_integration():
     """Verify AutoCAD DXF drawing preview generation."""
-    ezdxf = pytest.importorskip("ezdxf")
-    matplotlib = pytest.importorskip("matplotlib")
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)

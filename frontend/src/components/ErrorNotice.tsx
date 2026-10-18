@@ -39,6 +39,7 @@ export const ErrorNotice: React.FC<ErrorNoticeProps> = ({ notices, onDismiss }) 
         return (
           <div
             key={n.id}
+            role={isErr ? "alert" : "status"}
             style={{
               display: "flex",
               alignItems: "center",
@@ -64,6 +65,7 @@ export const ErrorNotice: React.FC<ErrorNoticeProps> = ({ notices, onDismiss }) 
             </div>
             <button
               type="button"
+              aria-label={`Dismiss ${n.message}`}
               onClick={() => onDismiss(n.id)}
               style={{
                 background: "none",

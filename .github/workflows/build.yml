@@ -29,16 +29,17 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Set up Python 3.12
+      - name: Set up Python 3.12.8
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
-          python-version: "3.12"
-
-      - name: Install dependencies
+          python-version: "3.12.8"
+      - name: Install dependencies (hash-pinned lock)
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller pytest
+          pip install --require-hashes -r requirements-dev-lock.txt
+
+      - name: Lint Python (ruff)
+        run: python -m ruff check .
 
       # ── Linux: install system webview deps ──
       - name: Install Linux system dependencies
@@ -46,23 +47,25 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-0 libgl1-mesa-glx libegl1 fuse libfuse2 xvfb
-      # ── Build React Frontend with npm ci and TypeScript Typecheck ──
-      - name: Set up Node.js
+      # ── Frontend gate: typecheck -> tests -> production bundle ──
+      # Packaging must not start unless the frontend passes all three gates.
+      - name: Set up Node.js 24.15.0
         uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
         with:
-          node-version: "20"
-
+          node-version: "24.15.0"
       - name: Build React frontend
         run: |
           cd frontend
           npm ci
           npm run typecheck
+          npm test
           npm run build
           cd ..
 
       # ── Mandatory Python Test Suite Gate (includes frontend bundle check) ──
-      # ── Mandatory Python Test Suite Gate (enforces zero skips for mandatory release renderers) ──
       - name: Run Python unit and integration test suite
+        env:
+          PREVIEWGEN_REQUIRE_FRONTEND_BUNDLE: "1"
         run: |
           python -m pytest tests/ -v -W error::pytest.PytestUnraisableExceptionWarning
       # ── Build with PyInstaller (native windowed .app on macOS) ──
@@ -72,10 +75,52 @@ jobs:
           pyinstaller --noconsole --name PreviewGen --icon=app.ico \
             --add-data "app.ico${{ runner.os == 'Windows' && ';' || ':' }}." \
             --add-data "frontend/dist${{ runner.os == 'Windows' && ';' || ':' }}frontend/dist" \
+            --add-data "previewgen/settings_schema.json${{ runner.os == 'Windows' && ';' || ':' }}previewgen" \
             --collect-all psd_tools --collect-all trimesh --collect-all webview \
             --collect-all resvg_py --collect-all matplotlib \
+            --collect-all cascadio --collect-all ezdxf --collect-all olefile \
+            --collect-all pypdfium2 --collect-all pypdfium2_raw --collect-all fontTools --collect-all brotli \
             ${{ runner.os == 'macOS' && '--osx-bundle-identifier com.zenartisan.previewgen --windowed' || '' }} \
             app.py --clean -y
+
+      - name: Collect build diagnostics and renderer versions
+        shell: bash
+        run: |
+          mkdir -p build_diagnostics
+          cp build/PreviewGen/warn-PreviewGen.txt build_diagnostics/ 2>/dev/null || true
+          python -c "
+          import sys, PIL, trimesh, psd_tools, resvg_py, ezdxf, cascadio
+          print('Python:', sys.version)
+          print('Pillow:', PIL.__version__)
+          print('trimesh:', trimesh.__version__)
+          print('psd-tools:', psd_tools.__version__)
+          print('ezdxf:', ezdxf.__version__)
+          print('cascadio:', getattr(cascadio, '__version__', 'installed'))
+          " > build_diagnostics/renderer_versions.txt 2>&1 || true
+
+      - name: Upload build diagnostics artifact
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: diagnostics-${{ matrix.artifact }}
+          path: build_diagnostics/
+
+      # ── Packaged (frozen) renderer gate ──
+      # Source imports do not prove the packaged app supports every format;
+      # exercise the actual frozen artifact against the deterministic fixtures.
+      - name: Verify frozen artifact renders fixtures (packaged gate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            Windows) export PREVIEWGEN_BINARY="dist/PreviewGen/PreviewGen.exe" ;;
+            macOS)   export PREVIEWGEN_BINARY="dist/PreviewGen.app/Contents/MacOS/PreviewGen" ;;
+            *)       export PREVIEWGEN_BINARY="dist/PreviewGen/PreviewGen" ;;
+          esac
+          # Enforce a real packaged binary in the release pipeline (fail-closed before pytest runs)
+          test -n "$PREVIEWGEN_BINARY" || { echo "FATAL: PREVIEWGEN_BINARY is empty or unset"; exit 1; }
+          test -f "$PREVIEWGEN_BINARY" || { echo "FATAL: Frozen artifact not found: $PREVIEWGEN_BINARY"; exit 1; }
+          export PREVIEWGEN_RELEASE_GATE=1
+          python -m pytest tests/integration/test_release_renderers_gate.py -v -W error
       - name: Windows Startup Test
         if: runner.os == 'Windows'
         shell: pwsh
@@ -171,6 +216,26 @@ jobs:
           ln -s /Applications dmg_staging/Applications
           hdiutil create -volname "PreviewGen" -srcfolder dmg_staging -ov -format UDZO PreviewGen-macOS.dmg
 
+      - name: Notarize and staple macOS DMG
+        if: runner.os == 'macOS'
+        run: |
+          if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ] && [ -n "${{ secrets.APPLE_APP_PASSWORD }}" ]; then
+            echo "Submitting DMG to Apple notary service..."
+            xcrun notarytool submit PreviewGen-macOS.dmg \
+              --apple-id "${{ secrets.APPLE_ID }}" \
+              --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+              --password "${{ secrets.APPLE_APP_PASSWORD }}" \
+              --wait
+            echo "Stapling notarization ticket to DMG..."
+            xcrun stapler staple PreviewGen-macOS.dmg
+            xcrun stapler validate PreviewGen-macOS.dmg
+          elif [ "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ]; then
+            echo "FATAL: APPLE_ID/APPLE_TEAM_ID/APPLE_APP_PASSWORD secrets are required to notarize official production release tag ${{ github.ref }}"
+            exit 1
+          else
+            echo "Notice: Notarization secrets not configured. Skipping notarization for development build."
+          fi
+
       # ── Linux: Startup test & Genuine AppImage ──
       - name: Linux Startup Test
         if: runner.os == 'Linux'
@@ -206,7 +271,15 @@ jobs:
           exec "$HERE/usr/bin/PreviewGen" "$@"
           APPRUN
           chmod +x PreviewGen.AppDir/AppRun
-          wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
+          # Pin the AppImage tooling to a stable release and verify its checksum
+          # before execution (immutable, auditable build dependency).
+          APPIMAGETOOL_VERSION="1.9.1"
+          APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage"
+          APPIMAGETOOL_SHA256="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
+          wget -q "$APPIMAGETOOL_URL" -O appimagetool
+          echo "${APPIMAGETOOL_SHA256}  appimagetool" | sha256sum -c - || {
+            echo "FATAL: appimagetool checksum verification failed"; exit 1;
+          }
           chmod +x appimagetool
           ARCH=x86_64 ./appimagetool PreviewGen.AppDir PreviewGen-Linux.AppImage
           test -f PreviewGen-Linux.AppImage || { echo "FATAL: appimagetool failed to create PreviewGen-Linux.AppImage"; exit 1; }
@@ -241,6 +314,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       # Crucial: NO actions/setup-python and NO actions/setup-node installed here!
+      - name: Checkout render fixtures (source only, no toolchain)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
       - name: Download compiled artifact
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:

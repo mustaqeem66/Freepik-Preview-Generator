@@ -9,6 +9,9 @@ interface BatchProgressProps {
   onStartBatch: () => void;
   onCancelBatch: () => void;
   canStart: boolean;
+  truncated?: boolean;
+  truncationReasons?: string[];
+  discovered?: number;
 }
 
 export const BatchProgress: React.FC<BatchProgressProps> = ({
@@ -19,11 +22,15 @@ export const BatchProgress: React.FC<BatchProgressProps> = ({
   onStartBatch,
   onCancelBatch,
   canStart,
+  truncated = false,
+  truncationReasons = [],
+  discovered = 0,
 }) => {
-  const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+  const percent = progress.total > 0 ? Math.min(100, Math.round((progress.current / progress.total) * 100)) : 0;
 
   return (
     <div
+      className="batch-progress"
       style={{
         display: "flex",
         flexDirection: "column",
@@ -35,7 +42,7 @@ export const BatchProgress: React.FC<BatchProgressProps> = ({
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: "13px", fontWeight: 700 }}>Export Marketplace Previews</span>
+        <span style={{ fontSize: "13px", fontWeight: 600 }}>Batch export</span>
         {isProcessing ? (
           <button
             type="button"
@@ -81,7 +88,9 @@ export const BatchProgress: React.FC<BatchProgressProps> = ({
             <span>{progress.message}</span>
             <span>{percent}%</span>
           </div>
-          <div style={{ height: "6px", background: "var(--chip-bg)", borderRadius: "3px", overflow: "hidden" }}>
+          <div role="progressbar" aria-label="Batch generation progress" aria-valuemin={0} aria-valuemax={100}
+            aria-valuenow={progress.total > 0 ? percent : undefined}
+            style={{ height: "6px", background: "var(--chip-bg)", borderRadius: "3px", overflow: "hidden" }}>
             <div
               style={{
                 height: "100%",
@@ -94,6 +103,7 @@ export const BatchProgress: React.FC<BatchProgressProps> = ({
         </div>
       )}
 
+      {!isProcessing && <p className="muted batch-result" role="status">{progress.message}</p>}
       {!isProcessing && (stats.success > 0 || stats.failed > 0) && (
         <div style={{ display: "flex", alignItems: "center", gap: "16px", fontSize: "12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--success, #10B981)" }}>
@@ -104,6 +114,29 @@ export const BatchProgress: React.FC<BatchProgressProps> = ({
               <AlertTriangle size={16} /> {stats.failed} failed
             </div>
           )}
+        </div>
+      )}
+
+      {!isProcessing && truncated && (
+        <div
+          data-testid="batch-truncation-warning"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "8px 12px",
+            background: "rgba(245, 158, 11, 0.12)",
+            border: "1px solid rgba(245, 158, 11, 0.35)",
+            borderRadius: "6px",
+            fontSize: "11px",
+            color: "#F59E0B",
+          }}
+        >
+          <AlertTriangle size={16} />
+          <span>
+            Truncated ({truncationReasons.join(", ") || "safety limit"}) — {stats.success} processed of{" "}
+            {discovered || progress.total} discovered. Acknowledge to continue.
+          </span>
         </div>
       )}
 

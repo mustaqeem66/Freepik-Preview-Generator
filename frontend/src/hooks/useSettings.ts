@@ -1,72 +1,50 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { PreviewState } from "../types";
 import { ApiBridge } from "../api/bridge";
+import { SETTINGS_DEFAULTS, SETTINGS_FIELDS } from "../generated/settingsContract";
 
-export const defaultState: PreviewState = {
-  inputFolder: "",
-  outputFolder: "",
-  sameFolder: false,
-  invertTriangles: true,
-  solidColor: "#FFFFFF",
-  logoPath: "",
-  logoScale: 100,
-  logoOpacity: 90,
-  logoPosX: 88,
-  logoPosY: 5,
-  text: "100% TRANSPARENT",
-  textPosX: 5,
-  textPosY: 5,
-  textColor: "#FFFFFF",
-  fontPath: "",
-  fontScale: 100,
-  hasOutline: true,
-  outlineColor: "#000000",
-  outlineThickness: 2,
-  opacity: 90,
-  yaw: 45,
-  pitch: 30,
-  theme: "light",
-  overwritePolicy: "rename",
-};
+// Defaults derive from the generated contract so the frontend cannot drift from
+// the canonical backend schema (previewgen/settings_schema.json).
+export const defaultState: PreviewState = { ...SETTINGS_DEFAULTS } as PreviewState;
 
 export function parseAndValidateSettings(raw: unknown): Partial<PreviewState> {
   if (!raw || typeof raw !== "object") return {};
   const data = raw as Record<string, unknown>;
 
-  const validated: Partial<PreviewState> = {};
+  const validated: Record<string, unknown> = {};
 
-  if (typeof data["text"] === "string") validated.text = data["text"].slice(0, 100);
-  if (typeof data["inputFolder"] === "string") validated.inputFolder = data["inputFolder"];
-  if (typeof data["outputFolder"] === "string") validated.outputFolder = data["outputFolder"];
-  if (typeof data["sameFolder"] === "boolean") validated.sameFolder = data["sameFolder"];
-  if (typeof data["invertTriangles"] === "boolean") validated.invertTriangles = data["invertTriangles"];
-  if (typeof data["solidColor"] === "string" && /^#[0-9A-Fa-f]{6}$/.test(data["solidColor"])) {
-    validated.solidColor = data["solidColor"];
-  }
-  if (typeof data["textColor"] === "string" && /^#[0-9A-Fa-f]{6}$/.test(data["textColor"])) {
-    validated.textColor = data["textColor"];
-  }
-  if (typeof data["opacity"] === "number" && !isNaN(data["opacity"])) {
-    validated.opacity = Math.max(0, Math.min(100, data["opacity"]));
-  }
-  if (typeof data["theme"] === "string" && (data["theme"] === "light" || data["theme"] === "dark")) {
-    validated.theme = data["theme"];
-  }
-  if (
-    typeof data["overwritePolicy"] === "string" &&
-    ["rename", "skip", "overwrite"].includes(data["overwritePolicy"])
-  ) {
-    validated.overwritePolicy = data["overwritePolicy"] as "rename" | "skip" | "overwrite";
+  for (const field of SETTINGS_FIELDS) {
+    const value = data[field.name];
+    if (value === undefined || value === null) continue;
+
+    if (field.type === "string") {
+      if (typeof value !== "string") continue;
+      if (field.enum && !field.enum.includes(value)) continue;
+      if (field.pattern && !new RegExp(field.pattern).test(value)) continue;
+      validated[field.name] = field.maxLength ? value.slice(0, field.maxLength) : value;
+    } else if (field.type === "boolean") {
+      if (typeof value !== "boolean") continue;
+      validated[field.name] = value;
+    } else if (field.type === "number" || field.type === "integer") {
+      if (typeof value !== "number" || !Number.isFinite(value)) continue;
+      let n = value;
+      if (field.minimum !== undefined) n = Math.max(field.minimum, n);
+      if (field.maximum !== undefined) n = Math.min(field.maximum, n);
+      validated[field.name] = field.type === "integer" ? Math.round(n) : n;
+    }
   }
 
-  return validated;
+  return validated as Partial<PreviewState>;
 }
 
-export function useSettings(onSaveError?: (err: string) => void) {
+export function useSettings(onSaveError?: (err: string) => void, enabled = true) {
   const [state, setState] = useState<PreviewState>(defaultState);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
-
+  const revisionRef = useRef<number>(0);
+  const onSaveErrorRef = useRef(onSaveError);
+  onSaveErrorRef.current = onSaveError;
   useEffect(() => {
+    if (!enabled || isLoaded) return;
     let unmounted = false;
 
     const loadSettings = async () => {
@@ -75,6 +53,10 @@ export function useSettings(onSaveError?: (err: string) => void) {
         try {
           const res = await api.get_initial_state();
           const raw = res && "value" in res ? res.value : res;
+          if (raw && typeof raw === "object" && "revision" in raw &&
+              typeof raw.revision === "number" && Number.isSafeInteger(raw.revision)) {
+            revisionRef.current = Math.max(revisionRef.current, raw.revision);
+          }
           const validated = parseAndValidateSettings(raw);
           if (validated && !unmounted) {
             setState((prev) => ({ ...prev, ...validated }));
@@ -82,7 +64,7 @@ export function useSettings(onSaveError?: (err: string) => void) {
         } catch (e) {
           console.error("Failed to restore settings:", e);
         } finally {
-          setIsLoaded(true);
+          if (!unmounted) setIsLoaded(true);
         }
       }
     };
@@ -91,27 +73,30 @@ export function useSettings(onSaveError?: (err: string) => void) {
     return () => {
       unmounted = true;
     };
-  }, []);
+  }, [enabled, isLoaded]);
 
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || !enabled) return;
+    const currentRev = ++revisionRef.current;
     const timer = setTimeout(async () => {
       const api = await ApiBridge.getApi(1000);
-      if (api) {
+      if (api && currentRev === revisionRef.current) {
         try {
-          const res = await api.save_settings(state);
-          if (res && "ok" in res && res.ok === false) {
-            onSaveError?.(res.error || "Settings persistence rejected by backend.");
+          const res = await api.save_settings({ ...state, revision: currentRev });
+          if (currentRev === revisionRef.current && res && "ok" in res && res.ok === false) {
+            onSaveErrorRef.current?.(res.error || "Settings persistence rejected by backend.");
           }
         } catch (e) {
-          const msg = e instanceof Error ? e.message : "Settings could not be saved.";
-          onSaveError?.(msg);
+          if (currentRev === revisionRef.current) {
+            const msg = e instanceof Error ? e.message : "Settings could not be saved.";
+            onSaveErrorRef.current?.(msg);
+          }
         }
       }
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [state, isLoaded, onSaveError]);
+  }, [state, isLoaded, enabled]);
 
   return { state, setState, isLoaded };
 }

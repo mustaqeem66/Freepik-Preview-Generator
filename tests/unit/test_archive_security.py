@@ -1,15 +1,16 @@
-from io import BytesIO
-from pathlib import Path
 import sys
 import tempfile
 import zipfile
-from PIL import Image, ImageDraw
+from pathlib import Path
+
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from processor import safe_extract_zip, MAX_ZIP_MEMBERS
+from processor import MAX_ZIP_MEMBERS, safe_extract_zip
+
+pytestmark = pytest.mark.core
 
 
 def test_zip_slip_path_traversal_blocked_unit():
@@ -53,8 +54,26 @@ def test_zip_member_limit_enforced():
             safe_extract_zip(zip_path, extract_dir)
 
 
+def test_zip_declared_total_rejected_before_extraction(monkeypatch):
+    """Verify the declared uncompressed total is rejected before extracting bytes."""
+    import previewgen.batch.archive as archive_module
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        zip_path = tmp / "oversized.zip"
+        extract_dir = tmp / "extracted"
+
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            for i in range(3):
+                zf.writestr(f"file_{i}.txt", b"12345")
+
+        monkeypatch.setattr(archive_module.previewgen_config, "MAX_TOTAL_BYTES", 10)
+        with pytest.raises(ValueError, match="Archive declares"):
+            safe_extract_zip(zip_path, extract_dir)
+        assert not extract_dir.exists() or not any(extract_dir.iterdir())
+
+
 def test_valid_zip_extracts_correctly():
-    """Verify that a standard zip archive extracts cleanly."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
         zip_path = tmp / "normal.zip"
