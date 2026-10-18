@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -113,7 +114,16 @@ def write_batch_reports(
             "truncationReasons": summary_payload.get("truncationReasons"),
         }
         latest_tmp.write_text(json.dumps(latest_payload, indent=2), encoding="utf-8")
-        latest_tmp.replace(latest_path)
+        # On Windows, replace() can fail with WinError 5 Access Denied if another thread is reading
+        # or concurrently replacing the same latest pointer file; retry with exponential backoff.
+        for attempt in range(5):
+            try:
+                latest_tmp.replace(latest_path)
+                break
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.02 * (2 ** attempt))
 
         result["status"] = "written"
         _prune_old_reports(output_folder, retention)

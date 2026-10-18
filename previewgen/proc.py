@@ -343,10 +343,12 @@ class WindowsJob:  # pragma: no cover - Windows only
             import ctypes
 
             k32 = ctypes.__dict__["windll"].kernel32
-            process = k32.OpenProcess(0x0100 | 0x0001, False, pid)  # SET_QUOTA | TERMINATE
+            # PROCESS_SET_QUOTA | PROCESS_TERMINATE | SYNCHRONIZE
+            process = k32.OpenProcess(0x0100 | 0x0001 | 0x00100000, False, pid)
             if not process:
                 return False
             try:
+                # Breakaway prevention: force processes spawned by child to stay in job
                 return bool(k32.AssignProcessToJobObject(ctypes.c_void_p(self._handle), process))
             finally:
                 k32.CloseHandle(process)

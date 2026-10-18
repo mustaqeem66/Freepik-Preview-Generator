@@ -57,6 +57,24 @@ class DirectoryLock:
 
     def read_metadata(self) -> dict[str, Any] | None:
         """Inspect the current lock-file contents for owner PID and batch ID."""
+        if self._handle and self._acquired:
+            try:
+                pos = self._handle.tell()
+                self._handle.seek(0)
+                raw = self._handle.read()
+                self._handle.seek(pos)
+                content = raw.decode("utf-8", "replace").strip()
+                if content.startswith("{"):
+                    return json.loads(content)
+                data: dict[str, Any] = {}
+                for line in content.splitlines():
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        data[k.strip()] = v.strip()
+                if data:
+                    return data
+            except Exception:
+                pass
         if not self.lock_file.is_file():
             return None
         try:
@@ -66,7 +84,7 @@ class DirectoryLock:
             # Support both key=value format and JSON metadata
             if content.startswith("{"):
                 return json.loads(content)
-            data: dict[str, Any] = {}
+            data = {}
             for line in content.splitlines():
                 if "=" in line:
                     k, v = line.split("=", 1)
