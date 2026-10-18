@@ -91,6 +91,14 @@ def start_desktop_app() -> int:
     elif sys.platform == "win32":
         gui_type = "edgechromium"
 
+    if sys.platform == "win32":
+        try:
+            import webview.platforms.winforms as winforms
+            # Prevent recursive COM/ActiveX reflection loops in WinForms webview
+            if hasattr(winforms, "BrowserView"):
+                winforms.BrowserView.instances = []
+        except Exception:
+            pass
     is_headless = is_smoke
     window = webview.create_window(
         "PreviewGen",
