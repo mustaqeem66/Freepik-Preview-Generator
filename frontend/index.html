@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PreviewGen</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <script>
+      // Block pywebview Windows WinForms recursive reflection on native Form/Object handles
+      (function() {
+        try {
+          Object.defineProperty(window, 'native', {
+            get: function() { return undefined; },
+            set: function() {},
+            configurable: false
+          });
+        } catch(e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
