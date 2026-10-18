@@ -140,14 +140,15 @@ def start_desktop_app() -> int:
             start_kwargs["gui"] = gui_type
         if is_smoke:
             def _auto_close_smoke() -> None:
-                # Wait up to 10 seconds for React frontend_ready marker to be written before destroying
                 marker = os.environ.get("PREVIEWGEN_READY_MARKER")
-                for _ in range(20):
+                for _ in range(30):
                     if marker and Path(marker).is_file():
                         break
                     time.sleep(0.5)
                 with contextlib.suppress(Exception):
                     window.destroy()
+                # Terminate smoke test process so host subshell is never left waiting on Cocoa/Win32 event loops
+                threading.Timer(1.0, lambda: os._exit(0)).start()
             threading.Thread(target=_auto_close_smoke, daemon=True).start()
         try:
             webview.start(**start_kwargs)

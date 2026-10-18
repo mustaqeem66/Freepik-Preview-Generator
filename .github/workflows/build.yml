@@ -368,7 +368,7 @@ jobs:
           echo "Mounting macOS DMG on machine without project Python/Node..."
           hdiutil attach PreviewGen-macOS.dmg -mountpoint /Volumes/PreviewGenTest
           export PREVIEWGEN_READY_MARKER="$PWD/gui_ready.txt"
-          python3 -c "import subprocess, sys, time; proc = subprocess.Popen(['/Volumes/PreviewGenTest/PreviewGen.app/Contents/MacOS/PreviewGen', '--gui-smoke-test']); (proc.wait(timeout=60) if True else None) if hasattr(proc, 'wait') else None" || {
+          python3 -c "import subprocess, sys, time; proc = subprocess.Popen(['/Volumes/PreviewGenTest/PreviewGen.app/Contents/MacOS/PreviewGen', '--gui-smoke-test']); sys.exit(proc.wait(timeout=60))" || {
             cat ~/Library/Logs/PreviewGen/previewgen.log 2>/dev/null || true
             echo "FATAL: macOS GUI test failed or timed out after 60s"; exit 1;
           }
