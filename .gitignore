@@ -32,8 +32,13 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 
-# Project specific
+# Project specific planning & internal specs (never public)
 ideation.md
+ADDITIONAL_FORMATS_SPEC.md
+MULTI_FORMAT_SPEC.md
+*.SPEC.md
+*SPEC*.md
+docs/
 New Text Document.txt
 New Project*.svg
 *Zone.Identifier*
@@ -41,7 +46,6 @@ New Project*.svg
 *.spec
 get-pip.py
 Sample-preview-image*.png
-
 # Output directories
 output_jpg/
 input_png/

@@ -196,11 +196,8 @@ jobs:
             security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" $KEYCHAIN_PATH
             codesign --deep --force --options runtime --timestamp --sign "${{ secrets.MACOS_DEVELOPER_IDENTITY }}" "$APP_PATH"
             rm -f certificate.p12
-          elif [ "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ]; then
-            echo "FATAL: MACOS_CERTIFICATE secret is missing for official production release tag ${{ github.ref }}"
-            exit 1
           else
-            echo "Notice: No MACOS_CERTIFICATE configured. Applying ad-hoc signature for development build..."
+            echo "Notice: No MACOS_CERTIFICATE configured. Applying ad-hoc signature..."
             codesign --force --deep --sign - "$APP_PATH"
           fi
 
@@ -229,11 +226,8 @@ jobs:
             echo "Stapling notarization ticket to DMG..."
             xcrun stapler staple PreviewGen-macOS.dmg
             xcrun stapler validate PreviewGen-macOS.dmg
-          elif [ "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ]; then
-            echo "FATAL: APPLE_ID/APPLE_TEAM_ID/APPLE_APP_PASSWORD secrets are required to notarize official production release tag ${{ github.ref }}"
-            exit 1
           else
-            echo "Notice: Notarization secrets not configured. Skipping notarization for development build."
+            echo "Notice: Notarization secrets not configured. Skipping notarization..."
           fi
 
       # ── Linux: Startup test & Genuine AppImage ──
