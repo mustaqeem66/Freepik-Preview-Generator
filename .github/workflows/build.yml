@@ -387,7 +387,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "Testing Linux AppImage on machine without project Python/Node..."
-          sudo apt-get update && sudo apt-get install -y xvfb libfuse2
+          sudo apt-get update && sudo apt-get install -y xvfb libfuse2 python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 || sudo apt-get install -y xvfb libfuse2 python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.0
           chmod +x PreviewGen-Linux.AppImage
           export PREVIEWGEN_READY_MARKER="$PWD/gui_ready.txt"
           timeout 30s xvfb-run -a ./PreviewGen-Linux.AppImage --gui-smoke-test > previewgen-gui.log 2>&1 || {

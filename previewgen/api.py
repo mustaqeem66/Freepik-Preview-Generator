@@ -137,15 +137,16 @@ class DesktopApi:
     def frontend_ready(self) -> dict[str, Any]:
         """Called by React frontend when mounted and interactive."""
         logging.info("Frontend mounted and reported ready.")
-        import os
         ready_marker = os.environ.get("PREVIEWGEN_READY_MARKER")
         if ready_marker:
             try:
                 Path(ready_marker).write_text("READY\n", encoding="utf-8")
             except Exception as exc:
                 logging.warning("Could not write ready marker: %s", exc)
+        if "--gui-smoke-test" in sys.argv and self.window:
+            # Destroy window after bridge response completes so clean machine tests exit promptly
+            threading.Timer(0.5, self.window.destroy).start()
         return {"ok": True, "value": "ready", "error": None}
-
     def get_initial_state(self) -> dict[str, Any]:
         """Load persistent user preferences with schema version validation."""
         validated = load_settings()
