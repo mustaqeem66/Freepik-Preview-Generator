@@ -6,6 +6,14 @@ extend-exclude = ["frontend", "dist", "build", "node_modules"]
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.isort]
+# Declare the first-party root explicitly so import classification does not
+# depend on which modules happen to exist in a given checkout. Without this,
+# a new first-party module that is not yet present (e.g. during review or a
+# partial checkout) is misclassified as third-party and I001 flags a spurious
+# import-section split.
+known-first-party = ["previewgen"]
+
 [tool.ruff.lint.per-file-ignores]
 "processor.py" = ["F401"]
 "previewgen/renderers/__init__.py" = ["F401"]
