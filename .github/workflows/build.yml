@@ -155,7 +155,10 @@ jobs:
           Copy-Item USER_GUIDE.txt dist\PreviewGen\USER_GUIDE.txt
           Compress-Archive -Path dist\PreviewGen\* -DestinationPath PreviewGen-Windows.zip -Force
           # Compile Inno Setup installer wizard (PreviewGen-Setup.exe)
-          & "C:\Program Files (x86)\Inno Setup 6\iscc.exe" installer.iss
+          $appVersion = (python -c "from previewgen import __version__; print(__version__)").Trim()
+          if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}" -ne "v$appVersion") { throw "Release tag mismatch: expected v$appVersion." }
+          & "C:\Program Files (x86)\Inno Setup 6\iscc.exe" "/DMyAppVersion=$appVersion" installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed." }
           Move-Item dist\PreviewGen-Setup.exe .
 
       - name: Sign Windows installer

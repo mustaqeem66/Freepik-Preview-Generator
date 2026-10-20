@@ -44,26 +44,20 @@ Selling digital assets on top marketplaces like **Freepik, Adobe Stock, Shutters
 
 ---
 
-## ⚡ 1-Line Universal Installers (No Certificate Warnings)
+## ⚡ Install PreviewGen
 
-Because PreviewGen is an independent software project, web browsers may display false "Unknown Publisher" warnings when downloading raw files.
-
-**Running the single command below in your terminal is the fastest, official way to install PreviewGen.** It downloads the latest build, clears browser quarantine tags, installs the app permanently, and **pins an official Desktop Shortcut with icon**.
-
-> **Run this command once.** Afterwards, double-click the **PreviewGen** icon on your Desktop or Start Menu like any regular desktop app!
+On Windows, the standard setup wizard lets you choose the installation folder and optional Desktop shortcut. The portable ZIP does not open an installation wizard.
 
 ### 🪟 Windows (PowerShell)
-Open **PowerShell** and run:
+Open PowerShell and run:
 ```powershell
 irm https://raw.githubusercontent.com/Mustaqeem66/Freepik-Preview-Generator/main/install.ps1 | iex
 ```
-- Installs to `%LOCALAPPDATA%\Programs\PreviewGen`
-- Automatically unblocks files (`Unblock-File`) to bypass Windows SmartScreen
-- Creates **Desktop Shortcut** with high-res icon and **Start Menu Shortcut**
-- Generates an `uninstall.bat` script
-- Launches PreviewGen automatically
-
----
+- Downloads `PreviewGen-Setup.exe` from the latest published GitHub release, or the release specified by `PREVIEWGEN_VERSION`.
+- Requires `SHA256SUMS.txt` and verifies the downloaded installer before launching it.
+- Opens the Inno Setup wizard for destination choice, Start Menu integration, an optional Desktop shortcut, uninstallation and optional launch.
+- Code-signing reputation and Windows SmartScreen warnings are separate from checksum verification.
+- Review downloaded scripts before executing them in PowerShell.
 
 ### 🍎 macOS (Terminal)
 Open **Terminal** and run:
