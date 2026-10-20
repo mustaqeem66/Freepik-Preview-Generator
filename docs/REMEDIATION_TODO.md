@@ -68,7 +68,7 @@ are gated by the `build` job on tag pushes.
 | Terminal bridge events arriving before the start promise resolved were dropped | buffer-and-replay gated on the returned operation id | `usePreview.test.ts`, `useAssetProbe.test.ts` |
 | Stale export-size responses overwrote newer input; picking another asset kept a live request | local commit plus per-file request-sequence invalidation | `ExportSizePanel.test.tsx` |
 | Cached `window.pywebview.api` survived reload; selection index derived from a stale file list | cache follows the live bridge object; selection is real state | `bridge.test.ts` |
-| Blender invoked with `-Y`; full-scene face path unbounded | `--disable-auto-execution`, resolution-scaled face budget | `tests/unit/test_mesh3d_hardening.py` |
+| Blender invoked with `-Y`; full-scene face path unbounded | `--disable-autoexec`, resolution-scaled face budget | `tests/unit/test_mesh3d_hardening.py` |
 | Nested ZIPs extracted one level deep, failures suppressed, no shared budget or cancellation | depth-capped BFS extraction on one shared byte budget, failures reported, cancel-aware | `tests/unit/test_archive_security.py` |
 | Embedded BMP search matched any `BM` pair; EXIF orientation dropped on embedded thumbnails | header-validated BMP discovery; `exif_transpose` inside `bounded_image_from_bytes` | renderer/unit suites |
 | `text_pos` magic-number override silently beat the chosen anchor | custom position is opt-in only | compose unit tests |

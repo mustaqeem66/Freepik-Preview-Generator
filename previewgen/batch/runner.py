@@ -185,7 +185,15 @@ def process_folder(
                 temp_dirs.append(zip_tmp)
                 try:
                     safe_extract_zip(src, zip_tmp, is_cancelled=is_cancelled)
-                    for problem in _extract_nested_archives(zip_tmp, is_cancelled):
+                    # The parent archive's bytes count against the same total, so
+                    # nesting cannot double the per-batch disk allowance.
+                    parent_bytes = sum(
+                        p.stat().st_size for p in zip_tmp.rglob("*") if p.is_file()
+                    )
+                    remaining_budget = max(0, MAX_TOTAL_BYTES - parent_bytes)
+                    for problem in _extract_nested_archives(
+                        zip_tmp, is_cancelled, budget_bytes=remaining_budget
+                    ):
                         failed += 1
                         errors.append(f"{src.name}: {problem}")
 

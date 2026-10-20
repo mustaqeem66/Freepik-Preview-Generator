@@ -39,9 +39,9 @@ def test_blend_render_disables_script_auto_execution(monkeypatch, tmp_path):
     assert len(calls) == 1
     argv = calls[0]
     assert argv[1] == "-b"
-    assert "--disable-auto-execution" in argv
-    assert "-Y" not in argv
-    assert argv.index("--disable-auto-execution") < argv.index(str(blend))
+    assert "--disable-autoexec" in argv
+    assert "--disable-auto-execution" not in argv
+    assert argv.index("--disable-autoexec") < argv.index(str(blend))
 
 
 def test_heavy_model_is_subsampled_even_at_full_size(monkeypatch):

@@ -174,7 +174,7 @@ def _load_3d(source_path: Path, config: PreviewConfig, target_dimension: int = 2
                         blender_bin, "-b",
                         # A .blend is untrusted input: its text blocks can carry
                         # startup handlers that execute the moment it loads.
-                        "--disable-auto-execution",
+                        "--disable-autoexec",
                         str(source_path), "-P", str(script_py),
                     ],
                     timeout=60,
