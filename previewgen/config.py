@@ -188,6 +188,7 @@ class PreviewConfig:
             "logoOpacity", "logo_opacity", "logoPosX", "logo_pos_x",
             "logoPosY", "logo_pos_y", "fontPath", "font_path",
             "overwritePolicy", "overwrite_policy", "theme", "inputFolder", "outputFolder", "sameFolder",
+            "desktopNotifications",
             "outputWidth", "output_width", "outputHeight", "output_height",
         }
         if is_strict:

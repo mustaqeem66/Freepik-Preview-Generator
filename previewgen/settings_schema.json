@@ -155,13 +155,20 @@
     },
     "theme": {
       "type": "string",
-      "enum": ["light", "dark"],
+      "enum": [
+        "light",
+        "dark"
+      ],
       "default": "light",
       "description": "UI theme"
     },
     "overwritePolicy": {
       "type": "string",
-      "enum": ["rename", "skip", "overwrite"],
+      "enum": [
+        "rename",
+        "skip",
+        "overwrite"
+      ],
       "default": "rename",
       "description": "File overwrite behavior"
     },
@@ -178,7 +185,14 @@
       "maximum": 8192,
       "default": 0,
       "description": "Export height in pixels (0 = native / renderer default)"
+    },
+    "desktopNotifications": {
+      "type": "boolean",
+      "default": false,
+      "description": "Allow optional operating-system batch completion notifications"
     }
   },
-  "required": ["schemaVersion"]
+  "required": [
+    "schemaVersion"
+  ]
 }

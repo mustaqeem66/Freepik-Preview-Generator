@@ -30,7 +30,8 @@ export const SETTINGS_DEFAULTS = {
   "theme": "light",
   "overwritePolicy": "rename",
   "outputWidth": 0,
-  "outputHeight": 0
+  "outputHeight": 0,
+  "desktopNotifications": false
 } as const;
 
 export interface SettingsField {
@@ -191,5 +192,9 @@ export const SETTINGS_FIELDS: readonly SettingsField[] = [
     "type": "integer",
     "minimum": 0,
     "maximum": 8192
+  },
+  {
+    "name": "desktopNotifications",
+    "type": "boolean"
   }
 ] as const;

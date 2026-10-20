@@ -62,6 +62,21 @@ export default function App() {
     else setNotices((previous) => previous.filter((item) => item.id !== "scan-error"));
   }, [scanError, showNotice]);
 
+  // A native folder dialog intentionally hides files. Explain genuinely empty scans,
+  // but never show this warning for an incomplete, cancelled or failed scan.
+  useEffect(() => {
+    if (scanStatus === "completed" && !isScanning && !scanError && state.inputFolder && fileList.length === 0) {
+      showNotice({
+        id: "no-assets",
+        type: "info",
+        message: "No supported assets found",
+        details: "This folder contains no supported files within the scan limits. Try another folder or check its contents.",
+      });
+    } else {
+      setNotices((previous) => previous.filter((notice) => notice.id !== "no-assets"));
+    }
+  }, [scanStatus, isScanning, scanError, state.inputFolder, fileList.length, showNotice]);
+
   const selectIndex = useCallback((index: number) => {
     if (!busy && fileList[index]) setSelectedPath(fileList[index].path);
   }, [busy, fileList]);

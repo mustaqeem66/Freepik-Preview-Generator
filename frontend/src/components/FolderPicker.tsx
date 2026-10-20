@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FolderOpen, FolderOutput } from "lucide-react";
+import { FolderOpen, FolderOutput, Info } from "lucide-react";
 
 interface FolderPickerProps {
   inputFolder: string;
@@ -31,6 +31,7 @@ export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseIn
     <button type="button" className="button" disabled={disabled} onClick={onBrowseInput}>
       <FolderOpen size={15} />Choose Input Folder
     </button>
+    <p className="picker-hint"><Info size={14} aria-hidden="true" />The system dialog selects folders only; it won't display individual files. Choose a folder to scan supported assets inside it.</p>
     <div className="section-heading destination-heading"><FolderOutput size={16} /><h2>Destination</h2></div>
     <label className="check-row"><input type="checkbox" checked={sameFolder} disabled={disabled}
       onChange={(e) => onToggleSameFolder(e.target.checked)} />Same as input</label>
