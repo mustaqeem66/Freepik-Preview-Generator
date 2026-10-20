@@ -177,6 +177,7 @@ export interface PyWebViewApi {
   open_folder: (
     path: string
   ) => Promise<{ ok: boolean; value: boolean | null; error: string | null; message?: string }>;
+  open_diagnostics_folder?: () => Promise<{ ok: boolean; error: string | null }>;
   start_scan: (path: string) => Promise<{ ok: boolean; scanId: string }>;
   cancel_scan: () => Promise<void>;
   start_preview?: (
