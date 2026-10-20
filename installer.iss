@@ -4,7 +4,9 @@
 ; ==============================================================================
 
 #define MyAppName "PreviewGen"
-#define MyAppVersion "2.0.2"
+#ifndef MyAppVersion
+#define MyAppVersion "2.1.0"
+#endif
 #define MyAppPublisher "ZenArtisan"
 #define MyAppURL "https://github.com/Mustaqeem66/Freepik-Preview-Generator"
 #define MyAppExeName "PreviewGen.exe"
