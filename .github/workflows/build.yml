@@ -227,8 +227,9 @@ jobs:
             security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" $KEYCHAIN_PATH
             codesign --deep --force --options runtime --timestamp --sign "${{ secrets.MACOS_DEVELOPER_IDENTITY }}" "$APP_PATH" \
               || { echo "::error::codesign failed for $APP_PATH"; exit 1; }
-            codesign --verify --deep --strict --display "$APP_PATH" \
+            codesign --verify --deep --strict --verbose=2 "$APP_PATH" \
               || { echo "::error::codesign verification failed for $APP_PATH"; exit 1; }
+            codesign --display --verbose=2 "$APP_PATH"
             rm -f certificate.p12
           else
             echo "Notice: No MACOS_CERTIFICATE configured. Applying ad-hoc signature..."
