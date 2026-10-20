@@ -12,10 +12,14 @@ interface PreviewCanvasProps {
   yaw?: number;
   pitch?: number;
   onOrbit?: (yaw: number, pitch: number) => void;
+  onChooseFolder?: () => void;
+  canChooseFolder?: boolean;
+  hasSourceFolder?: boolean;
 }
 
 export function PreviewCanvas({ previewUrl, isLoading, renderError, name, width, height,
-  is3D = false, yaw = 45, pitch = 30, onOrbit }: PreviewCanvasProps) {
+  is3D = false, yaw = 45, pitch = 30, onOrbit, onChooseFolder,
+  canChooseFolder = false, hasSourceFolder = false }: PreviewCanvasProps) {
   const drag = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null);
   const [imageError, setImageError] = useState(false);
   useEffect(() => setImageError(false), [previewUrl]);
@@ -47,7 +51,12 @@ export function PreviewCanvas({ previewUrl, isLoading, renderError, name, width,
     {!error && previewUrl && <img src={previewUrl} alt={name || "Preview"} draggable={false} onError={() => setImageError(true)} />}
     {!error && !previewUrl && !isLoading && <div className="empty-canvas">
       <span className="empty-canvas-icon"><ImageIcon size={32} strokeWidth={1.25} /></span>
-      <h2>Your artwork, ready to present</h2><p>Choose a source folder to start.<br />Preview, refine, then export your JPGs.</p>
+      <h2>{hasSourceFolder ? "No preview selected" : "Your artwork, ready to present"}</h2>
+      <p>{hasSourceFolder
+        ? "Select an asset from the library to inspect the preview."
+        : "Choose a source folder, preview your artwork, then generate JPGs."}</p>
+      {!hasSourceFolder && canChooseFolder && onChooseFolder &&
+        <button className="button primary empty-canvas-action" type="button" onClick={onChooseFolder}>Choose Input Folder</button>}
       <span className="empty-formats">Raster · Vector · 3D · Creator files</span>
     </div>}
     {name && <div className="canvas-caption"><span title={name}>{name}</span>{width > 0 && height > 0 && <span>{width} × {height} px</span>}</div>}
