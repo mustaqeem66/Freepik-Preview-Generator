@@ -82,7 +82,7 @@ case "$OS" in
       echo "Could not find macOS DMG in release. Aborting." >&2
       exit 1
     fi
-    DMG_PATH="$TEMP_DIR/PreviewGen.dmg"
+    DMG_PATH="$TEMP_DIR/PreviewGen-macOS.dmg"
     curl -fL "$DMG_URL" -o "$DMG_PATH"
     verify_checksum "$DMG_PATH"
 
@@ -120,9 +120,11 @@ case "$OS" in
     APPS_DIR="$HOME/.local/share/applications"
     mkdir -p "$BIN_DIR" "$APPS_DIR"
     TARGET_BIN="$BIN_DIR/previewgen"
-    curl -fL "$APPIMAGE_URL" -o "$TARGET_BIN"
-    verify_checksum "$TARGET_BIN"
-    chmod +x "$TARGET_BIN"
+    APPIMAGE_PATH="$TEMP_DIR/PreviewGen-Linux.AppImage"
+    curl -fL "$APPIMAGE_URL" -o "$APPIMAGE_PATH"
+    verify_checksum "$APPIMAGE_PATH"
+    # Only replace an existing installation after verification succeeds.
+    install -m 755 "$APPIMAGE_PATH" "$TARGET_BIN"
 
     cat > "$APPS_DIR/previewgen.desktop" << EOF
 [Desktop Entry]
