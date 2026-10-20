@@ -137,13 +137,19 @@ def cleanup_stale_temp_dirs(
     """
     base = base or Path(tempfile.gettempdir())
     try:
-        candidates: Iterable[Path] = list(base.iterdir())
+        # Avoid eagerly loading every entry from an enormous shared temp folder.
+        # Startup calls this in a background thread; each pass has a scan budget.
+        candidates: Iterable[Path] = base.iterdir()
     except Exception:
         return 0
 
     now = time.time()
+    started = time.monotonic()
     removed = 0
-    for entry in candidates:
+    for inspected, entry in enumerate(candidates):
+        if inspected >= 5000 or time.monotonic() - started > 3.0:
+            logging.debug("Stale temp sweep stopped after %d entries (bounded pass)", inspected)
+            break
         try:
             if not entry.is_dir():
                 continue
