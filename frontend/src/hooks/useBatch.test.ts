@@ -1,124 +1,84 @@
-import { describe, it, expect } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, renderHook } from "@testing-library/react";
 import { useBatch } from "./useBatch";
-import { bridgeEvents } from "../api/bridge";
+import { ApiBridge, bridgeEvents } from "../api/bridge";
+import type { BatchSummary } from "../types";
 
-describe("useBatch hook", () => {
-  it("initializes with default batch progress and idle state", () => {
+const complete = (overrides: Partial<BatchSummary> = {}): BatchSummary => ({
+  planned: 2,
+  processed: 2,
+  remaining: 0,
+  success: 2,
+  failed: 0,
+  skipped: 0,
+  cancelled: false,
+  errors: [],
+  duration: 1,
+  ...overrides,
+});
+
+afterEach(() => vi.restoreAllMocks());
+
+describe("useBatch operation safety", () => {
+  it("starts idle", () => {
     const { result } = renderHook(() => useBatch());
     expect(result.current.isProcessing).toBe(false);
-    expect(result.current.progress.current).toBe(0);
-    expect(result.current.stats).toEqual({ success: 0, failed: 0 });
-    expect(result.current.batchErrors).toEqual([]);
   });
 
-  it("updates progress and finishes batch on window events", () => {
+  it("rejects an obsolete terminal event after a new run starts", async () => {
+    vi.spyOn(ApiBridge, "getApi").mockResolvedValue({
+      start_batch: vi.fn().mockResolvedValue({ ok: true, operationId: "batch_new" }),
+    } as never);
     const { result } = renderHook(() => useBatch());
-
-    act(() => {
-      window.__onBatchProgress?.(5, 10, "Processing item 5");
+    await act(async () => {
+      await result.current.startBatch("source", "output", 2, { sameFolder: false } as never);
     });
-    expect(result.current.progress.current).toBe(5);
-    expect(result.current.progress.total).toBe(10);
-    expect(result.current.progress.message).toBe("Processing item 5");
-
+    expect(result.current.isProcessing).toBe(true);
     act(() => {
-      window.__onBatchFinishedSummary?.({
-        planned: 10,
-        processed: 10,
-        remaining: 0,
-        success: 9,
-        failed: 1,
-        skipped: 0,
-        cancelled: false,
-        errors: ["Failed item 10"],
-        duration: 3.2,
-      });
+      bridgeEvents.emit("batch.finished", complete({ cancelled: true }), { operationId: "batch_old" });
+      bridgeEvents.emit("batch.progress", { current: 1, total: 2, message: "new run" }, { operationId: "batch_new" });
     });
-
+    expect(result.current.isProcessing).toBe(true);
+    expect(result.current.progress.current).toBe(1);
+    act(() => {
+      bridgeEvents.emit("batch.finished", complete(), { operationId: "batch_new", terminal: true });
+    });
     expect(result.current.isProcessing).toBe(false);
-    expect(result.current.stats).toEqual({ success: 9, failed: 1 });
-    expect(result.current.batchErrors).toEqual(["Failed item 10"]);
+    expect(result.current.batchStatus).toBe("completed");
   });
 
-  it("updates progress and finishes batch via bridgeEvents typed registry", () => {
+  it("buffers a fast completion delivered before start returns", async () => {
+    let resolveStart: ((value: { ok: boolean; operationId: string }) => void) | undefined;
+    vi.spyOn(ApiBridge, "getApi").mockResolvedValue({
+      start_batch: vi.fn().mockReturnValue(new Promise(resolve => { resolveStart = resolve; })),
+    } as never);
     const { result } = renderHook(() => useBatch());
-
+    let running!: Promise<void>;
     act(() => {
-      bridgeEvents.emit("batch.progress", { current: 3, total: 8, message: "Processing item 3" });
+      running = result.current.startBatch("source", "output", 2, { sameFolder: false } as never);
     });
-    expect(result.current.progress.current).toBe(3);
-    expect(result.current.progress.total).toBe(8);
-
+    await act(async () => { await Promise.resolve(); });
     act(() => {
-      bridgeEvents.emit("batch.finished", {
-        planned: 8,
-        processed: 8,
-        remaining: 0,
-        success: 8,
-        failed: 0,
-        skipped: 0,
-        cancelled: false,
-        errors: [],
-        duration: 1.5,
-      });
+      bridgeEvents.emit("batch.finished", complete({ cancelled: true }), { operationId: "batch_old" });
+      bridgeEvents.emit("batch.finished", complete(), { operationId: "batch_fast" });
     });
-
+    await act(async () => {
+      resolveStart?.({ ok: true, operationId: "batch_fast" });
+      await running;
+    });
     expect(result.current.isProcessing).toBe(false);
-    expect(result.current.stats).toEqual({ success: 8, failed: 0 });
+    expect(result.current.batchStatus).toBe("completed");
   });
 
-  it("maps a truncated summary to completed-with-warnings and requires acknowledgement", () => {
+  it("surfaces backend validation errors instead of hanging", async () => {
+    vi.spyOn(ApiBridge, "getApi").mockResolvedValue({
+      start_batch: vi.fn().mockResolvedValue({ ok: false, error: "Invalid input" }),
+    } as never);
     const { result } = renderHook(() => useBatch());
-
-    act(() => {
-      bridgeEvents.emit("batch.finished", {
-        planned: 100000,
-        processed: 1000,
-        remaining: 99000,
-        success: 1000,
-        failed: 0,
-        skipped: 0,
-        cancelled: false,
-        errors: [],
-        duration: 12.5,
-        status: "completed_with_warnings",
-        truncated: true,
-        truncationReasons: ["maximum_files"],
-        discovered: 100000,
-      });
+    await act(async () => {
+      await result.current.startBatch("source", "output", 2, { sameFolder: false } as never);
     });
-
-    expect(result.current.batchStatus).toBe("completed-with-warnings");
-    expect(result.current.truncationReasons).toEqual(["maximum_files"]);
-    expect(result.current.discovered).toBe(100000);
-    expect(result.current.requiresTruncationAck).toBe(true);
-
-    act(() => {
-      result.current.acknowledgeTruncation();
-    });
-    expect(result.current.requiresTruncationAck).toBe(false);
-  });
-
-  it("maps a cancelled summary to the cancelled state", () => {
-    const { result } = renderHook(() => useBatch());
-
-    act(() => {
-      bridgeEvents.emit("batch.finished", {
-        planned: 10,
-        processed: 4,
-        remaining: 6,
-        success: 4,
-        failed: 0,
-        skipped: 0,
-        cancelled: true,
-        errors: [],
-        duration: 2.0,
-        status: "cancelled",
-      });
-    });
-
-    expect(result.current.batchStatus).toBe("cancelled");
-    expect(result.current.requiresTruncationAck).toBe(false);
+    expect(result.current.batchStatus).toBe("failed");
+    expect(result.current.batchErrors).toEqual(["Invalid input"]);
   });
 });

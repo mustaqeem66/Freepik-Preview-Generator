@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "1.0.0",
+  "version": "2.1.2",
   "type": "module",
   "engines": {
     "node": "^24.15.0 || >=26.0.0"

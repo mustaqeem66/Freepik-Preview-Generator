@@ -39,19 +39,22 @@ export function useBatch() {
   const latestSeqRef = useRef<number>(0);
   const activeOpIdRef = useRef<string | null>(null);
   const isTerminalRef = useRef<boolean>(false);
+  const replayRef = useRef<(operationId: string) => void>(() => {});
+  const startPendingRef = useRef<boolean>(false);
+  const bufferedEventsRef = useRef<Array<{ kind: "progress" | "finished"; payload: any; meta: { operationId?: string; sequence?: number } }>>([]);
 
   useEffect(() => {
-    const unsubProgress = bridgeEvents.subscribe("batch.progress", ({ current, total, message }, meta) => {
+    const applyProgress = ({ current, total, message }: { current: number; total: number; message: string }, meta: { operationId?: string; sequence?: number }) => {
       // Reject nonterminal progress events after a terminal event has arrived (Finding 8)
       if (isTerminalRef.current) return;
-      if (meta?.operationId && activeOpIdRef.current && meta.operationId !== activeOpIdRef.current) return;
+      if (!activeOpIdRef.current || meta?.operationId !== activeOpIdRef.current) return;
       if (typeof meta?.sequence === "number" && meta.sequence < latestSeqRef.current) return;
       if (typeof meta?.sequence === "number") latestSeqRef.current = meta.sequence;
       setProgress({ current, total, message });
-    });
+    };
 
-    const unsubFinished = bridgeEvents.subscribe("batch.finished", (summary: BatchSummary, meta) => {
-      if (meta?.operationId && activeOpIdRef.current && meta.operationId !== activeOpIdRef.current) return;
+    const applyFinished = (summary: BatchSummary, meta: { operationId?: string; sequence?: number }) => {
+      if (!activeOpIdRef.current || meta?.operationId !== activeOpIdRef.current) return;
       isTerminalRef.current = true;
       if (typeof meta?.sequence === "number") latestSeqRef.current = Math.max(latestSeqRef.current, meta.sequence);
       setIsProcessing(false);
@@ -83,7 +86,31 @@ export function useBatch() {
       });
       setStats({ success, failed });
       setBatchErrors(errors && errors.length > 0 ? errors : []);
+    };
+
+    const unsubProgress = bridgeEvents.subscribe("batch.progress", (payload, meta) => {
+      if (startPendingRef.current) {
+        bufferedEventsRef.current.push({ kind: "progress", payload, meta });
+        return;
+      }
+      applyProgress(payload, meta);
     });
+    const unsubFinished = bridgeEvents.subscribe("batch.finished", (payload, meta) => {
+      if (startPendingRef.current) {
+        bufferedEventsRef.current.push({ kind: "finished", payload, meta });
+        return;
+      }
+      applyFinished(payload, meta);
+    });
+    replayRef.current = (operationId: string) => {
+      const buffered = bufferedEventsRef.current;
+      bufferedEventsRef.current = [];
+      for (const entry of buffered) {
+        if (entry.meta.operationId !== operationId) continue;
+        if (entry.kind === "progress") applyProgress(entry.payload, entry.meta);
+        else applyFinished(entry.payload, entry.meta);
+      }
+    };
 
     return () => {
       unsubProgress();
@@ -106,14 +133,22 @@ export function useBatch() {
       latestSeqRef.current = 0;
       isTerminalRef.current = false;
       activeOpIdRef.current = null;
+      startPendingRef.current = true;
+      bufferedEventsRef.current = [];
       setRequiresTruncationAck(false);
       setProgress({ current: 0, total: totalFiles, message: "Starting batch generation…" });
 
       try {
         const api = await ApiBridge.getApi(3000);
         if (!api) throw new Error("Backend unavailable. Reconnect before generating previews.");
-        await api.start_batch(inputFolder, config.sameFolder ? inputFolder : outputFolder || inputFolder, config);
+        const response = await api.start_batch(inputFolder, config.sameFolder ? inputFolder : outputFolder || inputFolder, config);
+        if (!response?.ok || !response.operationId) throw new Error(response?.error || "Unable to start batch");
+        activeOpIdRef.current = response.operationId;
+        startPendingRef.current = false;
+        replayRef.current(response.operationId);
       } catch (err) {
+        startPendingRef.current = false;
+        bufferedEventsRef.current = [];
         setIsProcessing(false);
         setBatchStatus("failed");
         setBatchErrors([err instanceof Error ? err.message : "Failed to start batch"]);
