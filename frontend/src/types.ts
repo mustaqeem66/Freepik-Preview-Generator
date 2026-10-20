@@ -209,8 +209,8 @@ export interface PyWebViewApi {
     inputFolder: string,
     outputFolder: string,
     config: PreviewState
-  ) => Promise<void>;
-  cancel_batch: () => Promise<void>;
+  ) => Promise<{ ok: boolean; operationId?: string; error?: string }>;
+  cancel_batch: () => Promise<{ ok: boolean }>;
   save_settings: (settings: PreviewState & { revision?: number }) => Promise<ApiResponse<boolean>>;
 }
 
