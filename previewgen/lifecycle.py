@@ -23,7 +23,7 @@ class ActiveOperation:
     """Central tracking record for an active asynchronous operation."""
 
     operation_id: str
-    kind: str  # "scan", "asset_probe", "preview_render", "batch_render", "archive_extraction"
+    kind: str  # "scan", "asset_probe", "preview_render", "batch_render", "single_export", "archive_extraction"
     state: str = "running"  # "running", "cancelled", "completed", "failed"
     cancel_event: threading.Event = field(default_factory=threading.Event)
     thread: threading.Thread | None = None
@@ -199,8 +199,6 @@ class LifecycleManager:
                     "retaining active resources to avoid premature deletion",
                     getattr(self.batch_thread, "ident", "unknown"),
                 )
-            else:
-                self.registry.unregister("batch_worker")
 
         # 3. Wait bounded time for scan thread (via scanner)
         if self.scanner and hasattr(self.scanner, 'active_scan_thread'):
@@ -215,8 +213,6 @@ class LifecycleManager:
                         "retaining active scan temp root to avoid premature deletion",
                         getattr(scan_t, "ident", "unknown"),
                     )
-                else:
-                    self.registry.unregister("scan_worker")
 
         # 4. Check registry operations and terminate surviving child processes
         surviving_ops = [

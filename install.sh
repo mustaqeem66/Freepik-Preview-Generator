@@ -48,8 +48,8 @@ verify_checksum() {
   local sha_url
   sha_url="$(grep -o 'https://[^"]*SHA256SUMS.txt' "$RELEASE_JSON" | head -n 1)"
   if [ -z "$sha_url" ]; then
-    echo "Warning: release publishes no SHA256SUMS.txt; skipping checksum verification." >&2
-    return 0
+    echo "The selected release publishes no SHA256SUMS.txt; refusing an unverified install." >&2
+    exit 1
   fi
   if ! curl -fsSL "$sha_url" -o "$sha_file"; then
     echo "Could not download SHA256SUMS.txt. Aborting installation." >&2
@@ -95,11 +95,12 @@ case "$OS" in
     if [ -d "$SRC_APP" ]; then
       rm -rf "/Applications/$APP_NAME.app"
       cp -R "$SRC_APP" "/Applications/"
-      # Strip the quarantine flag so Gatekeeper does not block first launch.
-      xattr -cr "/Applications/$APP_NAME.app" 2>/dev/null || true
+      # Quarantine is a security decision, so it is never stripped silently:
+      # the user makes that choice, once, in Finder.
       mkdir -p "$HOME/Desktop"
       ln -sfn "/Applications/$APP_NAME.app" "$HOME/Desktop/$APP_NAME.app" 2>/dev/null || true
       echo "PreviewGen installed to /Applications/$APP_NAME.app"
+      echo "If macOS blocks the first launch, open it once via right-click > Open in Finder."
       if [ -z "${PREVIEWGEN_NO_LAUNCH:-}" ]; then
         open "/Applications/$APP_NAME.app" || true
       fi

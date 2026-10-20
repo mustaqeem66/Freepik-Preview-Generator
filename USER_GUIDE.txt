@@ -8,9 +8,8 @@ TABLE OF CONTENTS
 2. How to Organize Your Folders (Clean Single-Format Batches)
 3. Step-by-Step Usage Guide
 4. 3D & CAD Controls (360° Orbit)
-5. Watermarks & Branding (Logos & Custom Typography)
-6. Troubleshooting & Common Issues (FAQ)
-7. Technical Support & Reporting Issues
+5. Troubleshooting & Common Issues (FAQ)
+6. Licensing & Terms
 
 ================================================================================
 1. OVERVIEW & BEST PRACTICES
@@ -25,7 +24,7 @@ Supported Formats:
 - 3D Meshes:   .glb, .gltf, .obj, .stl, .ply, .blend
 - CAD Solids:  .step, .stp, .iges, .igs (B-Rep solids converted to 3D meshes)
 - CAD Drawings:.dxf (AutoCAD vector paths), .dwg, .max, .f3d, .mb (Header previews)
-- Archives:    .zip (Deep recursive in-memory indexing)
+- Archives:    .zip (bounded extraction into a temporary folder, cleaned up afterwards)
 
 ================================================================================
 2. HOW TO ORGANIZE YOUR FOLDERS (CLEAN SINGLE-FORMAT BATCHES)
@@ -47,8 +46,8 @@ Why use clean single-format folders?
    the batch receives the appropriate framing.
 2. Consistent Branding: Your watermark placement and font sizing will match
    identically across the whole submission.
-3. Maximum Speed: PreviewGen processes clean single-type batches up to 5x faster
-   by reusing optimized renderer memory pipelines.
+3. Predictable Output: mixing formats in one batch means each renderer pays its own
+   start-up cost; grouping them keeps per-file timings easier to anticipate.
 
 ================================================================================
 3. STEP-BY-STEP USAGE GUIDE
@@ -105,10 +104,10 @@ When viewing a 3D model (.glb, .gltf, .obj, .stl, .ply) or CAD solid (.step, .ig
 ================================================================================
 
 Q1: The Desktop Icon is not appearing on my PC.
-A1: PreviewGen automatically creates "PreviewGen.lnk" on your Desktop the first time
-    you launch PreviewGen.exe. If it is not visible:
-    - Right-click your Desktop and select "Refresh".
-    - Or double-click "Install-Desktop-Icon.bat" included in your folder.
+A1: The shortcut is created by the installer, not at first launch. To add it:
+    - Re-run PreviewGen-Setup.exe and tick the Desktop shortcut option, or
+    - Double-click "Install-Desktop-Icon.bat" in the app folder.
+    - If it already exists, right-click the Desktop and select "Refresh".
 
 Q2: The "Browse…" button did not open a folder picker.
 A2: PreviewGen includes dual-mode folder selection:
@@ -124,9 +123,11 @@ A3: In v2.0.3+, degenerate triangles with zero area are automatically normalized
     for direct 360° rendering without Blender.
 
 Q4: Why does the app feel slow or freeze when I pick a folder?
-A4: If your folder contains gigabytes of compressed .zip archives, avoid unpacking
-    them manually. In v2.0.3+, PreviewGen indexes zip contents in memory in milliseconds
-    without extracting unneeded files to disk.
+A4: Scanning is bounded (item, depth and time budgets) and runs on a background
+    thread, so a very large folder shows a partial, clearly-labelled result rather
+    than blocking. Archive members are extracted into a temporary folder that is
+    removed when the run finishes; gigantic .zip trees are the slowest case, so
+    split them into smaller batches.
 
 Q5: Can I run PreviewGen from source without compiling?
 A5: Yes! You can run PreviewGen directly using Python:
@@ -141,5 +142,5 @@ A5: Yes! You can run PreviewGen directly using Python:
 ================================================================================
 - Personal & Non-Commercial Use: Free.
 - Commercial & Agency Use: Requires a commercial license. See LICENSE for details.
-- GitHub Repository: https://github.com/ZenArtisan/Freepik-Preview-Generator
+- GitHub Repository: https://github.com/Mustaqeem66/Freepik-Preview-Generator
 ================================================================================

@@ -107,6 +107,7 @@ export interface ApiResponse<T> {
   ok: boolean;
   value: T;
   error: string | null;
+  code?: string;
 }
 
 export interface RenderPreviewData {

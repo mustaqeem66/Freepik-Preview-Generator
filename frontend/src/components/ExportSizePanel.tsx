@@ -45,36 +45,54 @@ export function ExportSizePanel({ filePath, probe, isProbing, aspectWidth, aspec
   useEffect(() => () => {
     if (pendingTimerRef.current !== null) clearTimeout(pendingTimerRef.current);
   }, []);
+  useEffect(() => {
+    // Picking another asset invalidates the dimension request in flight for
+    // the previous one, otherwise its reply would size the new export.
+    requestSeqRef.current += 1;
+    if (pendingTimerRef.current !== null) {
+      clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
+    }
+  }, [filePath]);
+  const cancelPendingDimensionRequest = () => {
+    requestSeqRef.current += 1;
+    if (pendingTimerRef.current !== null) {
+      clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
+    }
+  };
   const applyLongest = (requested: number) => {
     const target = Math.max(1, Math.min(maxLongest, Math.round(requested)));
     const targetW = ratio >= 1 ? target : Math.max(1, Math.round(target * ratio));
     const targetH = ratio >= 1 ? Math.max(1, Math.round(target / ratio)) : target;
     const seq = ++requestSeqRef.current;
 
-    // Authoritative backend resolution: if available, reconcile with canonical calculations
-    if (filePath) {
-      if (pendingTimerRef.current !== null) clearTimeout(pendingTimerRef.current);
-      pendingTimerRef.current = setTimeout(async () => {
-        try {
-          const api = await ApiBridge.getApi(500);
-          if (api?.calculate_export_dimensions) {
-            const res = await api.calculate_export_dimensions(filePath, targetW, targetH);
-            // A newer keystroke/preset supersedes this response; discarding it
-            // prevents an out-of-order backend reply from committing stale dims.
-            if (seq !== requestSeqRef.current) return;
-            if (res?.ok && res.value) {
-              onChange(res.value.width, res.value.height);
-              return;
-            }
-          }
-        } catch {
-          // Fallback to local ratio computation
-        }
-        if (seq === requestSeqRef.current) onChange(targetW, targetH);
-      }, DIMENSION_REQUEST_DEBOUNCE_MS);
-      return;
-    }
+    // Commit the local computation immediately: an export started before the
+    // backend reconciles must never write at previously selected dimensions.
     onChange(targetW, targetH);
+    if (!filePath) return;
+
+    // Authoritative backend resolution: reconcile with canonical calculations.
+    if (pendingTimerRef.current !== null) clearTimeout(pendingTimerRef.current);
+    pendingTimerRef.current = setTimeout(async () => {
+      try {
+        const api = await ApiBridge.getApi(500);
+        if (api?.calculate_export_dimensions) {
+          const res = await api.calculate_export_dimensions(filePath, targetW, targetH);
+          // A newer keystroke/preset supersedes this response; discarding it
+          // prevents an out-of-order backend reply from committing stale dims.
+          if (seq !== requestSeqRef.current) return;
+          if (res?.ok && res.value) onChange(res.value.width, res.value.height);
+        }
+      } catch {
+        // Keep the locally computed dimensions.
+      }
+    }, DIMENSION_REQUEST_DEBOUNCE_MS);
+  };
+  const applyOriginal = () => {
+    // "Original" resets to native size; a pending reconcile must not override it.
+    cancelPendingDimensionRequest();
+    onChange(0, 0);
   };
   return <div className="export-control">
     {open && <section className="export-popover" data-testid="export-size-panel" aria-label="JPG export settings"
@@ -99,7 +117,7 @@ export function ExportSizePanel({ filePath, probe, isProbing, aspectWidth, aspec
       </div>
       <span className="muted aspect-note"><Lock size={12} />Aspect ratio preserved</span>
       <div className="size-presets"><button type="button" className="button" data-testid="preset-0"
-        disabled={disabled} onClick={() => onChange(0, 0)}>Original</button>
+        disabled={disabled} onClick={applyOriginal}>Original</button>
         {PRESETS.map((value) => <button key={value} type="button" className="button" data-testid={`preset-${value}`}
           disabled={disabled || value > maxLongest} onClick={() => applyLongest(value)}>{value}</button>)}</div>
       {probe?.resizable === false && <p className="export-warning" data-testid="raster-warning"><AlertTriangle size={14} />

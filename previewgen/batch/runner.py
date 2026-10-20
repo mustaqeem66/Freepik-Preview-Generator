@@ -5,7 +5,6 @@ asset, and writes durable JSON/CSV batch reports.
 """
 from __future__ import annotations
 
-import contextlib
 import datetime
 import inspect
 import logging
@@ -14,7 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from previewgen.batch.archive import safe_extract_zip
+from previewgen.batch.archive import MAX_NESTED_DEPTH, safe_extract_zip
 from previewgen.batch.discovery import DiscoveryLimits, DiscoveryStats, discover_files
 from previewgen.batch.reporting import write_batch_reports
 from previewgen.config import (
@@ -22,6 +21,7 @@ from previewgen.config import (
     DISCOVERY_MAX_DIRECTORIES,
     DISCOVERY_MAX_FILES,
     DISCOVERY_TIMEOUT_SECONDS,
+    MAX_TOTAL_BYTES,
     SUPPORTED_EXTENSIONS,
     PreviewConfig,
 )
@@ -55,6 +55,51 @@ def _progress_reporter(
             progress(cur, tot, msg)
 
     return report
+
+
+def _extract_nested_archives(
+    extract_root: Path,
+    is_cancelled: Callable[[], bool],
+    budget_bytes: int = MAX_TOTAL_BYTES,
+) -> list[str]:
+    """Unpack archives inside an already-extracted archive and report problems.
+
+    Depth-capped, and every level draws from one shared byte budget so a nested
+    bomb cannot multiply the per-archive limit. An archive that cannot be
+    unpacked is returned as a message instead of being swallowed: its contents
+    would otherwise vanish from the batch without a trace.
+    """
+    problems: list[str] = []
+    remaining = budget_bytes
+    processed: set[Path] = set()
+    frontier: list[tuple[Path, int]] = [(extract_root, 0)]
+    while frontier:
+        directory, depth = frontier.pop(0)
+        for archive in sorted(p for p in directory.rglob("*.zip") if p.is_file()):
+            if is_cancelled():
+                raise ValueError("Extraction cancelled")
+            key = archive.resolve()
+            if key in processed:
+                continue
+            processed.add(key)
+            if depth + 1 > MAX_NESTED_DEPTH:
+                problems.append(f"{archive.name}: nested deeper than {MAX_NESTED_DEPTH} levels, left unpacked")
+                continue
+            if remaining <= 0:
+                problems.append(f"{archive.name}: skipped, archive size budget already exhausted")
+                continue
+            destination = archive.parent / archive.stem
+            try:
+                written = safe_extract_zip(
+                    archive, destination, is_cancelled=is_cancelled,
+                    depth=depth + 1, max_depth=MAX_NESTED_DEPTH, budget_bytes=remaining,
+                )
+            except Exception as exc:
+                problems.append(f"{archive.name}: {exc}")
+                continue
+            remaining -= sum(p.stat().st_size for p in written if p.is_file())
+            frontier.append((destination, depth + 1))
+    return problems
 
 
 def process_folder(
@@ -139,11 +184,10 @@ def process_folder(
                 zip_tmp = create_temp_dir("previewgen_batch_zip_")
                 temp_dirs.append(zip_tmp)
                 try:
-                    safe_extract_zip(src, zip_tmp)
-                    nested_zips = [nz for nz in zip_tmp.rglob("*.zip") if nz.is_file()]
-                    for nz in nested_zips:
-                        with contextlib.suppress(Exception):
-                            safe_extract_zip(nz, nz.parent / nz.stem)
+                    safe_extract_zip(src, zip_tmp, is_cancelled=is_cancelled)
+                    for problem in _extract_nested_archives(zip_tmp, is_cancelled):
+                        failed += 1
+                        errors.append(f"{src.name}: {problem}")
 
                     inner_files = sorted(
                         p for p in zip_tmp.rglob("*.*")
@@ -172,6 +216,10 @@ def process_folder(
                         allocated_names.add(out_name.lower())
                         work_items.append((inner, out_name))
                 except Exception as exc:
+                    if is_cancelled():
+                        # A cancel that landed mid-extraction is not a bad asset.
+                        cancelled = True
+                        break
                     code, clean_msg = classify_exception(exc)
                     logging.warning("Archive extraction failed for %s [%s]: %s", src.name, code, exc)
                     failed += 1

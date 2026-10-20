@@ -36,8 +36,20 @@ export default function App() {
   const { fileList, isScanning, scanStatus, scanTruncationReasons, scanDiscovered,
     scannedCount, scanError, scanFolder, cancelScan } = useScanner();
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const currentIdx = Math.max(0, fileList.findIndex((file) => file.path === selectedPath));
-  const activeFile = fileList[currentIdx];
+  // The selection is the single source of truth for the list highlight, the
+  // preview and the export target. Deriving it with a fallback to index 0 let a
+  // re-scan silently retarget whichever asset happened to sort first.
+  useEffect(() => {
+    if (fileList.length === 0) {
+      if (selectedPath !== null) setSelectedPath(null);
+      return;
+    }
+    if (!selectedPath || !fileList.some((file) => file.path === selectedPath)) {
+      setSelectedPath(fileList[0].path);
+    }
+  }, [fileList, selectedPath]);
+  const currentIdx = fileList.findIndex((file) => file.path === selectedPath);
+  const activeFile = currentIdx >= 0 ? fileList[currentIdx] : undefined;
   const scanReady = !isScanning && (scanStatus === "completed" || scanStatus === "scan-truncated");
   const previewFile = capabilities.canPreview && scanReady ? activeFile : undefined;
   const { previewUrl, previewMeta, isLoading, renderError } = usePreview(previewFile, state);
@@ -117,7 +129,13 @@ export default function App() {
       const api = await ApiBridge.getApi();
       if (!api?.export_preview) throw new Error("Single-file export is unavailable. Reconnect to the desktop backend.");
       const response = await api.export_preview(activeFile.path, state);
-      if (!response.ok || !response.value) throw new Error(response.error || "Export failed");
+      if (!response.ok || !response.value) {
+        throw new Error(
+          response.code === "UNAUTHORIZED_PATH"
+            ? "PreviewGen can only write inside a folder you chose. Pick an output folder and try again."
+            : response.error || "Export failed"
+        );
+      }
       const value = response.value;
       showNotice({ id: "export-status", type: "info", message: value.skipped ? "Existing JPG kept — export skipped"
         : `Exported ${value.width} × ${value.height} px`, details: value.path });
@@ -184,8 +202,8 @@ export default function App() {
         <div className="canvas-toolbar"><div className="asset-title">{is3D ? <Box size={16} /> : <Layers size={16} />}
           <span title={activeFile?.name}>{activeFile?.name || "Live preview"}</span>{activeFile && <span className="format-badge">{activeFile.ext}</span>}</div>
           <div className="asset-navigation"><button type="button" className="icon-button" aria-label="Previous asset"
-            disabled={busy || currentIdx === 0 || !activeFile} onClick={() => selectIndex(currentIdx - 1)}><ChevronLeft size={16} /></button>
-            <span className="tabular-nums">{activeFile ? `${currentIdx + 1} / ${fileList.length}` : "0 assets"}</span>
+            disabled={busy || currentIdx <= 0 || !activeFile} onClick={() => selectIndex(currentIdx - 1)}><ChevronLeft size={16} /></button>
+            <span className="tabular-nums">{fileList.length ? `${Math.max(1, currentIdx + 1)} / ${fileList.length}` : "0 assets"}</span>
             <button type="button" className="icon-button" aria-label="Next asset" disabled={busy || currentIdx >= fileList.length - 1}
               onClick={() => selectIndex(currentIdx + 1)}><ChevronRight size={16} /></button></div></div>
         <div className="canvas-stage"><PreviewCanvas previewUrl={previewUrl} isLoading={isLoading} renderError={renderError}

@@ -48,11 +48,33 @@ This checklist compares the public GitHub branch with the user-supplied `Preview
 
 - [x] Restrict bridge path authorization to user-selected or committed roots (no implicit expansion during export).
 - [ ] Add and regression-test a restrictive CSP compatible with packaged frontend and pywebview.
-- [ ] Review untrusted ZIP, Blender, DXF, CAD, font, SVG and model parsing and subprocess time budgets.
+- [x] Review untrusted ZIP, Blender, DXF, CAD, font, SVG and model parsing and subprocess time budgets.
 - [ ] Replace per-file process spawn only after a measured, isolated worker-pool design passes cancellation and crash tests.
 - [ ] Benchmark advertised throughput; fix README claims (60fps orbit, deep ZIP recursion, Framer Motion, ICC transform, 500 files/60s).
 - [ ] Create signed versioned builds, updater, rollback and reproducible release provenance.
 - [ ] Pin release actions by commit SHA and remove hardcoded signtool locations.
 - [ ] Add crash logs/diagnostics with consent and no automatic collection of artwork.
+
+## Round-3 audit remediation (branch `fix/v2.1.2-audit-hardening`)
+
+Each row names the gate that proves it. Python rows run under the PR CI
+`pytest tests/ -q` gate; frontend rows run under `npx vitest run`; workflow rows
+are gated by the `build` job on tag pushes.
+
+| Finding | Fix | Gate |
+| --- | --- | --- |
+| Watchdog declared the bridge stalled on an idle app | `bridge_is_stalled()` requires a quiet heartbeat **and** outstanding work | `tests/unit/test_watchdog_stall_detection.py` |
+| Single export of a ZIP member defaulted to the deleted temp dir, and hid work from the watchdog | default destination is the archive's folder; export registers an `ActiveOperation` | `tests/unit/test_batch_api_regressions.py` |
+| Terminal bridge events arriving before the start promise resolved were dropped | buffer-and-replay gated on the returned operation id | `usePreview.test.ts`, `useAssetProbe.test.ts` |
+| Stale export-size responses overwrote newer input; picking another asset kept a live request | local commit plus per-file request-sequence invalidation | `ExportSizePanel.test.tsx` |
+| Cached `window.pywebview.api` survived reload; selection index derived from a stale file list | cache follows the live bridge object; selection is real state | `bridge.test.ts` |
+| Blender invoked with `-Y`; full-scene face path unbounded | `--disable-auto-execution`, resolution-scaled face budget | `tests/unit/test_mesh3d_hardening.py` |
+| Nested ZIPs extracted one level deep, failures suppressed, no shared budget or cancellation | depth-capped BFS extraction on one shared byte budget, failures reported, cancel-aware | `tests/unit/test_archive_security.py` |
+| Embedded BMP search matched any `BM` pair; EXIF orientation dropped on embedded thumbnails | header-validated BMP discovery; `exif_transpose` inside `bounded_image_from_bytes` | renderer/unit suites |
+| `text_pos` magic-number override silently beat the chosen anchor | custom position is opt-in only | compose unit tests |
+| `install.sh` warned then continued with no `SHA256SUMS.txt`, and stripped quarantine silently | fail-closed `verify_checksum`; Gatekeeper choice left to the user | `tests/unit/test_installers.py` |
+| CI published unsigned / un-notarized release artifacts when signing secrets were absent | `PREVIEWGEN_IS_RELEASE` guards fail tag builds; macOS signature is verified | `.github/workflows/build.yml` |
+| `softprops/action-gh-release@v2` was a mutable ref | pinned to `3bb12739c298aeb8a4eeaf626c5b8d85266b0e65` (v2.6.2) | PR CI |
+| `*.spec` was ignored under an "internal docs" rationale while PyInstaller emits one | rule moved under build artifacts with the reason recorded | `.gitignore` |
 
 **Release policy:** No merged PR should be described as production-ready solely because unit tests pass. Require Windows startup, file-dialog, installer, export, and renderer smoke tests on a clean machine.

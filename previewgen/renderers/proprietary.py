@@ -13,6 +13,41 @@ from PIL import Image
 from previewgen import config as previewgen_config
 from previewgen import limits
 
+# Accepted BMP DIB header sizes (BITMAPCOREHEADER and the later info headers).
+_BMP_INFO_SIZES = {12, 40, 52, 56, 108, 124}
+
+
+def _find_embedded_bmp(data: bytes) -> bytes | None:
+    """Return a plausible embedded BMP, or ``None``.
+
+    ``b"BM"`` on its own matches plenty of unrelated bytes inside an OLE
+    stream, and handing that slice to the decoder either fails or invents a
+    garbage thumbnail, so the header fields have to agree before use.
+    """
+    start = 0
+    while True:
+        idx = data.find(b"BM", start)
+        if idx < 0:
+            return None
+        start = idx + 2
+        header = data[idx:idx + 54]
+        if len(header) < 54:
+            continue
+        file_size = int.from_bytes(header[2:6], "little")
+        reserved = int.from_bytes(header[6:10], "little")
+        pixel_offset = int.from_bytes(header[10:14], "little")
+        info_size = int.from_bytes(header[14:18], "little")
+        width = int.from_bytes(header[18:22], "little", signed=True)
+        height = int.from_bytes(header[22:26], "little", signed=True)
+        if reserved != 0 or info_size not in _BMP_INFO_SIZES:
+            continue
+        if not 0 < file_size <= len(data) - idx or not 14 <= pixel_offset < file_size:
+            continue
+        max_dim = previewgen_config.MAX_RASTER_DIMENSION
+        if width == 0 or height == 0 or abs(width) > max_dim or abs(height) > max_dim:
+            continue
+        return data[idx:idx + file_size]
+
 
 def extract_max_thumbnail(path: Path) -> Image.Image | None:
     """Extract embedded viewport thumbnail from Autodesk 3ds Max (.max) OLE files."""
@@ -28,17 +63,17 @@ def extract_max_thumbnail(path: Path) -> Image.Image | None:
                     png_idx = data.find(b"\x89PNG\r\n\x1a\n")
                     if png_idx >= 0:
                         return limits.bounded_image_from_bytes(data[png_idx:], "3ds Max thumbnail")
-                    bmp_idx = data.find(b"BM")
-                    if bmp_idx >= 0:
-                        return limits.bounded_image_from_bytes(data[bmp_idx:], "3ds Max thumbnail")
+                    bmp = _find_embedded_bmp(data)
+                    if bmp is not None:
+                        return limits.bounded_image_from_bytes(bmp, "3ds Max thumbnail")
             if ole.exists("\x05SummaryInformation"):
                 stream = ole.openstream("\x05SummaryInformation").read()
                 png_idx = stream.find(b"\x89PNG\r\n\x1a\n")
                 if png_idx >= 0:
                     return limits.bounded_image_from_bytes(stream[png_idx:], "3ds Max thumbnail")
-                bmp_idx = stream.find(b"BM")
-                if bmp_idx >= 0:
-                    return limits.bounded_image_from_bytes(stream[bmp_idx:], "3ds Max thumbnail")
+                bmp = _find_embedded_bmp(stream)
+                if bmp is not None:
+                    return limits.bounded_image_from_bytes(bmp, "3ds Max thumbnail")
         return None
     except Exception:
         return None

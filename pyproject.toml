@@ -1,3 +1,9 @@
+# PreviewGen ships as a frozen application (PyInstaller) built from the
+# hash-pinned requirements-lock.txt, and nothing in this repo is published as
+# an installable distribution. A [project] table here would therefore add a
+# second, unenforced dependency and version source that can silently drift
+# from the lock files, so the metadata lives in previewgen/__init__.py and the
+# single supported install path stays `pip install --require-hashes`.
 [tool.ruff]
 target-version = "py312"
 line-length = 120

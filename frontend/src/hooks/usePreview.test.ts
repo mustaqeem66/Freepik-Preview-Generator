@@ -205,4 +205,66 @@ describe("usePreview concurrency", () => {
       vi.useRealTimers();
     }
   });
+
+  it("applies a terminal envelope that outruns the start_preview promise", async () => {
+    const gate = Promise.withResolvers<unknown>();
+    const fakeApi = {
+      start_preview: vi.fn(() => gate.promise),
+      cancel_preview: vi.fn(async () => ({ ok: true })),
+      release_preview: vi.fn(async () => ({ ok: true, value: true })),
+    };
+    // @ts-expect-error mock window.pywebview
+    window.pywebview = { api: fakeApi };
+
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => usePreview(fileA, baseState()));
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(fakeApi.start_preview).toHaveBeenCalledTimes(1);
+
+      // The worker publishes before the bridge promise returns to the hook.
+      act(() => {
+        bridgeEvents.emit(
+          "preview.completed",
+          { operationId: "preview_early", url: "http://x/e.jpg", previewId: "pe", width: 40, height: 30 },
+          { operationId: "preview_early", terminal: true }
+        );
+      });
+      expect(result.current.previewUrl).toBeNull();
+
+      await act(async () => {
+        gate.resolve({ ok: true, operationId: "preview_early", status: "queued" });
+      });
+      expect(result.current.previewUrl).toBe("http://x/e.jpg");
+      expect(result.current.isLoading).toBe(false);
+      expect(result.current.renderError).toBeNull();
+
+      // Buffering the early event must also cancel the false-timeout watchdog.
+      await act(async () => { await vi.advanceTimersByTimeAsync(121_000); });
+      expect(result.current.renderError).toBeNull();
+      expect(result.current.previewUrl).toBe("http://x/e.jpg");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports a failure instead of pinning Rendering when start gives no operation id", async () => {
+    const fakeApi = {
+      start_preview: vi.fn(async () => ({ ok: true, status: "queued" })),
+      cancel_preview: vi.fn(async () => ({ ok: true })),
+      release_preview: vi.fn(async () => ({ ok: true, value: true })),
+    };
+    // @ts-expect-error mock window.pywebview
+    window.pywebview = { api: fakeApi };
+
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => usePreview(fileA, baseState()));
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(result.current.isLoading).toBe(false);
+      expect(result.current.renderError).toMatch(/failed/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

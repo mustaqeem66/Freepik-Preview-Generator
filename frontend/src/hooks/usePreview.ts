@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiBridge, bridgeEvents } from "../api/bridge";
+import type { BridgeEventMap, BridgeEventMeta } from "../api/bridge";
 import type { FileInfo, PreviewHandle, PreviewState, PyWebViewApi } from "../types";
 
 // Backstop for a lost preview.completed/preview.failed envelope. The backend
 // bounds every render (worker timeouts), so this only fires when the event
 // itself never arrived; it must stay above the backend render budget.
 const PREVIEW_OPERATION_TIMEOUT_MS = 120_000;
+
+type BufferedPreviewEvent =
+  | { kind: "completed"; payload: BridgeEventMap["preview.completed"]; meta: BridgeEventMeta }
+  | { kind: "failed"; payload: BridgeEventMap["preview.failed"]; meta: BridgeEventMeta };
 
 export function usePreview(activeFile: FileInfo | undefined, state: PreviewState) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -24,6 +29,13 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
   const ownedHandleRef = useRef<PreviewHandle | null>(null);
   const apiRef = useRef<PyWebViewApi | undefined>(undefined);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A terminal envelope can beat the start_preview promise back to the hook.
+  // While that call is in flight there is no operation id to match against, so
+  // events are buffered and replayed the moment the id is known.
+  const startPendingRef = useRef<boolean>(false);
+  const settledRef = useRef<boolean>(false);
+  const bufferedRef = useRef<BufferedPreviewEvent[]>([]);
+  const replayRef = useRef<((operationId: string) => void) | null>(null);
 
   const clearWatchdog = () => {
     if (watchdogRef.current !== null) {
@@ -41,13 +53,14 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
 
   useEffect(() => {
     // Listen for asynchronous preview completion and failure events
-    const unsubCompleted = bridgeEvents.subscribe("preview.completed", (payload) => {
+    const applyCompleted = (payload: BridgeEventMap["preview.completed"]) => {
       if (!activeOpIdRef.current || payload.operationId !== activeOpIdRef.current) {
         // Discard superseded preview
         releaseHandle({ id: payload.previewId || payload.url, url: payload.url, requestId: 0 });
         return;
       }
       clearWatchdog();
+      settledRef.current = true;
       setIsLoading(false);
       setRenderError(null);
       const newHandle: PreviewHandle = {
@@ -66,18 +79,57 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
       if (previous && previous.id !== newHandle.id) {
         releaseHandle(previous);
       }
-    });
+    };
 
-    const unsubFailed = bridgeEvents.subscribe("preview.failed", (payload) => {
+    const applyFailed = (payload: BridgeEventMap["preview.failed"]) => {
       if (!activeOpIdRef.current || payload.operationId !== activeOpIdRef.current) return;
       clearWatchdog();
+      settledRef.current = true;
       setIsLoading(false);
       setRenderError(payload.error || "Preview generation failed");
+    };
+
+    const unsubCompleted = bridgeEvents.subscribe("preview.completed", (payload, meta) => {
+      if (startPendingRef.current) {
+        bufferedRef.current.push({ kind: "completed", payload, meta });
+        return;
+      }
+      applyCompleted(payload);
     });
+
+    const unsubFailed = bridgeEvents.subscribe("preview.failed", (payload, meta) => {
+      if (startPendingRef.current) {
+        bufferedRef.current.push({ kind: "failed", payload, meta });
+        return;
+      }
+      applyFailed(payload);
+    });
+
+    replayRef.current = (operationId: string) => {
+      const buffered = bufferedRef.current;
+      bufferedRef.current = [];
+      for (const entry of buffered) {
+        const eventOpId = entry.payload.operationId || entry.meta.operationId;
+        if (eventOpId !== operationId) {
+          // Belongs to a superseded run: drop it, but free its server buffer.
+          if (entry.kind === "completed") {
+            releaseHandle({
+              id: entry.payload.previewId || entry.payload.url,
+              url: entry.payload.url,
+              requestId: 0,
+            });
+          }
+          continue;
+        }
+        if (entry.kind === "completed") applyCompleted(entry.payload);
+        else applyFailed(entry.payload);
+      }
+    };
 
     return () => {
       unsubCompleted();
       unsubFailed();
+      replayRef.current = null;
       releaseHandle(ownedHandleRef.current);
       ownedHandleRef.current = null;
     };
@@ -118,13 +170,19 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
 
         if (api.start_preview) {
           // P0 fix: Non-blocking asynchronous start_preview
+          startPendingRef.current = true;
+          settledRef.current = false;
           const res = await api.start_preview(activeFile.path, state, currentRequestId);
+          startPendingRef.current = false;
           if (cancelled || currentRequestId !== requestIdRef.current) {
             if (res.operationId) api.cancel_preview?.(res.operationId).catch(() => {});
             return;
           }
           if (res.ok && res.operationId) {
             activeOpIdRef.current = res.operationId;
+            // Deliver any terminal envelope that outran this promise.
+            replayRef.current?.(res.operationId);
+            if (settledRef.current) return; // replay already delivered the outcome
             // Watchdog: a lost terminal envelope must not pin "Rendering" forever.
             watchdogRef.current = setTimeout(() => {
               if (activeOpIdRef.current !== res.operationId) return;
@@ -132,9 +190,10 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
               setIsLoading(false);
               setRenderError("Preview generation timed out. Try again or pick another asset.");
             }, PREVIEW_OPERATION_TIMEOUT_MS);
-          } else if (res.error) {
+          } else {
+            // ok without an operation id is a failure: never pin "Rendering".
             setIsLoading(false);
-            setRenderError(res.error);
+            setRenderError(res.error || "Preview generation failed. Try again.");
           }
         } else {
           // Fallback to synchronous render_preview if older backend
@@ -174,6 +233,7 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
           }
         }
       } catch (err) {
+        startPendingRef.current = false;
         if (!cancelled && currentRequestId === requestIdRef.current) {
           setIsLoading(false);
           setRenderError(err instanceof Error ? err.message : "Preview generation failed");
@@ -184,6 +244,7 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      startPendingRef.current = false;
       if (watchdogRef.current !== null) {
         clearTimeout(watchdogRef.current);
         watchdogRef.current = null;

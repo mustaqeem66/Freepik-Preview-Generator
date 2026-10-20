@@ -135,4 +135,40 @@ describe("useAssetProbe hook", () => {
     await waitFor(() => expect(result.current.isProbing).toBe(false), { timeout: 6000 });
     ApiBridge.clearCache();
   });
+
+  it("applies a probe.completed that outruns the start_probe promise", async () => {
+    ApiBridge.clearCache();
+    const probeA = { kind: "raster", resizable: false, nativeWidth: 100, nativeHeight: 100, maxDimension: 8192, defaultDimension: 2400 };
+    const gate = Promise.withResolvers<unknown>();
+    const fakeApi = {
+      start_probe: vi.fn(() => gate.promise),
+      cancel_probe: vi.fn(async () => ({ ok: true })),
+    };
+    // @ts-expect-error mock window.pywebview
+    window.pywebview = { api: fakeApi };
+
+    const { result } = renderHook(() => useAssetProbe(assetA));
+    await waitFor(() => expect(fakeApi.start_probe).toHaveBeenCalledTimes(1));
+
+    // The worker finishes before the bridge promise returns to the hook.
+    act(() => {
+      bridgeEvents.emit("probe.completed", { operationId: "probe_early", probe: probeA as never }, { operationId: "probe_early", terminal: true });
+    });
+    expect(result.current.probe).toBeNull();
+
+    await act(async () => {
+      gate.resolve({ ok: true, operationId: "probe_early", status: "queued" });
+    });
+    await waitFor(() => expect(result.current.probe?.nativeWidth).toBe(100));
+    expect(result.current.isProbing).toBe(false);
+
+    // The buffered result must also disarm the timeout backstop.
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    });
+    expect(result.current.probe?.nativeWidth).toBe(100);
+    expect(result.current.isProbing).toBe(false);
+    ApiBridge.clearCache();
+    delete window.pywebview;
+  });
 });

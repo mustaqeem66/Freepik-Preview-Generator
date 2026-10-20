@@ -240,8 +240,10 @@ def compose_preview(
         tw = box[2] - box[0]
         th = box[3] - box[1]
 
-        # Use freeform position coordinates
-        if config.position == "custom" or (config.text_pos_x != 0.05 or config.text_pos_y != 0.05):
+        # Freeform coordinates only apply when the caller chose "custom";
+        # comparing the sliders to their default values instead let a stale
+        # slider silently override an explicitly requested preset.
+        if config.position == "custom":
             x = max(0, min(width - tw, round((width - tw) * max(0.0, min(1.0, config.text_pos_x)))))
             y = max(0, min(height - th, round((height - th) * max(0.0, min(1.0, config.text_pos_y)))))
         else:

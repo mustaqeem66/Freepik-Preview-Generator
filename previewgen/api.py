@@ -100,6 +100,30 @@ class DesktopApi:
         except Exception:
             return False
 
+    def has_outstanding_work(self) -> bool:
+        """True when asynchronous work is queued or running right now.
+
+        The desktop watchdog needs to tell a frozen bridge apart from an idle
+        application: heartbeats only advance when Python pushes an event, so
+        without this the watchdog would report a stall every time the user
+        simply paused.
+        """
+        try:
+            if self.lifecycle.get_active_operations():
+                return True
+            if self.preview_coordinator.is_busy() or self.probe_coordinator.is_busy():
+                return True
+            thread = self.scanner.active_scan_thread
+            if thread is not None and thread.is_alive():
+                return True
+            batch = self.lifecycle.batch_thread
+            if batch is not None and batch.is_alive():
+                return True
+        except Exception:
+            # Fail safe toward "busy": a broken probe should not spam stack dumps.
+            return True
+        return False
+
     def _dispatch_envelope(
         self, event_name: str, payload: dict[str, Any], operation_id: str = "", terminal: bool = False
     ) -> None:
@@ -548,11 +572,22 @@ class DesktopApi:
         the destination must live under a user-selected (authorized) root.
         """
         temp_dir: Path | None = None
+        export_op: ActiveOperation | None = None
         try:
             if not isinstance(file_path, str) or not file_path.strip():
                 return {"ok": False, "value": None, "error": "Empty file path"}
 
             requested_out = config_dict.get("outputFolder") if isinstance(config_dict, dict) else None
+
+            # This runs synchronously on the bridge thread, so it has to be
+            # visible to the watchdog; an idle app must not look stalled, but a
+            # hung export must.
+            export_op = ActiveOperation(operation_id=f"export_{uuid.uuid4().hex[:12]}", kind="single_export")
+            self.lifecycle.register_operation(export_op)
+
+            # A zip member's default destination is the archive's folder; the
+            # extraction temp dir is deleted in the finally block.
+            default_out_dir: Path | None = None
 
             if file_path.startswith("zip://"):
                 import urllib.parse
@@ -568,21 +603,22 @@ class DesktopApi:
                 with zipfile.ZipFile(zip_path, "r") as zf:
                     limits.extract_zip_member_bounded(zf, entry_name, target_file)
                 source_path = target_file
+                default_out_dir = zip_path.parent
             else:
                 source_path = Path(file_path).resolve()
+                default_out_dir = source_path.parent
 
             if not source_path.is_file():
                 return {"ok": False, "value": None, "error": f"File does not exist: {source_path.name}"}
 
             out_dir = Path(
-                requested_out if isinstance(requested_out, str) and requested_out.strip() else source_path.parent
+                requested_out if isinstance(requested_out, str) and requested_out.strip() else default_out_dir
             ).resolve()
             if not self.is_authorized_path(out_dir):
                 return {"ok": False, "value": None, "error": "UNAUTHORIZED_PATH", "code": "UNAUTHORIZED_PATH"}
 
             cfg = PreviewConfig.from_mapping(config_dict, mode="strict-export")
             out_dir.mkdir(parents=True, exist_ok=True)
-            self.add_authorized_folder(out_dir)
 
             dest_file = out_dir / f"{source_path.stem}.jpg"
             skipped = False
@@ -625,6 +661,8 @@ class DesktopApi:
             code, msg = classify_exception(exc)
             return {"ok": False, "value": None, "error": msg, "code": code}
         finally:
+            if export_op is not None:
+                self.lifecycle.unregister_operation(export_op.operation_id)
             if temp_dir and temp_dir.exists():
                 safe_rmtree(temp_dir, "on-demand export temp")
 
