@@ -63,9 +63,9 @@ curl -fsSL https://raw.githubusercontent.com/mustaqeem66/Freepik-Preview-Generat
 
 ✅ Downloads and verifies the AppImage, installs it to `~/.local/bin/previewgen` and creates a desktop-menu entry.
 
-> 🛡️ **Security note:** A terminal command is convenient, **not a way to bypass security warnings**. Windows SmartScreen and macOS Gatekeeper may still prompt, especially if a release lacks a trusted publisher signature or notarization. Verify the official download and do **not** disable Defender or Gatekeeper. Review [the scripts](install.ps1) / [macOS–Linux installer](install.sh) before executing them; direct PowerShell piping runs downloaded code immediately. See [Security and first-run warnings](#-security-and-first-run-warnings).
+> 🛡️ **Security note:** A terminal command is convenient, **not a way to bypass security warnings**. Windows SmartScreen and macOS Gatekeeper may still prompt, especially if a release lacks a trusted publisher signature or notarization. Verify the official download and do **not** disable Defender or Gatekeeper. Review the [Windows script](install.ps1) or [macOS/Linux script](install.sh) before executing them; direct PowerShell piping runs downloaded code immediately. See [Security and first-run warnings](#security-warnings).
 
-Prefer clicking instead of using a command? See the [manual installer instructions](#-download-and-install-manually) for Windows, macOS and Linux.
+Prefer clicking instead of using a command? See the [manual installer instructions](#manual-installation) for Windows, macOS and Linux.
 
 ---
 
@@ -99,6 +99,7 @@ Its signature **diagonal-split composition** combines a solid-colored background
 
 The app is especially useful when you have **many different source files but want one recognizable visual style**.
 
+<a id="what-previewgen-can-do"></a>
 ## ✨ What PreviewGen can do
 
 ### 👀 1. Preview your artwork before exporting
@@ -175,6 +176,7 @@ flowchart TD
 
 **A typical example:** You have a folder of 40 transparent PNG icons. Choose it once, set a white-and-checkerboard split, enter your watermark, inspect a few samples, then export the whole folder to JPGs in one batch.
 
+<a id="getting-started"></a>
 ## 🧭 Getting started
 
 1. **Choose your artwork folder.** Use **Choose Input Folder** or paste a valid folder path.
@@ -188,6 +190,7 @@ flowchart TD
 
 ---
 
+<a id="manual-installation"></a>
 ## 💾 Download and install manually
 
 **💡 We recommend the one-command installation method above.** The options below are for people who prefer downloading files manually or choosing a portable build.
@@ -286,6 +289,7 @@ To remove a script-installed Linux copy:
 
 ---
 
+<a id="security-warnings"></a>
 ## 🛡️ Security and first-run warnings
 
 **⚠️ Command-line installation cannot guarantee a warning-free launch.** Smaller open-source apps may display an operating-system warning, especially when a build has no recognized publisher signature or Apple notarization. **A warning is not automatically proof of malware; it is also not proof the app is safe.**
