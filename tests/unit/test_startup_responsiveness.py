@@ -31,8 +31,8 @@ def test_slow_temp_sweep_is_not_on_the_desktop_startup_thread(monkeypatch):
 
 
 def test_open_diagnostics_folder_is_authorized_and_local(monkeypatch, tmp_path):
-    from previewgen.api import DesktopApi
     from previewgen import settings
+    from previewgen.api import DesktopApi
 
     logs = tmp_path / "local-logs"
     monkeypatch.setattr(settings, "get_log_directory", lambda: logs)
