@@ -26,81 +26,110 @@ Choose artwork, refine its presentation and generate consistent JPG previews in 
 </p>
 
 </div>
+
 ---
 
-## Meet PreviewGen
+## 🚀 Install PreviewGen from your terminal
+
+**⚡ Recommended:** use the official installer script for a quick, guided setup. No Python, Node.js or repository clone is needed.
+
+### 🪟 Windows — PowerShell
+
+```powershell
+irm https://raw.githubusercontent.com/mustaqeem66/Freepik-Preview-Generator/main/install.ps1 | iex
+```
+
+Opens the normal Windows installation wizard after downloading and checking the published installer.
+
+### 🍎 macOS & 🐧 Linux — Terminal
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mustaqeem66/Freepik-Preview-Generator/main/install.sh -o install-previewgen.sh && bash install-previewgen.sh
+```
+
+- **🍎 macOS:** installs the verified DMG application into **Applications**.
+- **🐧 Linux:** installs the verified AppImage and creates a desktop-menu entry.
+
+Both scripts fetch the **latest published release when you run them**; they do not install ongoing automatic updates. **Review the [Windows script](install.ps1) or [macOS/Linux script](install.sh) before executing downloaded code.**
+
+Prefer downloading packages yourself? See [manual installation](#manual-installation). For first-launch publisher or OS security prompts, see [Security and first-run warnings](#security-warnings).
+
+---
+
+## 🎨 Meet PreviewGen
 
 Creating a professional preview for one transparent icon may be simple. Creating the *same consistent preview* for dozens or hundreds of cutouts, illustrations, models or design assets can take hours.
 
 PreviewGen takes that repetitive work off your hands. Instead of opening every file in an editor, building a checkerboard, adding text, positioning the artwork and saving a JPEG, you set up your design once and let the app prepare the batch.
 
-Its signature **diagonal-split composition** combines a solid-colored background with a printed checkerboard that *visually communicates* transparency. You can adjust colors, watermarks, output dimensions and supported 3D camera angles before exporting.
+The signature **diagonal-split preview** lets a collection of unrelated files share a recognizable visual style, while the studio gives you control before you export.
 
-> **Important:** JPG files are opaque. PreviewGen's checkerboard is part of the rendered image; it is not an actual transparent JPG. PreviewGen helps present digital assets, but no marketplace's approval or compliance is guaranteed.
+PreviewGen prepares presentation images; each marketplace still determines its own submission and acceptance requirements.
 
-### PreviewGen in action
+### 📸 PreviewGen in action
 
 | Dark Studio | Light Studio |
 | :---: | :---: |
 | ![PreviewGen Studio dark interface](preview-dark.png) | ![PreviewGen Studio light interface](preview-light.png) |
 | Comfortable for detail-focused creative work | A clean, bright workspace for everyday editing |
 
-## Who is PreviewGen for?
+## 👩‍🎨 Who is PreviewGen for?
 
 | You are a… | PreviewGen helps you… |
 | --- | --- |
-| **Stock marketplace contributor** | Prepare consistent JPG previews for assets you submit to sites such as Freepik, Adobe Stock or Shutterstock, subject to each marketplace's own rules |
-| **Icon or illustration designer** | Present transparent PNGs, SVGs and design packs with consistent colors and branding |
-| **3D artist or game-asset creator** | Preview supported meshes with camera/orbit controls and generate shareable JPG images |
-| **Digital-product seller** | Create a cohesive set of presentation previews for listings or asset bundles on stores such as Etsy and Creative Market |
-| **Freelancer or creative agency** | Save reusable presentation choices while preparing multiple client deliverables |
-| **CAD or technical designer** | Inspect available rendered views or embedded previews where a format-specific renderer can read them |
+| 📸 **Stock marketplace contributor** | Prepare consistent JPG previews for assets you submit to sites such as Freepik, Adobe Stock or Shutterstock, subject to each marketplace's own rules |
+| 🎨 **Icon or illustration designer** | Present transparent PNGs, SVGs and design packs with consistent colors and branding |
+| 🧊 **3D artist or game-asset creator** | Preview supported meshes with camera/orbit controls and generate shareable JPG images |
+| 🛍️ **Digital-product seller** | Create a cohesive set of presentation previews for listings or asset bundles on stores such as Etsy and Creative Market |
+| 💼 **Freelancer or creative agency** | Save reusable presentation choices while preparing multiple client deliverables |
+| 📐 **CAD or technical designer** | Inspect available rendered views or embedded previews where a format-specific renderer can read them |
 
 The app is especially useful when you have **many different source files but want one recognizable visual style**.
 
-## What PreviewGen can do
+<a id="what-previewgen-can-do"></a>
+## ✨ What PreviewGen can do
 
-### 1. Preview your artwork before exporting
+### 👀 1. Preview your artwork before exporting
 
 - Select a source folder and browse discovered supported assets in the library.
 - View the generated preview in the central canvas.
 - Navigate between items, adjust settings and export one preview or a batch.
 - See meaningful errors when an individual source cannot be rendered.
 
-### 2. Create a signature diagonal-split presentation
+### 🎨 2. Create a signature diagonal-split presentation
 
 - Put a solid color on either side of the diagonal.
 - Choose a preset or custom background color.
 - Display a printed checkerboard on the opposite side to illustrate alpha/transparency.
 - Preserve sensible proportions instead of stretching assets arbitrarily.
 
-### 3. Add your creative identity
+### ✍️ 3. Add your creative identity
 
 - Add custom watermark text and adjust its color, scale, opacity and placement.
 - Use outlines for legibility against the artwork.
 - Choose a supported logo or font file where the renderer supports it.
 - Apply a consistent presentation across a batch.
 
-### 4. Work with 2D, vector, 3D and design files
+### 🧩 4. Work with 2D, vector, 3D and design files
 
 PreviewGen recognizes raster images, layered/vector assets, 3D models, selected CAD/creator formats and ZIP archives. It uses format-specific rendering or embedded preview extraction as available.
 
 **Discovery is not a universal file-conversion guarantee.** Some proprietary design projects do not contain usable thumbnails, and some models may be rejected for malformed data, missing features or resource limits. See [Supported formats & limitations](#supported-formats--limitations).
 
-### 5. Export many previews without babysitting each file
+### 📦 5. Export many previews without babysitting each file
 
 - Start batch generation with progress and cancellation controls.
 - Choose an output folder and an existing-file handling policy.
 - Review saved, failed or skipped files and export reports.
 - Optionally enable system notifications when a batch finishes.
 
-### 6. Keep your artwork local
+### 🔒 6. Keep your artwork local
 
-PreviewGen is a **local-first desktop application**. Your artwork is processed on your computer, not uploaded to an online conversion website. Preview images use a temporary loopback-only local server. Installing or updating the app, of course, requires downloading packages from GitHub.
+PreviewGen processes artwork on your computer using a loopback-only preview server rather than an online conversion service. App downloads are provided through GitHub.
 
 ---
 
-## How it works
+## 🔄 How it works
 
 The flow below shows the user journey from a folder of creative assets to finished JPG previews.
 
@@ -132,170 +161,87 @@ flowchart TD
     class K,L output
 ```
 
-**A typical example:** You have a folder of 40 transparent PNG icons. Choose it once, set a white-and-checkerboard split, enter your watermark, inspect a few samples, then export the whole folder to JPGs in one batch.
+<a id="getting-started"></a>
+## 🧭 Your first launch
 
-## Getting started
+The native **Choose Input Folder** dialog selects directories, so it may not display individual artwork files. Select the *containing folder* and confirm with **Select Folder**; PreviewGen lists supported assets after scanning. Direct individual-file selection is not yet available.
 
-1. **Choose your artwork folder.** Use **Choose Input Folder** or paste a valid folder path.
-2. **Wait for discovery.** PreviewGen lists recognized files; select one to see the live result.
-3. **Adjust your design.** Set the split direction, background, watermark and any available 3D camera controls.
-4. **Set a destination.** Choose **Same as input** or select an output folder.
-5. **Export.** Generate the active preview or select **Generate Previews** for a batch.
-6. **Review the output.** Open the output folder and check the JPGs and batch report.
-
-> **Why does the folder dialog look empty?** It is a *folder picker*, so Windows/macOS may hide individual files. Select the **folder itself** using **Select Folder**. Its files appear in PreviewGen after scanning. A separate **Add Files** multi-select picker is a planned feature, not a current feature.
+**Tip:** JPG files do not support transparency. The checkerboard is deliberately printed in the presentation preview; your original transparent artwork remains separate.
 
 ---
 
-## Download and install
+<a id="manual-installation"></a>
+## 💾 Download and install manually
 
-Use the official [**GitHub Releases page**](https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/latest). The latest published release available when this guide was updated is **v2.1.2**.
+Prefer a graphical installer or a portable package? All files are available on the [official GitHub Releases page](https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/latest).
 
-| Operating system | Recommended release file | Installation experience |
-| --- | --- | --- |
-| **Windows 10/11** | `PreviewGen-Setup.exe` | Standard setup wizard with custom install folder and optional desktop shortcut |
-| **Windows (portable)** | `PreviewGen-Windows.zip` | Unzip, then run `PreviewGen.exe`; no installation wizard |
-| **macOS** | `PreviewGen-macOS.dmg` | Open the disk image, then copy PreviewGen to Applications |
-| **Linux** | `PreviewGen-Linux.AppImage` | Mark executable, then run directly; optional desktop integration via installer script |
+### 🪟 Windows
 
-### Windows — installer wizard (recommended)
+**Normal installation — `PreviewGen-Setup.exe`:** Download and launch the installer, choose an installation directory and optionally create a Desktop icon. It also registers an uninstaller under Windows Apps settings. The default per-user location is `%LOCALAPPDATA%\Programs\PreviewGen`.
 
-**Option A: Download manually**
+**Portable — `PreviewGen-Windows.zip`:** Extract the ZIP and run `PreviewGen.exe` from the extracted folder. Portable mode has no installer wizard or automatic installed-app entry.
 
-1. Open [Latest Release](https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/latest).
-2. Download **`PreviewGen-Setup.exe`** (not the portable ZIP).
-3. Run the setup wizard, choose your install directory, optionally select **Create a desktop icon**, and finish.
-4. Launch PreviewGen from Start or its desktop shortcut.
+### 🍎 macOS
 
-The installer is configured for a **per-user installation**, with a default location under `%LOCALAPPDATA%\Programs\PreviewGen`. It provides a normal uninstaller through Windows Apps settings.
+Download `PreviewGen-macOS.dmg`, open it, then drag **PreviewGen.app** into **Applications**. Launch the app from Applications or Launchpad.
 
-**Option B: PowerShell installation**
+### 🐧 Linux
 
-Open **PowerShell** and run:
-
-```powershell
-irm https://raw.githubusercontent.com/mustaqeem66/Freepik-Preview-Generator/main/install.ps1 | iex
-```
-
-This retrieves the **latest published release**, downloads `PreviewGen-Setup.exe`, checks it against the release's `SHA256SUMS.txt`, then opens the **same interactive wizard**. The script does **not** silently install a portable ZIP.
-
-**Prefer reviewing downloaded scripts first?** Open [install.ps1](install.ps1) in GitHub and read it before running the command. A matching hash detects corruption or mismatch; it is not a substitute for confirming the publisher.
-
-**Windows portable alternative:**
-
-1. Download `PreviewGen-Windows.zip`.
-2. Extract all its files to a normal folder.
-3. Launch `PreviewGen.exe` inside the extracted folder.
-
-The portable `PreviewGen.exe` starts immediately. It will not show a setup wizard or automatically create an installed-app entry.
-
-### macOS — disk image or Terminal
-
-**Option A: Install from the DMG**
-
-1. Download `PreviewGen-macOS.dmg` from [GitHub Releases](https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/latest).
-2. Open the downloaded DMG.
-3. Drag **PreviewGen.app** into **Applications**.
-4. Open PreviewGen from Applications or Launchpad.
-
-**Option B: Install with Terminal**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/mustaqeem66/Freepik-Preview-Generator/main/install.sh -o install-previewgen.sh
-bash install-previewgen.sh
-```
-
-This downloads the latest released DMG, verifies its checksum, copies PreviewGen to `/Applications`, tries to create a Desktop shortcut, and launches the app. **Read `install-previewgen.sh` before running it.** If macOS refuses permission to modify Applications, use the manual DMG/Finder method or an administrator-approved installation path.
-
-### Linux — AppImage or Terminal
-
-**Option A: Run the AppImage manually**
-
-Download `PreviewGen-Linux.AppImage` from the latest release, open a terminal in the download folder and run:
+Download `PreviewGen-Linux.AppImage`. In a terminal opened in its folder:
 
 ```bash
 chmod +x PreviewGen-Linux.AppImage
 ./PreviewGen-Linux.AppImage
 ```
 
-You can keep the AppImage anywhere you have access. Some Linux distributions need additional FUSE/AppImage compatibility packages or desktop permissions.
+The AppImage can run without being installed system-wide. Depending on your distro, FUSE compatibility may be required.
 
-**Option B: Install with desktop integration**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/mustaqeem66/Freepik-Preview-Generator/main/install.sh -o install-previewgen.sh
-bash install-previewgen.sh
-```
-
-The installer downloads and checks the latest AppImage, places the executable at `~/.local/bin/previewgen`, creates a launcher in `~/.local/share/applications/` and attempts a Desktop shortcut when the Desktop directory exists.
-
-After installation, you can start it from a terminal with:
-
-```bash
-~/.local/bin/previewgen
-```
-
-To remove a script-installed Linux copy:
+For a Linux installation made through the terminal script above, you can later uninstall it with:
 
 ```bash
 ~/.local/bin/previewgen-uninstall
 ```
 
-**Install script note:** macOS/Linux checksum verification expects the exact published artifact names `PreviewGen-macOS.dmg` and `PreviewGen-Linux.AppImage`. Use a version of `install.sh` containing the corrected filename handling.
-
 ---
 
-## Unsigned apps, SmartScreen and Gatekeeper: what to expect
+<a id="security-warnings"></a>
+## 🛡️ Security and first-run warnings
 
-Smaller open-source apps may display an operating-system warning, especially when a build has no recognized publisher signature or Apple notarization. **A warning is not automatically proof of malware; it is also not proof the app is safe.**
+**⚠️ A terminal installer does not bypass SmartScreen, Defender or Gatekeeper.** Some releases may be unsigned or unnotarized. A reputation warning alone does not prove malware, but a matching checksum alone cannot prove software is safe.
 
-**Before opening any warning dialog**, download from this repository's official Releases page, check that the file has the expected name, review the release notes and verify the file against `SHA256SUMS.txt`. You can also check the OS signature details. A checksum from the *same compromised source* does not establish authenticity, so provenance matters too.
+**Before proceeding:** use [official Releases](https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/latest), review the release notes and compare the downloaded file's SHA-256 against that release's `SHA256SUMS.txt`. A checksum from the same source provides integrity checking, not independent publisher authentication.
 
-### Windows: “Windows protected your PC” or “Unknown publisher”
+### 🪟 Windows — SmartScreen or “Unknown publisher”
 
-If **Microsoft Defender SmartScreen** warns about an unrecognized app:
-
-1. Confirm that you downloaded it from the repository's GitHub Releases page.
-2. Confirm the downloaded file's hash and inspect **Properties → Digital Signatures**, if that tab exists.
-3. If the warning is a *reputation* warning, you trust the release, and Windows offers it, choose **More info → Run anyway** to proceed.
-
-**Do not turn off Windows Defender, disable real-time protection or create blanket antivirus exclusions.** If Defender reports a specific virus/trojan detection or quarantines the file, **stop** and report the detection and the release link to the maintainers rather than overriding protection.
-
-Check a Windows download's hash in PowerShell:
+Check the downloaded installer in PowerShell:
 
 ```powershell
 Get-FileHash .\PreviewGen-Setup.exe -Algorithm SHA256
 Get-AuthenticodeSignature .\PreviewGen-Setup.exe | Format-List Status, SignerCertificate
 ```
 
-Compare the SHA-256 value with the `PreviewGen-Setup.exe` entry in the same release's `SHA256SUMS.txt`. A missing publisher signature may explain a reputation warning, but a matching SHA-256 by itself does not prove a file is benign.
+If it is **only a SmartScreen reputation warning**, and you have verified and trust the release, Windows may offer **More info → Run anyway**. If Defender detects or quarantines a specific threat, **stop and report it** rather than creating an exception or disabling antivirus.
 
-### macOS: “Apple cannot verify this app” or “Unidentified developer”
+### 🍎 macOS — Gatekeeper or “Unidentified developer”
 
-When Gatekeeper blocks the first launch:
-
-1. Confirm the download comes from the official release and its hash matches the release manifest.
-2. Try opening **PreviewGen.app** once from **Applications**.
-3. If macOS blocks it and you trust the download, open **System Settings → Privacy & Security** and look for **Open Anyway** associated with PreviewGen. Follow the system prompts if offered. On some macOS versions, Finder **Control-click → Open** is also available.
-4. If macOS reports that an app is **damaged**, its signature is invalid, or it may harm your computer, stop and verify/report the release rather than bypassing those warnings.
-
-**Do not disable Gatekeeper globally or strip quarantine attributes with a blanket Terminal command.** Some builds may be signed or notarized, and others may not be; verify the particular downloaded build rather than assuming either state.
-
-Check the DMG checksum:
+Check the downloaded DMG:
 
 ```bash
 shasum -a 256 PreviewGen-macOS.dmg
 ```
 
-### Linux: permissions and trust
+If Gatekeeper blocks the first launch and you trust the verified download, check **System Settings → Privacy & Security → Open Anyway**. Some macOS versions also allow **Control-click → Open** in Finder. If macOS warns the app is damaged or harmful, stop and report it instead of bypassing protection.
 
-Linux may refuse to launch a downloaded AppImage until you mark it executable. Use `chmod +x` only for a verified download. Desktop launchers may also ask you to mark the file as trusted; this is desktop-environment specific. Do not run the application with `sudo` unless you have a specific documented reason.
+### 🐧 Linux — AppImage permissions
 
-**For maintainers:** The repository's release workflow contains signing/notarization requirements for tagged builds. Before describing any particular published binary as signed, verify its actual signature and release provenance. Users should not have to rely on a claim in the README alone.
+The manual AppImage executable-permission step is in [manual installation](#manual-installation). Some desktop environments additionally ask you to trust launchers. Do not run the app with `sudo` merely to bypass a permission warning.
+
+**Never disable Windows Defender or Gatekeeper globally for PreviewGen.** Signing and notarization must be verified for the *specific released binary*; repository build configuration alone is not proof of signing.
 
 ---
 
-## Supported formats & limitations
+<a id="supported-formats--limitations"></a>
+## 🗂️ Supported formats & limitations
 
 The following are the extensions recognized by PreviewGen's discovery configuration. Exact results depend on format, embedded preview availability, optional libraries, file health and resource limits.
 
@@ -311,53 +257,25 @@ The following are the extensions recognized by PreviewGen's discovery configurat
 
 **Resource safety:** The app enforces bounds on source file size, pixels, geometry, archive extraction and rendering time/memory. Files exceeding these limits can fail gracefully rather than rendering.
 
-## Common questions
+## ❓ Common questions
 
 <details>
-<summary><strong>Do I need Adobe Photoshop, AutoCAD or Blender installed?</strong></summary>
+<summary><strong>Do I need Photoshop, AutoCAD or Blender installed?</strong></summary>
 
-PreviewGen uses included renderers and available metadata/embedded thumbnails for many tasks, so you do not normally need to open each original authoring app just to make a preview. However, support for some proprietary native formats is limited and should not be interpreted as a guarantee of full project conversion.
+PreviewGen can render or read embedded previews for many formats without opening their authoring applications. Full project conversion is not guaranteed, especially for proprietary native files.
 
 </details>
 
 <details>
-<summary><strong>Why don't I see the files in the native folder selector?</strong></summary>
+<summary><strong>What should I do if Windows reports “PreviewGen (Not Responding)”?</strong></summary>
 
-Because it is selecting a folder, not individual files. Select the folder itself; PreviewGen discovers supported files inside it afterward.
-
-</details>
-
-<details>
-<summary><strong>Does PreviewGen upload my designs?</strong></summary>
-
-Its normal preview and export workflow processes artwork locally. It does not need an online conversion service. Downloading releases and following repository links uses the internet.
-
-</details>
-
-<details>
-<summary><strong>Will it guarantee acceptance on Freepik or Adobe Stock?</strong></summary>
-
-No. Each marketplace has its own current submission rules. PreviewGen prepares consistent presentation images; always check the platform's actual requirements for your asset category.
-
-</details>
-
-<details>
-<summary><strong>Why did Windows show “PreviewGen (Not Responding)”?</strong></summary>
-
-That message means Windows detected an unresponsive window. It cannot identify a root cause by itself. Newer builds include local diagnostics to help distinguish a slow startup operation, blocked GUI message loop or renderer issue. Open **Diagnostics** in the toolbar when the app is responsive, or inspect the local logs; see [Windows Hang Investigation](docs/WINDOWS_HANG_INVESTIGATION.md). If the window is stuck, collect the error and steps carefully rather than repeatedly force-launching copies.
-
-</details>
-
-<details>
-<summary><strong>Does the installation script automatically keep PreviewGen updated?</strong></summary>
-
-No. The scripts fetch the latest *published release when executed*. They do not install unreleased changes from `main` or provide an ongoing background updater.
+An unresponsive window does not reveal the underlying cause. When the interface responds, open **Diagnostics** in the toolbar; otherwise see [Windows Hang Investigation](docs/WINDOWS_HANG_INVESTIGATION.md) for safe log collection and reproduction steps. Share only redacted diagnostics.
 
 </details>
 
 ---
 
-## For developers
+## 🛠️ For developers
 
 PreviewGen combines a React/TypeScript frontend with a Python desktop backend. Work such as file scanning, asset probing and rendering is delegated to coordinated or isolated workers to keep UI operations responsive where possible.
 
@@ -382,7 +300,7 @@ flowchart LR
     EXPORT --> FILES
 ```
 
-### Run locally
+### 💻 Run locally
 
 CI uses **Python 3.12.8** and **Node.js 24.15.0**.
 
@@ -425,25 +343,20 @@ python app.py --render-test-all --fixtures tests/fixtures
 
 The repository includes further technical documentation in [`docs/`](docs/), an [issue tracker](https://github.com/mustaqeem66/Freepik-Preview-Generator/issues) and a [security reporting policy](SECURITY.md). Windows/macOS native dialogs, code signing and frozen release behavior should be checked on their actual operating systems; unit tests are not proof of full compatibility.
 
-## License, privacy and contributions
+## 🤝 License, privacy and contributions
 
 PreviewGen is licensed under the **[MIT License](LICENSE)**. You may use it for personal or commercial work under the license terms.
 
-Your source artwork and export settings remain on your computer in normal use. PreviewGen writes settings, caches, reports and local diagnostic logs. If you report a bug, please **remove sensitive file paths and artwork from any shared logs or screenshots**. Report security issues privately via [SECURITY.md](SECURITY.md).
+Settings, caches, reports and diagnostic logs are stored locally. When sharing a bug report, **redact personal file paths and artwork**; report security issues privately through [SECURITY.md](SECURITY.md).
 
 Contributions, reproducible bug reports, renderer fixtures and UI suggestions are welcome through [GitHub Issues](https://github.com/mustaqeem66/Freepik-Preview-Generator/issues) and pull requests.
 
 ---
 
 <div align="center">
-<h3>Make every asset presentation-ready.</h3>
-<p><strong>Created and maintained by <a href="https://github.com/mustaqeem66">Mustaqeem66</a> (ZenArtisan).</strong></p>
-<p>
-  <a href="https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/latest">Download the latest release</a>
-  &nbsp;·&nbsp;
-  <a href="https://github.com/mustaqeem66/Freepik-Preview-Generator">View source</a>
-  &nbsp;·&nbsp;
-  <a href="https://github.com/mustaqeem66/Freepik-Preview-Generator/issues">Report an issue</a>
-</p>
-<p>If PreviewGen helps with your creative workflow, consider starring the repository.</p>
+
+**Made for creative workflows.** · Maintained by [Mustaqeem66](https://github.com/mustaqeem66).
+
+⭐ If PreviewGen helps you, consider starring the repository.
+
 </div>
