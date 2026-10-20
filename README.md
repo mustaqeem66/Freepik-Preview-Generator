@@ -62,7 +62,7 @@ Creating a professional preview for one transparent icon may be simple. Creating
 
 PreviewGen takes that repetitive work off your hands. Instead of opening every file in an editor, building a checkerboard, adding text, positioning the artwork and saving a JPEG, you set up your design once and let the app prepare the batch.
 
-Its signature **diagonal-split composition** combines a solid-colored background with a printed checkerboard that *visually communicates* transparency. You can adjust colors, watermarks, output dimensions and supported 3D camera angles before exporting.
+The signature **diagonal-split preview** lets a collection of unrelated files share a recognizable visual style, while the studio gives you control before you export.
 
 PreviewGen prepares presentation images; each marketplace still determines its own submission and acceptance requirements.
 
@@ -241,6 +241,7 @@ The manual AppImage executable-permission step is in [manual installation](#manu
 
 ---
 
+<a id="supported-formats--limitations"></a>
 ## 🗂️ Supported formats & limitations
 
 The following are the extensions recognized by PreviewGen's discovery configuration. Exact results depend on format, embedded preview availability, optional libraries, file health and resource limits.
