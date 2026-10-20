@@ -247,24 +247,18 @@ Notes for independent audits:
 
 ---
 
-## 📜 Licensing Terms
+## 📜 License
 
-PreviewGen operates under a **Dual-Licensing Model**:
+PreviewGen is released under the **MIT License**. It is free to use, modify,
+and distribute for **personal and commercial** projects.
 
-### 🟢 Free for Personal & Non-Commercial Use
-PreviewGen is **100% free** for personal evaluation, educational purposes, hobby projects, and non-profit use. You can download, run, and experiment with the application at zero cost.
+You may use it to generate previews for marketplace assets, client work,
+agency production, products, or internal business workflows at no cost.
+The only requirement is that the copyright notice and permission notice are
+included in copies or substantial portions of the software. The software is
+provided **without warranty**.
 
-### 💼 Paid License Required for Commercial Use
-If you use PreviewGen to produce previews for:
-- Assets sold or monetized on stock platforms (Freepik, Adobe Stock, Shutterstock, Creative Market, Etsy, Envato, etc.)
-- Client deliverables, freelance design projects, or agency production
-- Commercial products, studios, or enterprise workflows
-
-👉 **A commercial license is required.**
-
-To acquire a commercial license, request volume seats, or discuss enterprise terms, please contact:
-- **Email**: [zenartisan66@gmail.com](mailto:zenartisan66@gmail.com)
-- **Subject**: `PreviewGen Commercial License Inquiry`
+See [LICENSE](LICENSE) for the full text.
 
 ---
 

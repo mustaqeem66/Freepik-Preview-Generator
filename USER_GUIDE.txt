@@ -138,9 +138,10 @@ A5: Yes! You can run PreviewGen directly using Python:
     5. Run: python app.py
 
 ================================================================================
-6. LICENSING & TERMS
+6. LICENSE
 ================================================================================
-- Personal & Non-Commercial Use: Free.
-- Commercial & Agency Use: Requires a commercial license. See LICENSE for details.
+- MIT License: free for personal and commercial use.
+- Keep the copyright and permission notice when redistributing.
+- Provided without warranty. See LICENSE for the full text.
 - GitHub Repository: https://github.com/Mustaqeem66/Freepik-Preview-Generator
 ================================================================================

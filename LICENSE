@@ -1,73 +1,21 @@
-PREVIEWGEN SOFTWARE LICENSE AGREEMENT
-Version 1.0 — October 2026
+MIT License
 
-Copyright (c) 2026 Mustaqeem (ZenArtisan) <zenartisan66@gmail.com>
+Copyright (c) 2026 Mustaqeem (ZenArtisan)
 
-==============================================================================
-1. DEFINITIONS
-==============================================================================
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-"Software" refers to the PreviewGen application, source code, binaries, 
-documentation, and associated assets.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-"Personal / Non-Commercial Use" refers to the evaluation, personal experimentation, 
-educational use, non-profit activity, or hobbies where no financial gain, revenue, 
-monetized asset generation, or business value is derived directly or indirectly.
-
-"Commercial Use" refers to:
-(a) Using the Software to generate previews for digital assets sold, licensed, or 
-    monetized on any marketplace (including but not limited to Freepik, Adobe Stock, 
-    Shutterstock, Creative Market, Envato, Etsy, or independent storefronts);
-(b) Using the Software within a business, company, design agency, studio, or freelancing 
-    workflow for client deliverables;
-(c) Integrating, redistributing, or packaging the Software as part of any commercial 
-    service or product.
-
-==============================================================================
-2. GRANT OF PERSONAL USE LICENSE
-==============================================================================
-
-Permission is hereby granted, free of charge, to any person obtaining a copy 
-of this Software, to use, run, and study the Software solely for Personal and 
-Non-Commercial purposes, subject to the following conditions:
-
-- The copyright notice and this permission notice shall be included in all copies 
-  or substantial portions of the Software.
-- You may not sell, rent, lease, sub-license, or derive direct commercial benefit 
-  from outputs produced using this Software without obtaining a Commercial License.
-
-==============================================================================
-3. COMMERCIAL LICENSE REQUIREMENT
-==============================================================================
-
-Commercial Use of PreviewGen REQUIRES a valid, paid Commercial License.
-
-If you intend to use PreviewGen for commercial production, agency work, or to generate 
-previews for commercial stock marketplace uploads:
-
-Please contact:
-  Email: zenartisan66@gmail.com
-  Subject: PreviewGen Commercial License Inquiry
-
-Commercial licenses include rights for commercial asset preview production, priority 
-updates, and direct support.
-
-==============================================================================
-4. SPONSORSHIPS & CUSTOM INTEGRATIONS
-==============================================================================
-
-Individuals or organizations interested in sponsoring PreviewGen development, 
-custom marketplace integrations, or bulk studio licensing may reach out directly 
-at zenartisan66@gmail.com.
-
-==============================================================================
-5. DISCLAIMER OF WARRANTY
-==============================================================================
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
-FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER 
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, 
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
