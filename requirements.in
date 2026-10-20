@@ -16,6 +16,9 @@ matplotlib>=3.7.0
 Pillow>=10.0.0
 psd-tools>=1.9.0
 trimesh>=4.0.0
+# trimesh loads COLLADA (.dae) through pycollada; without it the advertised
+# extension fails only in the frozen build.
+pycollada>=0.9.0
 numpy>=1.24.0
 pywebview>=5.0.0
 ezdxf>=1.1.0

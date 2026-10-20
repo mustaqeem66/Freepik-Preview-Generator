@@ -11,7 +11,7 @@ from pathlib import Path
 from PIL import Image
 
 from previewgen import limits
-from previewgen.config import PreviewConfig
+from previewgen.config import MAX_SOURCE_FILE_BYTES, PreviewConfig
 from previewgen.renderers.mesh3d import _MESH_CACHE, render_3d_mesh
 
 
@@ -23,6 +23,11 @@ def _load_dxf(source_path: Path, target_dimension: int = 2400) -> Image.Image:
         from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
         from matplotlib.figure import Figure
 
+        declared_size = source_path.stat().st_size
+        if declared_size > MAX_SOURCE_FILE_BYTES:
+            raise ValueError(
+                f"DXF file size {declared_size} exceeds the supported limit"
+            )
         doc = ezdxf.readfile(str(source_path))
         msp = doc.modelspace()
         limits.validate_dxf_entity_limits(doc)
@@ -37,6 +42,17 @@ def _load_dxf(source_path: Path, target_dimension: int = 2400) -> Image.Image:
         frontend = Frontend(ctx, backend)
         frontend.draw_layout(msp, finalize=True)
 
+        # ``draw_layout(finalize=True)`` lets the backend resize the figure to fit
+        # the drawing extents (matplotlib's default 6.4in base -> ~960px at
+        # 150dpi), discarding the size requested above. Re-assert the requested
+        # longest edge while keeping the aspect ratio the backend established.
+        cur_w, cur_h = fig.get_size_inches()
+        longest = max(float(cur_w), float(cur_h))
+        if longest > 0:
+            scale = size_in / longest
+            fig.set_size_inches(float(cur_w) * scale, float(cur_h) * scale)
+        fig.set_dpi(dpi)
+
         buf = BytesIO()
         fig.savefig(buf, format="png", transparent=True, dpi=dpi)
 
@@ -44,6 +60,10 @@ def _load_dxf(source_path: Path, target_dimension: int = 2400) -> Image.Image:
         with Image.open(buf) as pil_img:
             pil_img.load()
             return pil_img.convert("RGBA")
+    except ImportError as exc:
+        raise RuntimeError(
+            f"DXF renderer component not available (install ezdxf and matplotlib): {exc}"
+        ) from exc
     except Exception as exc:
         raise RuntimeError(f"Could not render DXF file: {exc}") from exc
 
@@ -142,5 +162,9 @@ def _load_cad_solid(source_path: Path, config: PreviewConfig, target_dimension: 
             model_color=config.model_color,
             target_dimension=target_dimension,
         )
+    except ImportError as exc:
+        raise RuntimeError(
+            f"CAD solid renderer component not available (install cascadio and trimesh): {exc}"
+        ) from exc
     except Exception as exc:
         raise RuntimeError(f"Could not convert CAD solid to 3D mesh: {exc}") from exc
