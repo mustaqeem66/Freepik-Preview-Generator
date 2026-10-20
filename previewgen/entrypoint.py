@@ -58,6 +58,25 @@ def _run_headless_smoke_test() -> int:
     return 0
 
 
+
+def schedule_stale_temp_cleanup() -> None:
+    """Schedule best-effort temp cleanup; never block Windows startup."""
+    # Temp sweeps can traverse slow antivirus/network-backed directories. Never
+    # run unbounded filesystem deletion on the desktop startup path.
+    def _cleanup_stale_async() -> None:
+        try:
+            from previewgen.tempfiles import cleanup_stale_temp_dirs
+            cleanup_stale_temp_dirs()
+        except Exception as exc:
+            logging.debug("Startup stale temp cleanup skipped: %s", exc)
+
+    import threading
+    threading.Thread(
+        target=_cleanup_stale_async, name="previewgen-startup-cleanup", daemon=True,
+    ).start()
+
+
+
 def main() -> int:
     """
     Main entry point for PreviewGen.
@@ -72,20 +91,6 @@ def main() -> int:
 
     from previewgen.settings import configure_logging
     configure_logging()
-
-    # Temp sweeps can traverse slow antivirus/network-backed directories. Never
-    # run unbounded filesystem deletion on the desktop startup path.
-    def _cleanup_stale_async() -> None:
-        try:
-            from previewgen.tempfiles import cleanup_stale_temp_dirs
-            cleanup_stale_temp_dirs()
-        except Exception as exc:
-            logging.debug("Startup stale temp cleanup skipped: %s", exc)
-
-    import threading
-    threading.Thread(
-        target=_cleanup_stale_async, name="previewgen-startup-cleanup", daemon=True,
-    ).start()
 
     args = sys.argv[1:]
 
@@ -108,6 +113,7 @@ def main() -> int:
         return main_cli([])
 
     # Default: start the desktop GUI. pywebview is imported only here.
+    schedule_stale_temp_cleanup()
     from previewgen.desktop_runtime import start_desktop_app
     return start_desktop_app()
 
