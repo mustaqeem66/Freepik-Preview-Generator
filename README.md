@@ -15,7 +15,7 @@ Selling digital assets on top marketplaces like **Freepik, Adobe Stock, Shutters
 
 | The Pain Point | How Designers Handled It Before | How PreviewGen Solves It |
 |---|---|---|
-| ⏳ **Extreme Time Waste** | Manually opening Photoshop, drawing diagonal masks, generating checkerboards, pasting text badges, and saving one file at a time. | **1-Click Batch Processing**: Process 500+ files in under 60 seconds completely hands-free. |
+| ⏳ **Extreme Time Waste** | Manually opening Photoshop, drawing diagonal masks, generating checkerboards, pasting text badges, and saving one file at a time. | **1-Click Batch Processing**: Queue a whole folder with live per-file progress. Throughput depends on format, resolution and hardware; benchmark your own library before quoting a rate. |
 | ❌ **Marketplace Rejections** | Rejections from reviewers because the preview didn't clearly communicate transparency or lacked a standard split. | **Strict Marketplace Compliance**: Standard diagonal split (checkerboard transparency vs. solid background) approved by reviewers. |
 | 🔒 **Privacy & Cloud Leaks** | Uploading unreleased, proprietary art to sketchy "free online converter" websites that steal or scrape artwork. | **100% Local & Offline**: Your files never leave your computer. Complete privacy and zero data leakage. |
 | 🔍 **Distortion & Cropping** | Batch scripts that accidentally stretch, crop, trim padding, or decimate complex 3D meshes (like vehicle wheels). | **Zero Distortion Guarantee**: Original alpha channel, dimensions, and pristine 3D vertices/normals are preserved with zero decimation. |
@@ -40,7 +40,7 @@ Selling digital assets on top marketplaces like **Freepik, Adobe Stock, Shutters
 1. **Reclaim Hours of Your Week**: Stop doing repetitive monkey-work in Photoshop. Load your folder, click one button, and let the background worker handle thousands of assets while you focus on creating art.
 2. **Increase Submission Approval Rates**: Reviewers on platforms like Freepik accept submissions faster when previews follow the industry-standard diagonal split convention.
 3. **Studio-Grade Control**: Whether your brand uses pure white, off-white, light gray, or dark solid backgrounds, customize colors with the interactive palette and instant live preview.
-4. **Native Desktop Speed & 60 FPS Fluidity**: Powered by an asynchronous background rendering worker and native OS webview—zero UI freezing, zero lag, and instant responsiveness.
+4. **Responsive Native Desktop UI**: An asynchronous background renderer keeps the bridge usable during large batches. Preview and 3D-orbit smoothness depend on model complexity, output size and GPU; no fixed frame rate is guaranteed.
 
 ---
 
@@ -119,7 +119,8 @@ PreviewGen makes bulk preview creation effortless in 6 simple steps:
    - Choose whether the solid color sits on the Left or Right half.
    - Click the color swatch or choose a preset (White, Off-White, Light Gray, Dark).
 6. **Click "Generate All JPG Previews"**:
-   - The asynchronous worker processes hundreds of files in the background without freezing the UI.
+   - The asynchronous worker processes files in the background without freezing the UI.
+   - Optionally enable **Desktop notifications** in Settings to receive an OS notification when a batch finishes (off by default; requires system notification permission).
    - Once finished, click **Open Output Folder** to inspect your ready-to-upload marketplace JPG previews!
 
 ---
@@ -131,7 +132,7 @@ PreviewGen makes bulk preview creation effortless in 6 simple steps:
 - **PNG**: Pixel-perfect alpha compositing with zero canvas crop or distortion.
 - **WebP**: Full support for modern web & mobile transparent assets, with animated WebP keyframe fallback.
 - **SVG Vector**: Smooth vector rasterization with exact dimension preservation using high-performance `resvg`.
-- **TIFF / TIF**: High-bit depth print cutouts with automatic CMYK $\to$ sRGB color profile transform.
+- **TIFF / TIF**: High-bit-depth cutouts with Pillow's built-in CMYK/YCbCr to RGB conversion. Embedded ICC profile management is not performed.
 - **PSD (Photoshop)**: Headless composite layer extraction directly from Photoshop binaries via `psd-tools` — no Adobe software required!
 
 ### 2. Full 360° 3D Model Studio (GLB, GLTF, OBJ, STL, PLY, BLEND)
@@ -155,8 +156,9 @@ PreviewGen makes bulk preview creation effortless in 6 simple steps:
 - **Freeform Position Sliders**: Position logos and text anywhere with continuous horizontal (X: 0–100%) and vertical (Y: 0–100%) offset sliders.
 - **Dual Branding**: Run logo only, text watermark only, or display both concurrently.
 
-### 5. Automated Deep Recursive ZIP Extraction & Auto-Cleanup
-- **Nested Folder Traversal**: Recursively scans all subfolder levels inside `.zip` archives.
+### 5. Bounded ZIP Member Extraction & Auto-Cleanup
+- **One-Level Member Traversal**: Scans supported files inside folder levels within a `.zip`; nested `.zip` archives are not expanded recursively.
+- **Zip-Slip and Resource Limits**: Rejects escaping paths and enforces member, size, depth and timeout budgets.
 - **Metadata Rejection**: Skips `__MACOSX`, `.DS_Store`, `._*` AppleDouble files, and `Thumbs.db`.
 - **Path-Collision Protection**: Automatically prefixes folder slugs (e.g. `archive_assets_vectors_icon.jpg`) if duplicate file names exist across different subfolders.
 - **Safe Auto-Cleanup**: Automatically deletes all temporary unzipped artifacts immediately upon completion across Windows, macOS, and Linux.
@@ -176,12 +178,12 @@ PreviewGen makes bulk preview creation effortless in 6 simple steps:
 
 ## 📸 App Preview & Visual Showcase
 
-### Clean Light Mode (`#D6E6EF` / `#7FA6B8` with `#EBF3F8` cards — No white)
+### Light Mode (graphite-neutral `#ececef` surface with `#f7f7f9` cards)
 <p align="center">
   <img src="preview-light.png" alt="PreviewGen Light Mode Interface" width="850">
 </p>
 
-### Pure Dark Mode (True Premium Dark Grey `#121212` / `#1E1E1E` — No blue)
+### Dark Mode (`#161618` surface with `#202023` panels)
 <p align="center">
   <img src="preview-dark.png" alt="PreviewGen Dark Mode Interface" width="850">
 </p>
@@ -189,6 +191,8 @@ PreviewGen makes bulk preview creation effortless in 6 simple steps:
 ---
 
 ## 💻 Developer Quickstart (Run from Source)
+
+CI builds with **Python 3.12.8** and **Node.js 24.15.0** (see `.github/workflows/build.yml`).
 
 ```bash
 # Clone the repository
@@ -207,7 +211,7 @@ pip install --require-hashes -r requirements-lock.txt
 # Loose top-level spec (resolves to the latest matching versions):
 # pip install -r requirements.txt
 
-# Run Desktop Studio (pywebview + React + Framer Motion)
+# Run Desktop Studio (pywebview + React + Vite)
 python app.py
 
 # Or run with Python launcher

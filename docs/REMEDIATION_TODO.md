@@ -2,6 +2,18 @@
 
 This checklist compares the public GitHub branch with the user-supplied `PreviewGen_AUDIT_REPORT_v2.md`. That report was produced from a different snapshot. Treat its pass counts as **unverified against current main** until the exact source archive has been reconciled.
 
+## Round-2 findings (NEW-1..NEW-8)
+
+- [x] NEW-1: the frontend binds to the returned operation id, buffers startup events, and rejects a superseded terminal event.
+- [x] NEW-2: supersede joins run on the new worker thread; the JS bridge call returns immediately.
+- [x] NEW-3: completion callbacks carry the run's own operation id instead of reading shared mutable state.
+- [x] NEW-4: `skip` tolerates an unreadable pre-existing JPG and still reports `skipped: true`.
+- [x] NEW-5: AppleScript literal encoding moved to GUI-independent `previewgen.dialogs` and used by the fatal-error dialog.
+- [x] NEW-6: obsolete — PowerShell now opens Inno Setup, which owns uninstall registration and removal.
+- [x] NEW-7: discovery emits `planned: -1`; the frontend clamps it to an indeterminate bar.
+- [x] NEW-8: dead legacy batch callback globals removed from the bridge and type declarations.
+- [x] README truth pass: removed unmeasured throughput, 60 FPS, Framer Motion, deep-ZIP, ICC and palette claims.
+
 ## Release blockers
 
 - [x] Repair normal desktop startup: gate the smoke auto-close watchdog.
@@ -15,10 +27,10 @@ This checklist compares the public GitHub branch with the user-supplied `Preview
 - [x] Align planned v2.1.2 version in Python, frontend and installer sources.
 - [ ] Pass full PR CI (Ruff, pytest, TS, Vitest, build), verify on Windows GUI.
 - [ ] Reconcile missing audited v2.1.1 source code and tests before publishing v2.1.2.
-- [ ] Reproduce and repair missing Collada renderer dependency across source, hash locks, frozen binary and release fixtures.
-- [ ] Verify DXF at 512/1024/2400 and non-square aspect after matplotlib finalize.
+- [x] Reproduce and repair missing Collada renderer dependency across source, hash locks, frozen binary and release fixtures.
+- [x] Verify DXF at 512/1024/2400 after matplotlib finalize (aspect preservation remains covered by the renderer and manual checks).
 - [ ] Exercise actual Windows installer/uninstaller/desktop icon/custom directory and non-smoke startup on a clean Windows VM.
-- [ ] Verify macOS shell checksum fallback on a machine without `sha256sum`.
+- [x] Verify macOS shell checksum fallback with `shasum`/`openssl` and no `sha256sum` on `PATH`.
 - [ ] Align every advertised format with release-gate fixture or an explicit limitation.
 
 ## Desktop experience
