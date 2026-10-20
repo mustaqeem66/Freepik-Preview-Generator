@@ -322,3 +322,22 @@ h2 { font-size: 13px; }
   .notice,.bp-truncation,.bp-errors,.batch-progress { border:1px solid CanvasText; }
   .bp-fill { background:Highlight; }
 }
+
+/* Diagnostics affordance and premium usability adjustments */
+.diagnostics-button { border-color: var(--card-border); background: var(--toolbar-bg); font-size: 12px; }
+.diagnostics-button:hover:not(:disabled) { background: var(--chip-bg); }
+.brand p, .muted, .picker-hint, .field-label, .slider-field { line-height: 1.55; }
+.library-pane, .inspector-pane { scrollbar-gutter: stable; }
+.studio-toolbar { gap: 14px; }
+.studio-workspace { box-shadow: 0 16px 44px rgba(0,0,0,.09), 0 3px 10px rgba(0,0,0,.04); }
+[data-theme="dark"] .studio-workspace { box-shadow: 0 16px 44px rgba(0,0,0,.26); }
+@media (max-width: 680px) { .diagnostics-button { font-size: 0; gap: 0; padding: 6px 9px; } }
+@media (prefers-reduced-transparency: reduce) {
+  .studio-toolbar, .canvas-toolbar, .inspector-heading { backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+.empty-canvas-action { min-height: 38px; padding: 8px 16px; border-radius: 9px; }
+.empty-canvas h2 { font-size: clamp(18px, 1.5vw, 21px); letter-spacing: -.035em; }
+.empty-canvas p { font-size: 13px; max-width: 285px; }
+.empty-formats { font-size: 11px; color: var(--text-muted); }
+@media (prefers-reduced-motion: reduce) { .empty-canvas-action { transition: none !important; } }

@@ -316,6 +316,19 @@ class DesktopApi:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def open_diagnostics_folder(self) -> dict[str, Any]:
+        """Show the user's local log directory without uploading any diagnostics."""
+        from previewgen.settings import get_log_directory
+
+        try:
+            folder = get_log_directory()
+            folder.mkdir(parents=True, exist_ok=True)
+            self.add_authorized_folder(folder)
+            return self.open_folder(str(folder))
+        except Exception as exc:
+            logging.warning("Could not open diagnostics folder: %s", exc)
+            return {"ok": False, "error": str(exc)}
+
     def scan_folder(self, folder_path: str) -> dict[str, Any]:
         """Synchronous scan (used for initial load)."""
         if folder_path and Path(folder_path).is_dir():

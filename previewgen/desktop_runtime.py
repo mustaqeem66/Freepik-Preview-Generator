@@ -15,7 +15,6 @@ import threading
 
 # THIS IS THE ONLY MODULE THAT IMPORTS WEBVIEW AT MODULE SCOPE
 import time
-import traceback
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -25,6 +24,7 @@ import webview
 from previewgen.api import DesktopApi
 from previewgen.dialogs import applescript_string
 from previewgen.resources import get_html_dist
+from previewgen.ui_watchdog import WindowHangDetector, log_thread_stacks, windows_window_responding
 
 
 def show_fatal_error(title: str, message: str) -> None:
@@ -150,26 +150,34 @@ def start_desktop_app() -> int:
     with contextlib.suppress(Exception):
         window.events.navigating += on_navigating
 
-    # Phase 4 Watchdog: monitor bridge responsiveness and log thread stacks if frozen
+    # Independent Windows message-pump health checks also work when no assets
+    # have been selected (the old bridge heartbeat cannot detect idle GUI hangs).
+    # Diagnostics are passive: never force-quit, restart or dismiss a native dialog.
     watchdog_stop = threading.Event()
 
     def _watchdog_loop() -> None:
-        while not watchdog_stop.wait(5.0):
+        detector = WindowHangDetector(threshold=3, cooldown_seconds=60)
+        last_bridge_report = 0.0
+        while not watchdog_stop.wait(3.0):
             try:
-                stalled = bridge_is_stalled(api, time.time())
+                now = time.time()
+                if detector.observe(windows_window_responding(), now):
+                    log_thread_stacks(
+                        "Windows UI message pump did not answer three consecutive "
+                        "bounded WM_NULL probes. A native modal dialog or heavy load "
+                        "can also trigger this diagnostic."
+                    )
+                if bridge_is_stalled(api, now) and now - last_bridge_report >= 60.0:
+                    last_bridge_report = now
+                    log_thread_stacks(
+                        "Backend operation active but no outgoing bridge events for >15s"
+                    )
             except Exception:
-                logging.debug("WATCHDOG: stall check failed", exc_info=True)
-                continue
-            if not stalled:
-                continue
-            logging.error(
-                "WATCHDOG: Bridge responsiveness stalled (>15s without activity while work "
-                "is in flight). Thread stack dump:"
-            )
-            for thread_id, frame in sys._current_frames().items():
-                logging.error("Thread %s:\n%s", thread_id, "".join(traceback.format_stack(frame)))
+                logging.debug("UI watchdog probe failed", exc_info=True)
 
-    threading.Thread(target=_watchdog_loop, name="previewgen-watchdog", daemon=True).start()
+    threading.Thread(
+        target=_watchdog_loop, name="previewgen-ui-watchdog", daemon=True,
+    ).start()
 
     try:
         start_kwargs: dict[str, Any] = {"debug": False}
