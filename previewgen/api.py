@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 from previewgen import limits
 from previewgen.assets import calculate_export_dimensions as _calc_export_dimensions
 from previewgen.lifecycle import ActiveOperation, LifecycleManager
+from previewgen.config import PreviewConfig
+from previewgen.renderers.pipeline import generate_file
 from previewgen.preview_coordinator import PreviewCoordinator
 from previewgen.preview_server import PreviewFileServer
 from previewgen.probe_coordinator import ProbeCoordinator
@@ -112,7 +114,7 @@ class DesktopApi:
         if not self.window:
             return
         seq = next(self._sequence_counter)
-        op_id = operation_id or self._batch_operation_id or payload.get("scanId") or f"op_{seq}"
+        op_id = operation_id or payload.get("scanId") or f"op_{seq}"
         envelope = {
             "event": event_name,
             "operationId": op_id,
@@ -132,10 +134,22 @@ class DesktopApi:
             "scan.finished", {"scanId": scan_id, "result": result}, operation_id=scan_id, terminal=True
         )
 
-    def _on_batch_finished(self, summary: dict[str, Any]) -> None:
+    def _on_batch_finished(self, summary: dict[str, Any], operation_id: str = "") -> None:
         self._dispatch_envelope(
-            "batch.finished", summary, operation_id=self._batch_operation_id, terminal=True
+            "batch.finished", self._sanitize_batch_summary(summary),
+            operation_id=operation_id or self._batch_operation_id, terminal=True,
         )
+
+    @staticmethod
+    def _sanitize_batch_summary(summary: dict[str, Any]) -> dict[str, Any]:
+        """Keep large per-file reports on disk, not inside a JavaScript event."""
+        result = {key: value for key, value in summary.items() if key != "files"}
+        errors = result.get("errors")
+        if isinstance(errors, list):
+            result["errorCount"] = len(errors)
+            result["errorsTruncated"] = len(errors) > 50
+            result["errors"] = errors[:50]
+        return result
     # ============================================================
     # Frontend-facing API methods
     # ============================================================
@@ -548,15 +562,30 @@ class DesktopApi:
             out_dir.mkdir(parents=True, exist_ok=True)
             self.add_authorized_folder(out_dir)
 
-            from processor import generate_file
             dest_file = out_dir / f"{source_path.stem}.jpg"
-            generate_file(source_path, dest_file, cfg)
-            if not dest_file.is_file() or dest_file.stat().st_size == 0:
+            skipped = False
+            if dest_file.exists():
+                if cfg.overwrite_policy == "skip":
+                    skipped = True
+                elif cfg.overwrite_policy == "rename":
+                    counter = 1
+                    while dest_file.exists():
+                        dest_file = out_dir / f"{source_path.stem}_copy{counter}.jpg"
+                        counter += 1
+
+            if not skipped:
+                generate_file(source_path, dest_file, cfg)
+            if not dest_file.is_file() or (not skipped and dest_file.stat().st_size == 0):
                 return {"ok": False, "value": None, "error": "Export failed"}
 
             from PIL import Image
-            with Image.open(dest_file) as im:
-                w, h = im.size
+            w, h = None, None
+            try:
+                with Image.open(dest_file) as im:
+                    w, h = im.size
+            except Exception:
+                if not skipped:
+                    raise
 
             return {
                 "ok": True,
@@ -564,7 +593,7 @@ class DesktopApi:
                     "path": str(dest_file),
                     "width": w,
                     "height": h,
-                    "skipped": False,
+                    "skipped": skipped,
                 },
                 "error": None,
             }
@@ -577,81 +606,45 @@ class DesktopApi:
             if temp_dir and temp_dir.exists():
                 safe_rmtree(temp_dir, "on-demand export temp")
 
-    def start_batch(self, input_folder: str, output_folder: str, config_dict: dict[str, Any]) -> None:
-        """Start asynchronous batch processing on a dedicated worker thread."""
-        if input_folder and Path(input_folder).is_dir():
-            self.add_authorized_folder(input_folder)
-        if output_folder and Path(output_folder).is_dir():
-            self.add_authorized_folder(output_folder)
-        if not self.window:
-            return
-
-        def on_progress(cur: int, tot: int, msg: str) -> None:
-            if self.window:
-                msg_json = json.dumps(str(msg))
-                self.window.evaluate_js(f"window.__onBatchProgress({int(cur)}, {int(tot)}, {msg_json})")
-
-        def run_worker() -> None:
-            # Parse via strict-export mode for batch
-            try:
-                cfg = PreviewConfig.from_mapping(config_dict, mode="strict-export")
-                cfg.position = "custom"
-            except ValueError as val_err:
-                logging.error("Strict export configuration validation failed: %s", val_err)
-                if self.window:
-                    fail_summary = {
-                        "planned": 1,
-                        "processed": 0,
-                        "remaining": 1,
-                        "success": 0,
-                        "failed": 1,
-                        "skipped": 0,
-                        "cancelled": False,
-                        "errors": [f"Configuration error: {val_err}"],
-                        "duration": 0.0,
-                    }
-                    self.window.evaluate_js(f"window.__onBatchFinishedSummary({json.dumps(fail_summary)})")
-                return
-
-            try:
-                summary = process_folder(
-                    Path(input_folder),
-                    Path(output_folder),
-                    cfg,
-                    on_progress,
-                    self.cancel_event.is_set,
+    def start_batch(self, input_folder: str, output_folder: str, config_dict: dict[str, Any]) -> dict[str, Any]:
+        """Launch a batch with a stable per-run ID; never block the JS bridge."""
+        try:
+            cfg = PreviewConfig.from_mapping(config_dict, mode="strict-export")
+            cfg.position = "custom"
+            source = Path(input_folder).resolve()
+            output = Path(output_folder).resolve()
+            if not source.is_dir():
+                raise ValueError("Input folder does not exist")
+            if not output.parent.is_dir():
+                raise ValueError("Output folder parent does not exist")
+            op_id = f"batch_{uuid.uuid4().hex[:12]}"
+            with self._batch_start_lock:
+                self._batch_operation_id = op_id
+                self.lifecycle.start_batch(
+                    source, output, cfg,
+                    progress_callback=lambda cur, tot, msg: self._dispatch_envelope(
+                        "batch.progress", {"current": cur, "total": tot, "message": msg},
+                        operation_id=op_id,
+                    ),
+                    is_cancelled=lambda: False,
+                    operation_id=op_id,
+                    finished_callback=self._on_batch_finished,
                 )
-                if self.window:
-                    self.window.evaluate_js(f"window.__onBatchFinishedSummary({json.dumps(summary)})")
-            except Exception as e:
-                logging.exception("Batch execution failed")
-                if self.window:
-                    fail_summary = {
-                        "planned": 1,
-                        "processed": 0,
-                        "remaining": 1,
-                        "success": 0,
-                        "failed": 1,
-                        "skipped": 0,
-                        "cancelled": False,
-                        "errors": [str(e)],
-                        "duration": 0.0,
-                    }
-                    self.window.evaluate_js(f"window.__onBatchFinishedSummary({json.dumps(fail_summary)})")
+            return {"ok": True, "operationId": op_id}
+        except Exception as exc:
+            logging.warning("Unable to start batch: %s", exc)
+            return {"ok": False, "error": str(exc)}
 
-        self.cancel_event = threading.Event()
-        self.batch_thread = threading.Thread(target=run_worker, daemon=True)
-        self.batch_thread.start()
-
-    def cancel_batch(self) -> None:
-        """Cancel active batch processing."""
-        self.cancel_event.set()
+    def cancel_batch(self) -> dict[str, Any]:
+        self.lifecycle.cancel_batch()
+        return {"ok": True}
 
     def cleanup(self) -> None:
         """Orderly shutdown sequence."""
         self.preview_coordinator.shutdown()
         self.probe_coordinator.shutdown()
         self.lifecycle.cleanup()
+        self.preview_server.stop()
 
 # Note: Desktop shortcut management is the responsibility of system installers
 # Runtime auto-shortcut creation removed per security and packaging best practices.
