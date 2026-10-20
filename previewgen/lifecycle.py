@@ -74,6 +74,8 @@ class LifecycleManager:
         self.scanner = None  # Set by DesktopApi after creation
         self.session_zip_dir: Path | None = None
         self.registry = OperationRegistry()
+        self._batch_lock = threading.Lock()
+        self._active_batch: ActiveOperation | None = None
 
     def register_operation(self, op: ActiveOperation) -> None:
         """Register an active operation with the central lifecycle registry."""
@@ -97,51 +99,84 @@ class LifecycleManager:
         config: PreviewConfig,
         progress_callback: Callable[[int, int, str], None],
         is_cancelled: Callable[[], bool],
+        *,
+        operation_id: str = "batch_worker",
+        finished_callback: Callable[[dict[str, Any], str], None] | None = None,
     ) -> None:
-        """Start asynchronous batch processing on a dedicated worker thread."""
+        """Queue a batch without blocking the GUI bridge on an earlier batch.
+
+        Each run owns an independent cancellation event and operation id. The
+        new worker waits for the previous worker to exit before touching the
+        filesystem, ensuring superseded runs cannot overlap output writes.
+        """
         self.cancel_event.clear()
+        op = ActiveOperation(operation_id=operation_id, kind="batch_render")
+        with self._batch_lock:
+            previous = self._active_batch
+            if previous is not None:
+                previous.cancel_event.set()
+            self._active_batch = op
 
         def run_worker() -> None:
-            def on_progress(cur: int, tot: int, msg: str) -> None:
-                progress_callback(cur, tot, msg)
-
+            summary: dict[str, Any]
             try:
-                summary = process_folder(
-                    input_folder,
-                    output_folder,
-                    config,
-                    on_progress,
-                    is_cancelled,
-                )
-                # Send completion summary
-                if self._finished_callback:
-                    self._finished_callback(summary)
-            except Exception as e:
-                logging.exception("Batch execution failed")
-                if self._finished_callback:
-                    code, message = classify_exception(e)
-                    self._finished_callback({
+                if previous is not None and previous.thread is not None:
+                    previous.thread.join()  # Worker thread only; never the bridge thread.
+                if op.cancel_event.is_set() or is_cancelled():
+                    summary = {
                         "planned": 0, "processed": 0, "remaining": 0,
                         "success": 0, "failed": 0, "skipped": 0,
-                        "cancelled": False, "status": "failed",
-                        "errorCode": code, "errors": [message], "duration": 0.0,
-                    })
+                        "cancelled": True, "status": "cancelled",
+                        "errors": [], "duration": 0.0,
+                    }
+                else:
+                    def progress(cur: int, tot: int, msg: str) -> None:
+                        with self._batch_lock:
+                            current = self._active_batch is op
+                        if current:
+                            progress_callback(cur, tot, msg)
 
-        op = ActiveOperation(
-            operation_id="batch_worker",
-            kind="batch_render",
-            cancel_event=self.cancel_event,
-        )
-        self.batch_thread = threading.Thread(target=run_worker, daemon=True)
-        op.thread = self.batch_thread
+                    summary = process_folder(
+                        input_folder, output_folder, config, progress,
+                        lambda: op.cancel_event.is_set() or is_cancelled(),
+                    )
+            except Exception as exc:
+                logging.exception("Batch execution failed")
+                code, message = classify_exception(exc)
+                summary = {
+                    "planned": 0, "processed": 0, "remaining": 0,
+                    "success": 0, "failed": 0, "skipped": 0,
+                    "cancelled": op.cancel_event.is_set(),
+                    "status": "cancelled" if op.cancel_event.is_set() else "failed",
+                    "errorCode": code, "errors": [message], "duration": 0.0,
+                }
+            finally:
+                with self._batch_lock:
+                    still_active = self._active_batch is op
+                try:
+                    # A superseded run must never terminate the replacement's UI.
+                    if still_active:
+                        if finished_callback is not None:
+                            finished_callback(summary, operation_id)
+                        elif self._finished_callback:
+                            self._finished_callback(summary)
+                finally:
+                    self.registry.unregister(operation_id)
+
+        worker = threading.Thread(target=run_worker, name=f"batch-{operation_id}", daemon=True)
+        op.thread = worker
+        with self._batch_lock:
+            self.batch_thread = worker
         self.registry.register(op)
-        self.batch_thread.start()
+        worker.start()
+
     def cancel_batch(self) -> None:
-        """Signal active batch to cancel."""
+        """Cancel only the current batch (never a scan, preview or probe)."""
         self.cancel_event.set()
-        self.registry.cancel_all()
-        if self.scanner:
-            self.scanner.cancel_scan()
+        with self._batch_lock:
+            if self._active_batch is not None:
+                self._active_batch.cancel_event.set()
+
     def cleanup(self) -> bool:
         """Orderly shutdown sequence with escalation for workers, file writes, and temp directories."""
         logging.info("Initiating orderly lifecycle shutdown sequence...")
