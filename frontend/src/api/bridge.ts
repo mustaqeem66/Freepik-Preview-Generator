@@ -102,14 +102,17 @@ export class ApiBridge {
   private static cachedApi: PyWebViewApi | null = null;
 
   static async getApi(maxWaitMs: number = 3000): Promise<PyWebViewApi | undefined> {
-    if (this.cachedApi) {
+    // pywebview rebuilds window.pywebview.api whenever the page reloads, so a
+    // cached object from the previous document would route calls into a bridge
+    // that no longer exists. Trust the live object, fall back to the cache only
+    // while the window is mid-navigation.
+    const liveApi = window.pywebview?.api;
+    if (liveApi) {
+      if (this.cachedApi !== liveApi) this.cachedApi = liveApi;
       return this.cachedApi;
     }
-
-    const immediateApi = window.pywebview?.api;
-    if (immediateApi) {
-      this.cachedApi = immediateApi;
-      return immediateApi;
+    if (this.cachedApi) {
+      return this.cachedApi;
     }
 
     const deadline = Date.now() + maxWaitMs;

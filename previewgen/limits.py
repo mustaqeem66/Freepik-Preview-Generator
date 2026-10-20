@@ -22,7 +22,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from previewgen import config as previewgen_config
 
@@ -443,7 +443,10 @@ def bounded_image_from_bytes(
         width, height = img.size
         check_raster_size(width, height, label)
         img.load()
-        return img.convert("RGBA")
+        # Embedded thumbnails are frequently JPEG, and JPEG orientation lives in
+        # EXIF rather than in the pixel order; without this the preview is rotated.
+        oriented = ImageOps.exif_transpose(img)
+        return (oriented or img).convert("RGBA")
 
 
 def validate_source_before_parse(source_path: Path | str) -> None:

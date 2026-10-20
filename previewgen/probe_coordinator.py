@@ -112,6 +112,11 @@ class ProbeCoordinator:
     def set_dispatch_fn(self, dispatch_fn: Callable[[str, dict[str, Any], str], None]) -> None:
         self._dispatch_fn = dispatch_fn
 
+    def is_busy(self) -> bool:
+        """True while a probe is queued or rendering in the worker."""
+        with self._lock:
+            return self._active_op_id is not None or self._pending_task is not None
+
     def submit_probe(
         self,
         operation_id: str,

@@ -44,11 +44,23 @@ def show_fatal_error(title: str, message: str) -> None:
                 f"display dialog {applescript_string(message)} with title "
                 f"{applescript_string(title)} buttons {{\"OK\"}} default button \"OK\" with icon stop"
             )
-            subprocess.run(["osascript", "-e", cmd], check=False)
+            subprocess.run(["osascript", "-e", cmd], check=False, timeout=30)
             return
         except Exception:
             pass
     sys.stderr.write(f"\n[FATAL ERROR] {title}\n{message}\n\n")
+
+
+def bridge_is_stalled(api: Any, now: float, quiet_seconds: float = 15.0) -> bool:
+    """True when the bridge has emitted nothing for ``quiet_seconds`` during work.
+
+    Heartbeats only advance when Python pushes an event, so a quiet bridge with
+    nothing in flight is an idle app, not a frozen one.
+    """
+    last_hb = getattr(api, "_last_heartbeat_time", 0.0)
+    if last_hb <= 0 or (now - last_hb) <= quiet_seconds:
+        return False
+    return bool(api.has_outstanding_work())
 
 
 def start_desktop_app() -> int:
@@ -143,13 +155,19 @@ def start_desktop_app() -> int:
 
     def _watchdog_loop() -> None:
         while not watchdog_stop.wait(5.0):
-            last_hb = getattr(api, "_last_heartbeat_time", 0.0)
-            if last_hb > 0 and (time.time() - last_hb) > 15.0:
-                logging.error(
-                    "WATCHDOG: Bridge responsiveness stalled (>15s without activity). Thread stack dump:"
-                )
-                for thread_id, frame in sys._current_frames().items():
-                    logging.error("Thread %s:\n%s", thread_id, "".join(traceback.format_stack(frame)))
+            try:
+                stalled = bridge_is_stalled(api, time.time())
+            except Exception:
+                logging.debug("WATCHDOG: stall check failed", exc_info=True)
+                continue
+            if not stalled:
+                continue
+            logging.error(
+                "WATCHDOG: Bridge responsiveness stalled (>15s without activity while work "
+                "is in flight). Thread stack dump:"
+            )
+            for thread_id, frame in sys._current_frames().items():
+                logging.error("Thread %s:\n%s", thread_id, "".join(traceback.format_stack(frame)))
 
     threading.Thread(target=_watchdog_loop, name="previewgen-watchdog", daemon=True).start()
 

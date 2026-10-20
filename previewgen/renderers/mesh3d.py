@@ -86,9 +86,11 @@ def render_3d_mesh(
     face_z = v_rot[faces_vis].mean(axis=1)[:, 2]
     vis_order = vis_indices[np.argsort(face_z)]
 
-    # Optimization: subsample faces during fast live preview for heavy models
-    if target_dimension <= 1000 and len(vis_order) > 25_000:
-        stride = max(2, len(vis_order) // 20_000)
+    # Optimization: a triangle that covers a fraction of a pixel costs the same
+    # Python loop as one that is visible, so cap the drawn work at every size.
+    face_budget = 25_000 if target_dimension <= 1000 else 80_000
+    if len(vis_order) > face_budget:
+        stride = max(2, len(vis_order) // face_budget)
         vis_order = vis_order[::stride]
 
     light_dir = np.array([0.45, 0.65, 0.61])
@@ -168,7 +170,13 @@ def _load_3d(source_path: Path, config: PreviewConfig, target_dimension: int = 2
                 )
                 script_py.write_text(script_content, encoding="utf-8")
                 proc.run_with_tree_timeout(
-                    [blender_bin, "-b", "-Y", str(source_path), "-P", str(script_py)],
+                    [
+                        blender_bin, "-b",
+                        # A .blend is untrusted input: its text blocks can carry
+                        # startup handlers that execute the moment it loads.
+                        "--disable-autoexec",
+                        str(source_path), "-P", str(script_py),
+                    ],
                     timeout=60,
                 )
                 if out_png.exists():

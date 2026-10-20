@@ -9,12 +9,11 @@ interface FolderPickerProps {
   onBrowseOutput: () => void;
   onToggleSameFolder: (checked: boolean) => void;
   onCommitInput?: (path: string) => void;
-  onCommitOutput?: (path: string) => void;
   disabled?: boolean;
 }
 
 export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseInput,
-  onBrowseOutput, onToggleSameFolder, onCommitInput, onCommitOutput, disabled = false }: FolderPickerProps) {
+  onBrowseOutput, onToggleSameFolder, onCommitInput, disabled = false }: FolderPickerProps) {
   const [input, setInput] = useState(inputFolder);
   const [output, setOutput] = useState(outputFolder);
   useEffect(() => setInput(inputFolder), [inputFolder]);
@@ -37,11 +36,12 @@ export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseIn
       onChange={(e) => onToggleSameFolder(e.target.checked)} />Same as input</label>
     {sameFolder ? <p className="path-hint" title={inputFolder}>Saving in the source folder</p> : <>
       <label className="sr-only" htmlFor="output-folder">Output folder path</label>
-      <input id="output-folder" type="text" value={output} placeholder="Defaults to source folder"
-        disabled={disabled} readOnly={!onCommitOutput} title={outputFolder}
-        onChange={(e) => setOutput(e.target.value)}
-        onBlur={() => { if (output.trim() !== outputFolder) onCommitOutput?.(output.trim()); }}
-        onKeyDown={(e) => { if (e.key === "Enter") onCommitOutput?.(output.trim()); }} />
+      {/* Export only writes into folders selected through the native picker, so
+          typing a path here would produce an UNAUTHORIZED_PATH error. */}
+      <input id="output-folder" type="text" value={output} placeholder="Choose an output folder"
+        disabled={disabled} readOnly title={outputFolder}
+        aria-describedby="output-folder-hint" />
+      <p id="output-folder-hint" className="picker-hint">Pick the destination with the button below so PreviewGen is allowed to write there.</p>
     </>}
     <button type="button" className="button" disabled={disabled || sameFolder} onClick={onBrowseOutput}>
       <FolderOutput size={15} />Choose Output Folder

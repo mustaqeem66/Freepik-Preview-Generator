@@ -158,6 +158,14 @@ class PreviewCoordinator:
             memory_limit_bytes=previewgen_config.MAX_RENDERER_MEMORY_BYTES,
             kill_timeout=_KILL_TIMEOUT_SECONDS,
         )
+        self._sync_slot = WorkerSlot(
+            _preview_worker,
+            name="preview_sync",
+            memory_limit_bytes=previewgen_config.MAX_RENDERER_MEMORY_BYTES,
+            kill_timeout=_KILL_TIMEOUT_SECONDS,
+        )
+        self._sync_lock = threading.Lock()
+        self._sync_busy = False
         self._active_op_id: str | None = None
         self._pending_task: dict[str, Any] | None = None
         self._cancel_requested = False
@@ -166,6 +174,16 @@ class PreviewCoordinator:
 
     def set_dispatch_fn(self, dispatch_fn: Callable[[str, dict[str, Any], str], None]) -> None:
         self._dispatch_fn = dispatch_fn
+
+    def is_busy(self) -> bool:
+        """True while a preview is queued, rendering, or a sync render holds the slot.
+
+        Used by the desktop watchdog to distinguish a genuinely frozen bridge
+        from an idle app where the user simply is not interacting.
+        """
+        with self._lock:
+            active = self._active_op_id is not None or self._pending_task is not None
+        return active or self._sync_busy
 
     def submit_preview(
         self,
@@ -338,12 +356,61 @@ class PreviewCoordinator:
                     "error_type": "PROCESS_EXIT",
                 }
 
+    def render_sync(
+        self,
+        source: str | Path,
+        config_dict: dict[str, Any],
+        max_dimension: int = 850,
+        timeout_seconds: float = DEFAULT_PREVIEW_TIMEOUT_SECONDS,
+    ) -> dict[str, Any]:
+        """Bounded synchronous preview render for legacy/CLI callers.
+
+        Runs in a dedicated worker slot (never in-process on the caller's
+        thread) with a hard timeout, so a hostile asset cannot pin a caller
+        that executes this directly on the pywebview bridge thread. Uses its
+        own slot so it can never collide with the live async worker.
+        """
+        with self._sync_lock:
+            self._sync_busy = True
+            try:
+                self._sync_slot.ensure_started()
+                job_id = self._sync_slot.send({
+                    "source": str(source),
+                    "config_dict": config_dict,
+                    "max_dimension": max_dimension,
+                })
+                start_t = time.time()
+                while True:
+                    if (time.time() - start_t) > timeout_seconds:
+                        logging.warning("Synchronous preview timeout for %s after %.1fs", source, timeout_seconds)
+                        self._sync_slot.kill()
+                        return {
+                            "status": "error",
+                            "error": f"Preview timed out ({timeout_seconds}s)",
+                            "error_type": "TIMEOUT",
+                        }
+                    res = self._sync_slot.poll(job_id, timeout=0.05)
+                    if res is not None:
+                        return res
+                    if not self._sync_slot.alive():
+                        exit_code = self._sync_slot.exitcode
+                        self._sync_slot.kill()
+                        return {
+                            "status": "error",
+                            "error": f"Preview worker exited with code {exit_code}",
+                            "error_type": "PROCESS_EXIT",
+                        }
+            finally:
+                self._sync_busy = False
+
     def shutdown(self) -> None:
         with self._lock:
             self._running = False
             self._pending_task = None
             self._cancel_requested = True
         self._slot.kill()
+        with self._sync_lock:
+            self._sync_slot.kill()
         worker = self._worker_thread
         if worker is not None and worker.is_alive():
             with contextlib.suppress(Exception):

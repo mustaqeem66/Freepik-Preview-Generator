@@ -65,9 +65,10 @@ Open **Terminal** and run:
 curl -fsSL https://raw.githubusercontent.com/Mustaqeem66/Freepik-Preview-Generator/main/install.sh | bash
 ```
 - Installs directly to `/Applications/PreviewGen.app`
-- Strips Apple Gatekeeper quarantine (`xattr -cr`) to bypass the "Unidentified Developer" block
-- Creates a **Desktop Shortcut** (`~/Desktop/PreviewGen`)
+- Verifies the downloaded disk image against the release `SHA256SUMS.txt` and aborts if it is missing or mismatched
+- Creates a **Desktop Shortcut** (`~/Desktop/PreviewGen.app`)
 - Launches PreviewGen automatically
+- Does **not** clear Apple's quarantine attribute; if Gatekeeper blocks the first launch, open the app once with right-click > Open
 
 ---
 
@@ -90,7 +91,7 @@ Prefer downloading manually?
 2. Download your platform package:
    - **Windows (Installer Wizard)**: `PreviewGen-Setup.exe` — Complete setup wizard with License Agreement, custom directory picker, and Desktop icon checkbox.
    - **Windows (Portable)**: `PreviewGen-Windows.zip` — Extract and double-click `Install-Desktop-Icon.bat`.
-   - **macOS**: `PreviewGen-macOS.dmg` — Open DMG, drag to Applications, run `xattr -cr /Applications/PreviewGen.app` if prompted.
+   - **macOS**: `PreviewGen-macOS.dmg` — Open the DMG and drag `PreviewGen.app` to Applications; if Gatekeeper blocks the first launch, open it once with right-click > Open.
    - **Linux**: `PreviewGen-Linux.AppImage` — Run `chmod +x PreviewGen-Linux.AppImage` and double-click.
 
 ---
@@ -157,7 +158,7 @@ PreviewGen makes bulk preview creation effortless in 6 simple steps:
 - **Dual Branding**: Run logo only, text watermark only, or display both concurrently.
 
 ### 5. Bounded ZIP Member Extraction & Auto-Cleanup
-- **One-Level Member Traversal**: Scans supported files inside folder levels within a `.zip`; nested `.zip` archives are not expanded recursively.
+- **Depth-Capped Nested Extraction**: Scans supported files inside folder levels within a `.zip`, and unpacks nested `.zip` archives up to 2 levels deep on a single shared byte budget; archives left unpacked are reported in the batch summary instead of being skipped silently.
 - **Zip-Slip and Resource Limits**: Rejects escaping paths and enforces member, size, depth and timeout budgets.
 - **Metadata Rejection**: Skips `__MACOSX`, `.DS_Store`, `._*` AppleDouble files, and `Thumbs.db`.
 - **Path-Collision Protection**: Automatically prefixes folder slugs (e.g. `archive_assets_vectors_icon.jpg`) if duplicate file names exist across different subfolders.
@@ -246,24 +247,18 @@ Notes for independent audits:
 
 ---
 
-## 📜 Licensing Terms
+## 📜 License
 
-PreviewGen operates under a **Dual-Licensing Model**:
+PreviewGen is released under the **MIT License**. It is free to use, modify,
+and distribute for **personal and commercial** projects.
 
-### 🟢 Free for Personal & Non-Commercial Use
-PreviewGen is **100% free** for personal evaluation, educational purposes, hobby projects, and non-profit use. You can download, run, and experiment with the application at zero cost.
+You may use it to generate previews for marketplace assets, client work,
+agency production, products, or internal business workflows at no cost.
+The only requirement is that the copyright notice and permission notice are
+included in copies or substantial portions of the software. The software is
+provided **without warranty**.
 
-### 💼 Paid License Required for Commercial Use
-If you use PreviewGen to produce previews for:
-- Assets sold or monetized on stock platforms (Freepik, Adobe Stock, Shutterstock, Creative Market, Etsy, Envato, etc.)
-- Client deliverables, freelance design projects, or agency production
-- Commercial products, studios, or enterprise workflows
-
-👉 **A commercial license is required.**
-
-To acquire a commercial license, request volume seats, or discuss enterprise terms, please contact:
-- **Email**: [zenartisan66@gmail.com](mailto:zenartisan66@gmail.com)
-- **Subject**: `PreviewGen Commercial License Inquiry`
+See [LICENSE](LICENSE) for the full text.
 
 ---
 

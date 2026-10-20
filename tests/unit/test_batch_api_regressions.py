@@ -2,6 +2,7 @@ import json
 import re
 import threading
 import time
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -34,6 +35,7 @@ def test_single_export_skip_corrupt_target(tmp_path):
     Image.new("RGB", (32, 32), "red").save(source)
     output.write_bytes(b"not a valid jpeg")
     api = DesktopApi()
+    api.add_authorized_folder(tmp_path)  # Simulates the user-selected root from the folder picker
     result = api.export_preview(str(source), {
         "outputFolder": str(tmp_path), "overwritePolicy": "skip"
     })
@@ -49,12 +51,37 @@ def test_single_export_rename_does_not_overwrite(tmp_path):
     Image.new("RGB", (32, 32), "red").save(source)
     output.write_bytes(b"existing output")
     api = DesktopApi()
+    api.add_authorized_folder(tmp_path)
     result = api.export_preview(str(source), {
         "outputFolder": str(tmp_path), "overwritePolicy": "rename"
     })
     assert result["ok"]
     assert result["value"]["path"].endswith("asset_copy1.jpg")
     assert output.read_bytes() == b"existing output"
+
+
+def test_single_export_rejects_unauthorized_output(tmp_path):
+    source = tmp_path / "asset.png"
+    Image.new("RGB", (32, 32), "red").save(source)
+    outside = tmp_path.parent / f"unauthorized_out_{tmp_path.name}"
+    api = DesktopApi()
+    result = api.export_preview(str(source), {"outputFolder": str(outside)})
+    assert result["ok"] is False
+    assert result["error"] == "UNAUTHORIZED_PATH"
+    assert not outside.exists()
+
+
+def test_single_export_same_folder_requires_authorized_source_root(tmp_path):
+    source = tmp_path / "asset.png"
+    Image.new("RGB", (32, 32), "red").save(source)
+    api = DesktopApi()
+    result = api.export_preview(str(source), {})
+    assert result["ok"] is False
+    assert result["error"] == "UNAUTHORIZED_PATH"
+    api.add_authorized_folder(tmp_path)
+    result = api.export_preview(str(source), {})
+    assert result["ok"] is True, result
+    assert (tmp_path / "asset.jpg").is_file()
 
 
 def test_batch_start_returns_id_and_emits_typed_events(tmp_path):
@@ -124,3 +151,46 @@ def test_cancel_batch_does_not_cancel_scan_operation():
     lifecycle.register_operation(scan)
     lifecycle.cancel_batch()
     assert not scan.cancel_event.is_set()
+
+
+def test_single_export_zip_member_defaults_to_archive_folder(tmp_path):
+    """A zip:// member must export next to the archive, not into the temp dir."""
+    import urllib.parse
+    import zipfile
+
+    member = tmp_path / "asset.png"
+    Image.new("RGB", (32, 32), "red").save(member)
+    archive = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.write(member, "asset.png")
+    member.unlink()
+
+    uri = f"zip://{urllib.parse.quote(archive.as_posix(), safe='/:')}?entry=asset.png"
+    api = DesktopApi()
+    api.add_authorized_folder(tmp_path)
+    result = api.export_preview(uri, {})
+    assert result["ok"] is True, result
+    assert Path(result["value"]["path"]).parent == tmp_path
+
+
+def test_single_export_is_visible_as_outstanding_work(tmp_path, monkeypatch):
+    """The bridge watchdog needs exports counted as work, or a hung export is silent."""
+    seen = []
+
+    def fake_render(_source, dest, _cfg, **_kwargs):
+        seen.append(api.has_outstanding_work())
+        Image.new("RGB", (16, 16), "blue").save(dest, format="JPEG")
+
+    monkeypatch.setattr("previewgen.api.render_file_isolated", fake_render)
+    source = tmp_path / "asset.png"
+    Image.new("RGB", (32, 32), "red").save(source)
+
+    api = DesktopApi()
+    api.add_authorized_folder(tmp_path)
+    assert api.has_outstanding_work() is False
+    result = api.export_preview(str(source), {})
+    assert result["ok"] is True, result
+    assert seen == [True]
+    assert api.has_outstanding_work() is False
+    assert api.lifecycle.get_active_operations() == []
+

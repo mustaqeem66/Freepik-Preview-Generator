@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { bridgeEvents, BridgeEventMeta } from "./bridge";
+import { ApiBridge, bridgeEvents, BridgeEventMeta } from "./bridge";
 
 describe("bridge typed event hub", () => {
   afterEach(() => {
@@ -76,5 +76,36 @@ describe("bridge typed event hub", () => {
     });
 
     expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+describe("ApiBridge cache", () => {
+  afterEach(() => {
+    ApiBridge.clearCache();
+    delete window.pywebview;
+  });
+
+  it("returns the live api object after the page reloads", async () => {
+    const firstApi = { ping: async () => true } as never;
+    const reloadedApi = { ping: async () => true } as never;
+    window.pywebview = { api: firstApi };
+    await vi.waitFor(() => expect(window.pywebview?.api).toBe(firstApi));
+    expect(await ApiBridge.getApi(100)).toBe(firstApi);
+
+    // A page reload replaces the bridge object; calls must route to the new one
+    window.pywebview = { api: reloadedApi };
+    await vi.waitFor(() => expect(window.pywebview?.api).toBe(reloadedApi));
+    expect(await ApiBridge.getApi(100)).toBe(reloadedApi);
+  });
+
+  it("keeps the cached api while the window is mid-navigation", async () => {
+    const api = { ping: async () => true } as never;
+    window.pywebview = { api };
+    await vi.waitFor(() => expect(window.pywebview?.api).toBe(api));
+    expect(await ApiBridge.getApi(100)).toBe(api);
+
+    delete window.pywebview;
+    await vi.waitFor(() => expect(window.pywebview).toBeUndefined());
+    expect(await ApiBridge.getApi(100)).toBe(api);
   });
 });

@@ -13,6 +13,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -26,15 +27,14 @@ from previewgen import limits
 from previewgen.assets import calculate_export_dimensions as _calc_export_dimensions
 from previewgen.config import PreviewConfig
 from previewgen.lifecycle import ActiveOperation, LifecycleManager
-from previewgen.preview_coordinator import PreviewCoordinator
+from previewgen.preview_coordinator import DEFAULT_PREVIEW_TIMEOUT_SECONDS, PreviewCoordinator
 from previewgen.preview_server import PreviewFileServer
 from previewgen.probe_coordinator import ProbeCoordinator
 from previewgen.probe_process import probe_asset_isolated
-from previewgen.renderers.pipeline import generate_file
+from previewgen.renderer_process import render_file_isolated
 from previewgen.scanner import get_scanner
 from previewgen.settings import load_settings, save_settings
 from previewgen.tempfiles import safe_rmtree
-from processor import preview_jpeg_bytes
 
 
 class DesktopApi:
@@ -60,6 +60,8 @@ class DesktopApi:
         self._batch_operation_id = ""
         self._sequence_counter = itertools.count(1)
         self._authorized_folders: set[Path] = set()
+        self._authorized_lock = threading.Lock()
+        self._last_heartbeat_time = time.time()
         self._register_default_authorized_paths()
 
         # Wire scanner callbacks to this API for JS dispatch
@@ -80,13 +82,15 @@ class DesktopApi:
         self.add_authorized_folder(get_log_directory())
 
     def add_authorized_folder(self, folder: Path | str) -> None:
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(Exception), self._authorized_lock:
             self._authorized_folders.add(Path(folder).resolve())
 
     def is_authorized_path(self, path: Path | str) -> bool:
         try:
             target = Path(path).resolve()
-            for auth in self._authorized_folders:
+            with self._authorized_lock:
+                roots = tuple(self._authorized_folders)
+            for auth in roots:
                 try:
                     target.relative_to(auth)
                     return True
@@ -95,6 +99,30 @@ class DesktopApi:
             return False
         except Exception:
             return False
+
+    def has_outstanding_work(self) -> bool:
+        """True when asynchronous work is queued or running right now.
+
+        The desktop watchdog needs to tell a frozen bridge apart from an idle
+        application: heartbeats only advance when Python pushes an event, so
+        without this the watchdog would report a stall every time the user
+        simply paused.
+        """
+        try:
+            if self.lifecycle.get_active_operations():
+                return True
+            if self.preview_coordinator.is_busy() or self.probe_coordinator.is_busy():
+                return True
+            thread = self.scanner.active_scan_thread
+            if thread is not None and thread.is_alive():
+                return True
+            batch = self.lifecycle.batch_thread
+            if batch is not None and batch.is_alive():
+                return True
+        except Exception:
+            # Fail safe toward "busy": a broken probe should not spam stack dumps.
+            return True
+        return False
 
     def _dispatch_envelope(
         self, event_name: str, payload: dict[str, Any], operation_id: str = "", terminal: bool = False
@@ -109,6 +137,7 @@ class DesktopApi:
         """
         if not self.window:
             return
+        self._last_heartbeat_time = time.time()
         seq = next(self._sequence_counter)
         op_id = operation_id or payload.get("scanId") or f"op_{seq}"
         envelope = {
@@ -289,6 +318,8 @@ class DesktopApi:
 
     def scan_folder(self, folder_path: str) -> dict[str, Any]:
         """Synchronous scan (used for initial load)."""
+        if folder_path and Path(folder_path).is_dir():
+            self.add_authorized_folder(folder_path)
         return self.scanner.scan_folder(folder_path)
 
     def start_scan(self, folder_path: str) -> dict[str, Any]:
@@ -349,40 +380,42 @@ class DesktopApi:
     def render_preview(
         self, file_path: str, config_dict: dict[str, Any], request_id: int | None = None
     ) -> dict[str, Any]:
-        """Synchronous preview fallback retained strictly for test/CLI compatibility."""
+        """Synchronous preview fallback retained strictly for test/CLI compatibility.
+
+        Execution is bounded: decoding/rendering happens in the coordinator's
+        dedicated sync worker slot with a hard timeout, never on the caller's
+        (potentially the pywebview bridge) thread, so a hostile asset cannot
+        pin the GUI. ``zip://`` members are extracted inside the worker.
+        """
         op_id = f"render_preview_{request_id or uuid.uuid4().hex[:6]}"
         op = ActiveOperation(operation_id=op_id, kind="preview_render")
         self.lifecycle.register_operation(op)
-        temp_dir: Path | None = None
         try:
             if not isinstance(file_path, str) or not file_path.strip():
                 return {"ok": False, "value": None, "error": "Empty file path"}
 
             if file_path.startswith("zip://"):
                 import urllib.parse
-                import zipfile
                 parsed = urllib.parse.urlparse(file_path)
                 zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
-                qs = urllib.parse.parse_qs(parsed.query)
-                entry_name = qs.get("entry", [""])[0]
+                entry_name = urllib.parse.parse_qs(parsed.query).get("entry", [""])[0]
                 if not zip_path.is_file() or not entry_name:
                     return {"ok": False, "value": None, "error": "Invalid zip entry URI"}
-                temp_dir = Path(tempfile.mkdtemp(prefix="previewgen_ondemand_"))
-                op.temp_roots.add(temp_dir)
-                target_file = temp_dir / Path(entry_name).name
-                with zipfile.ZipFile(zip_path, "r") as zf:
-                    limits.extract_zip_member_bounded(zf, entry_name, target_file)
-                source_path = target_file
             else:
                 source_path = Path(file_path).resolve()
+                if not source_path.is_file():
+                    return {"ok": False, "value": None, "error": f"File does not exist: {source_path.name}"}
 
-            if not source_path.is_file():
-                return {"ok": False, "value": None, "error": f"File does not exist: {source_path.name}"}
+            res = self.preview_coordinator.render_sync(
+                file_path,
+                config_dict,
+                max_dimension=850,
+                timeout_seconds=DEFAULT_PREVIEW_TIMEOUT_SECONDS,
+            )
+            if res.get("status") != "success":
+                raise RuntimeError(res.get("error") or "Preview generation failed")
 
-            cfg = PreviewConfig.from_mapping(config_dict, mode="preview")
-            cfg.position = "custom"
-
-            jpeg_bytes, orig_w, orig_h = preview_jpeg_bytes(source_path, cfg, max_dimension=850)
+            jpeg_bytes = res["jpeg_bytes"]
             preview_url = self.preview_server.publish_jpeg(jpeg_bytes)
             preview_id = preview_url.split("/")[-1] if "/" in preview_url else preview_url
             return {
@@ -390,8 +423,8 @@ class DesktopApi:
                 "value": {
                     "url": preview_url,
                     "previewId": preview_id,
-                    "width": orig_w,
-                    "height": orig_h,
+                    "width": res["width"],
+                    "height": res["height"],
                 },
                 "error": None,
             }
@@ -402,8 +435,6 @@ class DesktopApi:
             return {"ok": False, "value": None, "error": msg, "code": code}
         finally:
             self.lifecycle.unregister_operation(op_id)
-            if temp_dir and temp_dir.exists():
-                safe_rmtree(temp_dir, "on-demand preview temp", operation_id=op_id)
     def release_preview(self, handle: str) -> dict[str, Any]:
         """Release a preview handle and reclaim storage."""
         if not isinstance(handle, str) or not handle.strip():
@@ -535,11 +566,28 @@ class DesktopApi:
             if temp_dir and temp_dir.exists():
                 safe_rmtree(temp_dir, "on-demand dimension temp")
     def export_preview(self, file_path: str, config_dict: dict[str, Any]) -> dict[str, Any]:
-        """Render a single asset to a JPG at the configured export size."""
+        """Render a single asset to a JPG at the configured export size.
+
+        Rendering runs in an isolated child process with a hard timeout and
+        the destination must live under a user-selected (authorized) root.
+        """
         temp_dir: Path | None = None
+        export_op: ActiveOperation | None = None
         try:
             if not isinstance(file_path, str) or not file_path.strip():
                 return {"ok": False, "value": None, "error": "Empty file path"}
+
+            requested_out = config_dict.get("outputFolder") if isinstance(config_dict, dict) else None
+
+            # This runs synchronously on the bridge thread, so it has to be
+            # visible to the watchdog; an idle app must not look stalled, but a
+            # hung export must.
+            export_op = ActiveOperation(operation_id=f"export_{uuid.uuid4().hex[:12]}", kind="single_export")
+            self.lifecycle.register_operation(export_op)
+
+            # A zip member's default destination is the archive's folder; the
+            # extraction temp dir is deleted in the finally block.
+            default_out_dir: Path | None = None
 
             if file_path.startswith("zip://"):
                 import urllib.parse
@@ -555,16 +603,22 @@ class DesktopApi:
                 with zipfile.ZipFile(zip_path, "r") as zf:
                     limits.extract_zip_member_bounded(zf, entry_name, target_file)
                 source_path = target_file
+                default_out_dir = zip_path.parent
             else:
                 source_path = Path(file_path).resolve()
+                default_out_dir = source_path.parent
 
             if not source_path.is_file():
                 return {"ok": False, "value": None, "error": f"File does not exist: {source_path.name}"}
 
+            out_dir = Path(
+                requested_out if isinstance(requested_out, str) and requested_out.strip() else default_out_dir
+            ).resolve()
+            if not self.is_authorized_path(out_dir):
+                return {"ok": False, "value": None, "error": "UNAUTHORIZED_PATH", "code": "UNAUTHORIZED_PATH"}
+
             cfg = PreviewConfig.from_mapping(config_dict, mode="strict-export")
-            out_dir = Path(config_dict.get("outputFolder") or source_path.parent).resolve()
             out_dir.mkdir(parents=True, exist_ok=True)
-            self.add_authorized_folder(out_dir)
 
             dest_file = out_dir / f"{source_path.stem}.jpg"
             skipped = False
@@ -578,7 +632,7 @@ class DesktopApi:
                         counter += 1
 
             if not skipped:
-                generate_file(source_path, dest_file, cfg)
+                render_file_isolated(source_path, dest_file, cfg, timeout_seconds=60.0)
             if not dest_file.is_file() or (not skipped and dest_file.stat().st_size == 0):
                 return {"ok": False, "value": None, "error": "Export failed"}
 
@@ -607,6 +661,8 @@ class DesktopApi:
             code, msg = classify_exception(exc)
             return {"ok": False, "value": None, "error": msg, "code": code}
         finally:
+            if export_op is not None:
+                self.lifecycle.unregister_operation(export_op.operation_id)
             if temp_dir and temp_dir.exists():
                 safe_rmtree(temp_dir, "on-demand export temp")
 
@@ -622,6 +678,10 @@ class DesktopApi:
             if not output.parent.is_dir():
                 raise ValueError("Output folder parent does not exist")
             op_id = f"batch_{uuid.uuid4().hex[:12]}"
+            # Commit the user-chosen roots so the batch may write inside them;
+            # export never authorizes new paths implicitly.
+            self.add_authorized_folder(source)
+            self.add_authorized_folder(output)
             with self._batch_start_lock:
                 self._batch_operation_id = op_id
                 self.lifecycle.start_batch(

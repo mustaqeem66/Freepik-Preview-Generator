@@ -117,8 +117,22 @@ def test_powershell_installer_verifies_checksums_fail_closed():
 
 def test_install_sh_creates_shortcuts_and_uninstaller():
     text = _install_text()
-    assert "xattr -cr" in text
+    # Quarantine is a security decision owned by the user, not a build
+    # convenience: the installer must never strip it silently.
+    assert "xattr" not in text
+    assert "right-click > Open" in text
     assert "previewgen-uninstall" in text
     assert "Desktop/previewgen.desktop" in text
     assert "Desktop/$APP_NAME.app" in text
     assert "PREVIEWGEN_NO_LAUNCH" in text
+
+
+def test_bash_installer_verifies_checksums_fail_closed():
+    text = _install_text()
+    # Mirrors install.ps1: a release with no manifest, no downloadable manifest,
+    # or no matching hash must abort instead of installing an unverified binary.
+    assert "verify_checksum" in text
+    assert "publishes no SHA256SUMS.txt" in text
+    assert "Could not download SHA256SUMS.txt" in text
+    assert "No SHA-256 entry for" in text
+    assert "Checksum verification failed" in text
