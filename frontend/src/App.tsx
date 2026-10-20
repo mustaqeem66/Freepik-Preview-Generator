@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Box, ChevronLeft, ChevronRight, FolderOpen, Layers, Moon, RefreshCw, Sun } from "lucide-react";
+import { Box, ChevronLeft, ChevronRight, FolderOpen, Layers, Moon, RefreshCw, Sun, Activity } from "lucide-react";
 import { ApiBridge } from "./api/bridge";
 import { useBackend } from "./hooks/useBackend";
 import { useSettings } from "./hooks/useSettings";
@@ -122,6 +122,18 @@ export default function App() {
     }
   };
 
+  const openDiagnostics = async () => {
+    try {
+      const api = await ApiBridge.getApi();
+      if (!api?.open_diagnostics_folder) throw new Error("Diagnostics require the current desktop version.");
+      const result = await api.open_diagnostics_folder();
+      if (!result.ok) throw new Error(result.error || "Unable to open diagnostics folder");
+    } catch (error) {
+      showNotice({ id: "diagnostics-error", type: "warning", message: "Could not open diagnostics",
+        details: error instanceof Error ? error.message : "Check the logs directory manually." });
+    }
+  };
+
   const handleExport = async () => {
     if (!activeFile || busy || !scanReady || !capabilities.canGenerate) return;
     setIsExporting(true);
@@ -162,8 +174,12 @@ export default function App() {
       <div className="brand"><span className="brand-mark"><Layers size={21} strokeWidth={1.6} /></span>
         <div><h1>PreviewGen<span className="studio-badge">Studio</span></h1><p>Make every asset presentation-ready.</p></div></div>
       <div className="toolbar-actions">
-        <span className="lifecycle-badge" data-testid="lifecycle-state" data-state={lifecycle} role="status">
+        <span className="lifecycle-badge" data-testid="lifecycle-state" data-state={lifecycle} role="status"
+          title="Last frontend/backend state; a frozen Windows window may not update this label">
           <span className="status-dot" />{LIFECYCLE_LABELS[lifecycle]}</span>
+        <button type="button" className="button diagnostics-button" title="Open local diagnostic logs (no upload)"
+          disabled={!capabilities.canBrowse}
+          onClick={() => void openDiagnostics()}><Activity size={15} /> Diagnostics</button>
         <button type="button" className="icon-button theme-toggle" aria-label={state.theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
           onClick={() => setState((previous) => ({ ...previous, theme: previous.theme === "light" ? "dark" : "light" }))}>
           {state.theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}</button>
