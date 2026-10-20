@@ -162,7 +162,6 @@ flowchart TD
 ```
 
 <a id="getting-started"></a>
-<a id="getting-started"></a>
 ## 🧭 Your first launch
 
 The native **Choose Input Folder** dialog selects directories, so it may not display individual artwork files. Select the *containing folder* and confirm with **Select Folder**; PreviewGen lists supported assets after scanning. Direct individual-file selection is not yet available.
