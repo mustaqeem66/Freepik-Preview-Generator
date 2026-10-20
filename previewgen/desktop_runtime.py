@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import sys
 import threading
 
@@ -69,8 +70,6 @@ def start_desktop_app() -> int:
     # P0: Headless smoke test mode - validates full GUI stack without human interaction
     is_smoke = "--gui-smoke-test" in sys.argv
     if is_smoke:
-        import os
-        os.environ["PREVIEWGEN_READY_MARKER"] = os.environ.get("PREVIEWGEN_READY_MARKER", "")
         logging.info("GUI smoke test mode enabled")
         # Smoke test fallback for Linux without system webview installed
         if sys.platform.startswith("linux"):
@@ -154,6 +153,7 @@ def start_desktop_app() -> int:
         start_kwargs: dict[str, Any] = {"debug": False}
         if gui_type:
             start_kwargs["gui"] = gui_type
+        if is_smoke and gui_type:
             def _auto_close_smoke() -> None:
                 marker = os.environ.get("PREVIEWGEN_READY_MARKER")
                 for _ in range(30):
@@ -174,6 +174,7 @@ def start_desktop_app() -> int:
     finally:
         watchdog_stop.set()
         api.cleanup()
+    return 0
 
 def main() -> int:
     """
