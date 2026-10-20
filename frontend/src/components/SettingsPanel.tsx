@@ -95,6 +95,13 @@ export function SettingsPanel({ state, onChange, onBrowseLogo, onBrowseFont, is3
       </>}
     </section>
     <section className="inspector-section">
+      <div className="section-heading"><h2>Desktop notifications</h2></div>
+      <label className="check-row"><input type="checkbox" checked={state.desktopNotifications}
+        onChange={(e) => onChange({ desktopNotifications: e.target.checked })} />
+        Notify when a batch finishes</label>
+      <p className="muted">Off by default. Requires notification permissions and a supported system notification service.</p>
+    </section>
+    <section className="inspector-section">
       <div className="section-heading"><h2>Existing exports</h2></div>
       <label className="field-label">When a JPG already exists<select value={state.overwritePolicy || "rename"}
         onChange={(e) => onChange({ overwritePolicy: e.target.value as "rename" | "skip" | "overwrite" })}>
