@@ -136,3 +136,22 @@ def test_bash_installer_verifies_checksums_fail_closed():
     assert "Could not download SHA256SUMS.txt" in text
     assert "No SHA-256 entry for" in text
     assert "Checksum verification failed" in text
+
+
+def test_macos_and_linux_checksum_names_match_published_assets():
+    """Checksum lookup uses the artifact's basename, not its download URL.
+
+    A renamed DMG or AppImage would be rejected by the release SHA256SUMS even
+    when the downloaded bytes are correct. Preserve published filenames until
+    verification is complete.
+    """
+    text = _install_text()
+    assert 'DMG_PATH="$TEMP_DIR/PreviewGen-macOS.dmg"' in text
+    assert 'verify_checksum "$DMG_PATH"' in text
+
+    assert 'APPIMAGE_PATH="$TEMP_DIR/PreviewGen-Linux.AppImage"' in text
+    assert 'verify_checksum "$APPIMAGE_PATH"' in text
+    assert 'install -m 755 "$APPIMAGE_PATH" "$TARGET_BIN"' in text
+    assert text.index('verify_checksum "$APPIMAGE_PATH"') < text.index(
+        'install -m 755 "$APPIMAGE_PATH" "$TARGET_BIN"'
+    ), "Never replace a valid installed AppImage before checksum verification"
