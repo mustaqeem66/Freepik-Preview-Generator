@@ -198,6 +198,7 @@ export default function App() {
           disabled={busy || !isLoaded || !capabilities.canBrowse}
           onBrowseInput={() => void browse("browse_input_folder")} onBrowseOutput={() => void browse("browse_output_folder")}
           onCommitInput={(inputFolder) => setState((previous) => ({ ...previous, inputFolder }))}
+          onCommitOutput={(outputFolder) => setState((previous) => ({ ...previous, outputFolder }))}
           onToggleSameFolder={(sameFolder) => setState((previous) => ({ ...previous, sameFolder }))} />
         <div className="library-heading"><h2>Assets<span className="count-badge">{fileList.length}</span></h2>
           <button type="button" className="icon-button" aria-label="Rescan source folder" disabled={!state.inputFolder || busy || isScanning || !capabilities.canScan}
