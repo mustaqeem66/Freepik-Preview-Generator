@@ -23,6 +23,7 @@ from typing import Any
 import webview
 
 from previewgen.api import DesktopApi
+from previewgen.dialogs import applescript_string
 from previewgen.resources import get_html_dist
 
 
@@ -39,7 +40,10 @@ def show_fatal_error(title: str, message: str) -> None:
     elif sys.platform == "darwin":
         try:
             import subprocess
-            cmd = f'display dialog "{message}" with title "{title}" buttons {{"OK"}} default button "OK" with icon stop'
+            cmd = (
+                f"display dialog {applescript_string(message)} with title "
+                f"{applescript_string(title)} buttons {{\"OK\"}} default button \"OK\" with icon stop"
+            )
             subprocess.run(["osascript", "-e", cmd], check=False)
             return
         except Exception:
