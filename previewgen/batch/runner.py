@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import inspect
 import logging
 import time
 from collections.abc import Callable
@@ -30,6 +31,32 @@ from previewgen.renderer_process import render_file_with_timeout as _render_file
 from previewgen.tempfiles import create_temp_dir, safe_rmtree
 
 
+def _progress_reporter(
+    progress: Callable[..., None],
+) -> Callable[[int, int, str], None]:
+    """Return a reporter matching the callback's declared arity.
+
+    The signature is inspected once per batch instead of on every progress
+    event (discovery can emit thousands), and sequence numbers stay monotonic.
+    """
+    try:
+        accepts_sequence = len(inspect.signature(progress).parameters) >= 4
+    except (TypeError, ValueError):
+        accepts_sequence = False
+
+    sequence = 0
+
+    def report(cur: int, tot: int, msg: str) -> None:
+        nonlocal sequence
+        if accepts_sequence:
+            sequence += 1
+            progress(cur, tot, msg, sequence)
+        else:
+            progress(cur, tot, msg)
+
+    return report
+
+
 def process_folder(
     input_folder: Path,
     output_folder: Path,
@@ -49,20 +76,12 @@ def process_folder(
         timeout_seconds=DISCOVERY_TIMEOUT_SECONDS,
         max_depth=DISCOVERY_MAX_DEPTH,
     )
-    sequence_id = 0
-
-    def _report_progress(cur: int, tot: int, msg: str) -> None:
-        nonlocal sequence_id
-        sequence_id += 1
-        import inspect
-        sig = inspect.signature(progress)
-        if len(sig.parameters) >= 4:
-            progress(cur, tot, msg, sequence_id)
-        else:
-            progress(cur, tot, msg)
+    _report_progress = _progress_reporter(progress)
 
     def _on_discovery_progress(stats: DiscoveryStats) -> None:
-        _report_progress(stats.files, 0, f"Discovering previews\u2026 ({stats.files} found)")
+        # ``planned=-1`` marks indeterminate discovery; rendering it as
+        # "N / 0" would be misleading.
+        _report_progress(stats.files, -1, f"Discovering previews\u2026 ({stats.files} found)")
 
     raw_files = list(
         discover_files(

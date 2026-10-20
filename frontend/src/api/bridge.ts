@@ -39,9 +39,9 @@ export class BridgeEventRegistry {
   public attachGlobalBridgeHooks(): void {
     if (typeof window === "undefined") return;
 
-    // Centralized typed envelope entrypoint (Finding: Typed Event Hub). Every
-    // Python event flows through this single global; the legacy per-callback
-    // globals below are retained only as a fallback transport for older bundles.
+    // Centralized typed envelope entrypoint (Finding: Typed Event Hub). Batch
+    // events flow exclusively through this envelope; the globals below remain
+    // only for scan events emitted by the scanner bridge.
     window.__onBridgeEvent = (envelope: unknown) => {
       const env = envelope as BridgeEnvelope;
       if (env && env.event) {
@@ -58,12 +58,6 @@ export class BridgeEventRegistry {
     };
     window.__onScanFinished = (scanId: string, result: ScanFolderResult) => {
       this.emit("scan.finished", { scanId, result }, { operationId: scanId, terminal: true });
-    };
-    window.__onBatchProgress = (current: number, total: number, message: string) => {
-      this.emit("batch.progress", { current, total, message }, {});
-    };
-    window.__onBatchFinishedSummary = (summary: BatchSummary) => {
-      this.emit("batch.finished", summary, { terminal: true });
     };
   }
 

@@ -58,6 +58,13 @@ describe("bridge typed event hub", () => {
     off();
   });
 
+  it("does not install dead batch callback globals", () => {
+    const legacy = window as unknown as Record<string, unknown>;
+    expect(legacy.__onBatchProgress).toBeUndefined();
+    expect(legacy.__onBatchFinishedSummary).toBeUndefined();
+    expect(legacy.__onBatchFinished).toBeUndefined();
+  });
+
   it("stops delivery after unsubscribe", () => {
     const listener = vi.fn();
     const off = bridgeEvents.subscribe("batch.progress", listener);

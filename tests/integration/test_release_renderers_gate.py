@@ -39,10 +39,20 @@ FIXTURE_MATRIX = {
     "sample.obj": ("trimesh", 256, "OBJ"),
     "sample.glb": ("trimesh", 256, "GLB"),
     "sample.step": ("cascadio", 256, "STEP"),
+    "sample.dae": ("collada", 64, "COLLADA"),
 }
 
 
-MANDATORY_RENDERER_ENGINES = ["PIL", "resvg_py", "psd_tools", "trimesh", "ezdxf", "cascadio", "matplotlib"]
+MANDATORY_RENDERER_ENGINES = [
+    "PIL",
+    "resvg_py",
+    "psd_tools",
+    "trimesh",
+    "ezdxf",
+    "cascadio",
+    "matplotlib",
+    "collada",
+]
 
 # Mandatory engines pulled in transitively by the renderer stack (e.g. text and
 # composition) rather than owning a format-specific fixture of their own.
@@ -63,7 +73,7 @@ def test_release_matrix_exercises_every_mandatory_engine():
     assert uncovered <= SUPPORTING_RENDERER_ENGINES, f"mandatory engines without a fixture: {uncovered}"
 
     labels = {label for _engine, _dim, label in FIXTURE_MATRIX.values()}
-    assert {"PNG", "RASTER", "SVG", "PSD", "DXF", "OBJ", "GLB", "STEP"} == labels
+    assert {"PNG", "RASTER", "SVG", "PSD", "DXF", "OBJ", "GLB", "STEP", "COLLADA"} == labels
     assert all(dim > 0 for _engine, dim, _label in FIXTURE_MATRIX.values())
 
 

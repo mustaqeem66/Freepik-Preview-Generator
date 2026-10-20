@@ -27,7 +27,13 @@ PREVIEWGEN_PREFIXES: tuple[str, ...] = (
     "previewgen_ondemand_",
     "previewgen_batch_zip_",
     "previewgen_render_",
+    "previewgen_render_test_",
     "previewgen_preview_",
+    "previewgen_worker_zip_",
+    "previewgen_worker_probe_",
+    "previewgen_probe_",
+    "previewgen_dim_",
+    "previewgen_export_",
 )
 
 

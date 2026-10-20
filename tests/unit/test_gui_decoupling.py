@@ -57,6 +57,7 @@ def test_pure_modules_import_without_webview():
             "previewgen.settings",
             "previewgen.tempfiles",
             "previewgen.resources",
+            "previewgen.dialogs",
             "previewgen.entrypoint",
             "previewgen.scanner",
             "previewgen.lifecycle",

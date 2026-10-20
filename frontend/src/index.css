@@ -265,11 +265,17 @@ input[type="text"], input[type="number"], select { border-radius: 8px; min-heigh
 h2 { font-size: 13px; }
 .muted, .field-label, .slider-field, .color-field, .path-hint, .scan-notice { font-size: 12px; }
 .library-footnote, .canvas-footnote, .canvas-caption, .count-badge, .asset-navigation { font-size: 11px; }
+/* Functional labels stay legible at 100-200% scaling; 10px is reserved for
+   short badges, never for instructions or values the user must read. */
+.brand p, .lifecycle-badge, .rendering-indicator, .export-warning,
+.file-control .button, .picker-hint, .slider-field output, .color-value { font-size: 12px; }
+.studio-badge, .orbit-hint, .empty-formats,
+.camera-presets .button, .size-presets .button { font-size: 11px; }
 .inspector-section { gap: 14px; }
 .segmented { border-radius: 9px; }
 .segmented button { min-height: 32px; font-size: 12px; }
-.color-swatch { min-width: 29px; min-height: 29px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
-.picker-hint { display:flex; gap:7px; align-items:flex-start; color:var(--text-sec); font-size:11px; line-height:1.55; }
+.color-swatch { min-width: 32px; min-height: 32px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
+.picker-hint { display:flex; gap:7px; align-items:flex-start; color:var(--text-sec); font-size:12px; line-height:1.55; }
 .picker-hint svg { flex:0 0 auto; margin-top:2px; }
 .batch-progress {
   display:flex; flex-direction:column; gap:10px; padding:16px;
@@ -305,6 +311,12 @@ h2 { font-size: 13px; }
 @media (prefers-reduced-motion:reduce) {
   .notice,.preview-canvas img { animation:none !important; }
   .bp-fill { transition:none !important; }
+}
+@media (prefers-reduced-transparency:reduce) {
+  .canvas-toolbar, .inspector-heading, .studio-toolbar, .rendering-indicator,
+  .export-toggle, .export-popover {
+    -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--card-bg);
+  }
 }
 @media (forced-colors:active) {
   .notice,.bp-truncation,.bp-errors,.batch-progress { border:1px solid CanvasText; }

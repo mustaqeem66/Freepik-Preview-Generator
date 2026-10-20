@@ -23,6 +23,9 @@
 - [x] Keep installer filename `PreviewGen-Setup.exe` compatible with current `install.ps1`.
 - [x] Add Start Menu AppUserModelID hint to support Windows notifications where the OS allows it.
 - [x] Add regression tests for notification process failures and bridge isolation.
+- [x] Raise functional label text to 12px, keep 10-11px for short badges only, enlarge swatch and preset hit targets, and honour `prefers-reduced-transparency`.
+- [x] Remove dead batch callback globals and document indeterminate discovery progress.
+- [x] Replace unmeasured speed, frame-rate, ZIP-recursion, ICC and palette claims in the README with tested behaviour.
 
 ## Not integrated from the older ZIP
 

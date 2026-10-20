@@ -223,13 +223,5 @@ declare global {
     };
     __onScanProgress?: (scanId: string, count: number) => void;
     __onScanFinished?: (scanId: string, result: ScanFolderResult) => void;
-    __onBatchProgress?: (current: number, total: number, message: string) => void;
-    __onBatchFinishedSummary?: (summary: BatchSummary) => void;
-    __onBatchFinished?: (
-      success: number,
-      failed: number,
-      errors: string[],
-      cancelled: boolean
-    ) => void;
   }
 }

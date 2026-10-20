@@ -26,25 +26,53 @@ API_URL="$(get_release_info)"
 RELEASE_JSON="$TEMP_DIR/release.json"
 curl -fsSL "$API_URL" -o "$RELEASE_JSON"
 
+hash_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    # macOS ships shasum; keep this branch independent of awk's exit status so a
+    # missing sha256sum can never be masked by the pipeline succeeding.
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha256 "$1" | awk '{print $NF}'
+  else
+    return 1
+  fi
+}
+
 verify_checksum() {
   local file="$1"
+  local name
+  name="$(basename "$file")"
   local sha_file="$TEMP_DIR/SHA256SUMS.txt"
   local sha_url
   sha_url="$(grep -o 'https://[^"]*SHA256SUMS.txt' "$RELEASE_JSON" | head -n 1)"
-  if [ -n "$sha_url" ]; then
-    curl -fsSL "$sha_url" -o "$sha_file"
-    local expected
-    expected="$(grep "$(basename "$file")" "$sha_file" | awk '{print $1}')"
-    if [ -n "$expected" ]; then
-      local actual
-      actual="$(sha256sum "$file" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$file" | awk '{print $1}')"
-      if [ "$expected" != "$actual" ]; then
-        echo "Checksum verification failed for $(basename "$file"). Aborting installation." >&2
-        exit 1
-      fi
-      echo "Checksum verified for $(basename "$file")."
-    fi
+  if [ -z "$sha_url" ]; then
+    echo "Warning: release publishes no SHA256SUMS.txt; skipping checksum verification." >&2
+    return 0
   fi
+  if ! curl -fsSL "$sha_url" -o "$sha_file"; then
+    echo "Could not download SHA256SUMS.txt. Aborting installation." >&2
+    exit 1
+  fi
+  local expected
+  expected="$(awk -v n="$name" '$2 == n || $2 == "*" n {print $1; exit}' "$sha_file")"
+  if [ -z "$expected" ]; then
+    echo "No SHA-256 entry for $name in SHA256SUMS.txt. Aborting installation." >&2
+    exit 1
+  fi
+  local actual
+  if ! actual="$(hash_sha256 "$file")" || [ -z "$actual" ]; then
+    echo "No SHA-256 tool available (sha256sum/shasum/openssl). Aborting installation." >&2
+    exit 1
+  fi
+  expected="$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')"
+  actual="$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')"
+  if [ "$expected" != "$actual" ]; then
+    echo "Checksum verification failed for $name. Aborting installation." >&2
+    exit 1
+  fi
+  echo "Checksum verified for $name."
 }
 
 case "$OS" in
@@ -67,7 +95,14 @@ case "$OS" in
     if [ -d "$SRC_APP" ]; then
       rm -rf "/Applications/$APP_NAME.app"
       cp -R "$SRC_APP" "/Applications/"
+      # Strip the quarantine flag so Gatekeeper does not block first launch.
+      xattr -cr "/Applications/$APP_NAME.app" 2>/dev/null || true
+      mkdir -p "$HOME/Desktop"
+      ln -sfn "/Applications/$APP_NAME.app" "$HOME/Desktop/$APP_NAME.app" 2>/dev/null || true
       echo "PreviewGen installed to /Applications/$APP_NAME.app"
+      if [ -z "${PREVIEWGEN_NO_LAUNCH:-}" ]; then
+        open "/Applications/$APP_NAME.app" || true
+      fi
     else
       echo "Could not find $APP_NAME.app inside the disk image." >&2
       exit 1
@@ -99,7 +134,26 @@ Type=Application
 Categories=Graphics;
 EOF
     chmod +x "$APPS_DIR/previewgen.desktop"
+
+    # Desktop shortcut (best effort: Desktop may not exist on servers).
+    if [ -d "$HOME/Desktop" ]; then
+      cp "$APPS_DIR/previewgen.desktop" "$HOME/Desktop/previewgen.desktop"
+      chmod +x "$HOME/Desktop/previewgen.desktop"
+      gio set "$HOME/Desktop/previewgen.desktop" metadata::trusted true 2>/dev/null || true
+    fi
+
+    cat > "$BIN_DIR/previewgen-uninstall" << EOF
+#!/usr/bin/env bash
+set -eu
+rm -f "$TARGET_BIN" "$BIN_DIR/previewgen-uninstall" "$APPS_DIR/previewgen.desktop" "\$HOME/Desktop/previewgen.desktop"
+echo "PreviewGen has been uninstalled."
+EOF
+    chmod +x "$BIN_DIR/previewgen-uninstall"
+
     echo "PreviewGen installed to $TARGET_BIN"
+    if [ -z "${PREVIEWGEN_NO_LAUNCH:-}" ]; then
+      nohup "$TARGET_BIN" >/dev/null 2>&1 &
+    fi
     ;;
 
   *)

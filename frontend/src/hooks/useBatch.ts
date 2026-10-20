@@ -50,7 +50,8 @@ export function useBatch() {
       if (!activeOpIdRef.current || meta?.operationId !== activeOpIdRef.current) return;
       if (typeof meta?.sequence === "number" && meta.sequence < latestSeqRef.current) return;
       if (typeof meta?.sequence === "number") latestSeqRef.current = meta.sequence;
-      setProgress({ current, total, message });
+      // A negative total marks the indeterminate discovery phase.
+      setProgress({ current, total: total > 0 ? total : 0, message });
     };
 
     const applyFinished = (summary: BatchSummary, meta: { operationId?: string; sequence?: number }) => {

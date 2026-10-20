@@ -79,6 +79,7 @@ jobs:
             --collect-all psd_tools --collect-all trimesh --collect-all webview \
             --collect-all resvg_py --collect-all matplotlib \
             --collect-all cascadio --collect-all ezdxf --collect-all olefile \
+            --collect-all collada \
             --collect-all pypdfium2 --collect-all pypdfium2_raw --collect-all fontTools --collect-all brotli \
             ${{ runner.os == 'macOS' && '--osx-bundle-identifier com.zenartisan.previewgen --windowed' || '' }} \
             app.py --clean -y
@@ -89,13 +90,14 @@ jobs:
           mkdir -p build_diagnostics
           cp build/PreviewGen/warn-PreviewGen.txt build_diagnostics/ 2>/dev/null || true
           python -c "
-          import sys, PIL, trimesh, psd_tools, resvg_py, ezdxf, cascadio
+          import sys, PIL, trimesh, psd_tools, resvg_py, ezdxf, cascadio, collada
           print('Python:', sys.version)
           print('Pillow:', PIL.__version__)
           print('trimesh:', trimesh.__version__)
           print('psd-tools:', psd_tools.__version__)
           print('ezdxf:', ezdxf.__version__)
           print('cascadio:', getattr(cascadio, '__version__', 'installed'))
+          print('pycollada:', collada.__version__)
           " > build_diagnostics/renderer_versions.txt 2>&1 || true
 
       - name: Upload build diagnostics artifact
@@ -140,7 +142,11 @@ jobs:
             Write-Host "Signing Windows binary with certificate..."
             $certBytes = [Convert]::FromBase64String("${{ secrets.WINDOWS_CERTIFICATE }}")
             [IO.File]::WriteAllBytes("cert.pfx", $certBytes)
-            & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f cert.pfx /p "${{ secrets.WINDOWS_CERTIFICATE_PWD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 dist\PreviewGen\PreviewGen.exe
+            $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
+            if (-not $signtool) { throw "signtool.exe not found in the installed Windows SDK." }
+            & $signtool.FullName sign /f cert.pfx /p "${{ secrets.WINDOWS_CERTIFICATE_PWD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 dist\PreviewGen\PreviewGen.exe
+            if ($LASTEXITCODE -ne 0) { throw "Signing PreviewGen.exe failed." }
             Remove-Item cert.pfx -Force
           } else {
             Write-Host "Notice: No WINDOWS_CERTIFICATE secret configured. Skipping Windows binary signing."
@@ -169,7 +175,11 @@ jobs:
             Write-Host "Signing Windows setup installer..."
             $certBytes = [Convert]::FromBase64String("${{ secrets.WINDOWS_CERTIFICATE }}")
             [IO.File]::WriteAllBytes("cert.pfx", $certBytes)
-            & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f cert.pfx /p "${{ secrets.WINDOWS_CERTIFICATE_PWD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 PreviewGen-Setup.exe
+            $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
+            if (-not $signtool) { throw "signtool.exe not found in the installed Windows SDK." }
+            & $signtool.FullName sign /f cert.pfx /p "${{ secrets.WINDOWS_CERTIFICATE_PWD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 PreviewGen-Setup.exe
+            if ($LASTEXITCODE -ne 0) { throw "Signing PreviewGen-Setup.exe failed." }
             Remove-Item cert.pfx -Force
           }
 

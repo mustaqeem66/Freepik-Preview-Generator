@@ -47,6 +47,25 @@ describe("useBatch operation safety", () => {
     expect(result.current.batchStatus).toBe("completed");
   });
 
+  it("clamps the indeterminate discovery phase to a zero total", async () => {
+    vi.spyOn(ApiBridge, "getApi").mockResolvedValue({
+      start_batch: vi.fn().mockResolvedValue({ ok: true, operationId: "batch_new" }),
+    } as never);
+    const { result } = renderHook(() => useBatch());
+    await act(async () => {
+      await result.current.startBatch("source", "output", 2, { sameFolder: false } as never);
+    });
+    act(() => {
+      bridgeEvents.emit(
+        "batch.progress",
+        { current: 7, total: -1, message: "Discovering previews… (7 found)" },
+        { operationId: "batch_new" }
+      );
+    });
+    expect(result.current.progress.current).toBe(7);
+    expect(result.current.progress.total).toBe(0);
+  });
+
   it("buffers a fast completion delivered before start returns", async () => {
     let resolveStart: ((value: { ok: boolean; operationId: string }) => void) | undefined;
     vi.spyOn(ApiBridge, "getApi").mockResolvedValue({
