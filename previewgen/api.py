@@ -130,11 +130,19 @@ class DesktopApi:
             "scan.finished", {"scanId": scan_id, "result": result}, operation_id=scan_id, terminal=True
         )
 
-    def _on_batch_finished(self, summary: dict[str, Any], operation_id: str = "") -> None:
+    def _on_batch_finished(
+        self, summary: dict[str, Any], operation_id: str = "", notify_enabled: bool = False
+    ) -> None:
         self._dispatch_envelope(
             "batch.finished", self._sanitize_batch_summary(summary),
             operation_id=operation_id or self._batch_operation_id, terminal=True,
         )
+        if notify_enabled:
+            from previewgen.notifications import notify_batch_finished
+            threading.Thread(
+                target=notify_batch_finished, args=(self._sanitize_batch_summary(summary),),
+                name="previewgen-desktop-notify", daemon=True,
+            ).start()
 
     @staticmethod
     def _sanitize_batch_summary(summary: dict[str, Any]) -> dict[str, Any]:
@@ -624,7 +632,9 @@ class DesktopApi:
                     ),
                     is_cancelled=lambda: False,
                     operation_id=op_id,
-                    finished_callback=self._on_batch_finished,
+                    finished_callback=lambda summary, finished_id: self._on_batch_finished(
+                        summary, finished_id, notify_enabled=config_dict.get("desktopNotifications") is True
+                    ),
                 )
             return {"ok": True, "operationId": op_id}
         except Exception as exc:
