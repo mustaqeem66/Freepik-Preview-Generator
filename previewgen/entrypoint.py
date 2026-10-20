@@ -73,12 +73,19 @@ def main() -> int:
     from previewgen.settings import configure_logging
     configure_logging()
 
-    # Remove stale PreviewGen temp directories left by crashed/previous runs.
-    try:
-        from previewgen.tempfiles import cleanup_stale_temp_dirs
-        cleanup_stale_temp_dirs()
-    except Exception as exc:
-        logging.debug("Startup stale temp cleanup skipped: %s", exc)
+    # Temp sweeps can traverse slow antivirus/network-backed directories. Never
+    # run unbounded filesystem deletion on the desktop startup path.
+    def _cleanup_stale_async() -> None:
+        try:
+            from previewgen.tempfiles import cleanup_stale_temp_dirs
+            cleanup_stale_temp_dirs()
+        except Exception as exc:
+            logging.debug("Startup stale temp cleanup skipped: %s", exc)
+
+    import threading
+    threading.Thread(
+        target=_cleanup_stale_async, name="previewgen-startup-cleanup", daemon=True,
+    ).start()
 
     args = sys.argv[1:]
 
