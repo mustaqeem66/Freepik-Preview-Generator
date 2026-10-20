@@ -100,4 +100,58 @@ describe("useBatch operation safety", () => {
     expect(result.current.batchStatus).toBe("failed");
     expect(result.current.batchErrors).toEqual(["Invalid input"]);
   });
+
+  it("fails the UI when a cancelled batch never emits a terminal event", async () => {
+    vi.spyOn(ApiBridge, "getApi").mockResolvedValue({
+      start_batch: vi.fn().mockResolvedValue({ ok: true, operationId: "batch_c" }),
+      cancel_batch: vi.fn().mockResolvedValue({ ok: true }),
+    } as never);
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useBatch());
+      await act(async () => {
+        await result.current.startBatch("source", "output", 2, { sameFolder: false } as never);
+      });
+      await act(async () => {
+        await result.current.cancelBatch();
+      });
+      expect(result.current.batchStatus).toBe("batch-cancelling");
+      expect(result.current.isProcessing).toBe(true);
+
+      // No batch.finished arrives within the deadline — the watchdog must resolve the stuck state
+      await act(async () => { await vi.advanceTimersByTimeAsync(121_000); });
+      expect(result.current.isProcessing).toBe(false);
+      expect(result.current.batchStatus).toBe("failed");
+      expect(result.current.progress.message).toMatch(/timed out/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels the deadline when the terminal event does arrive after cancel", async () => {
+    vi.spyOn(ApiBridge, "getApi").mockResolvedValue({
+      start_batch: vi.fn().mockResolvedValue({ ok: true, operationId: "batch_c" }),
+      cancel_batch: vi.fn().mockResolvedValue({ ok: true }),
+    } as never);
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useBatch());
+      await act(async () => {
+        await result.current.startBatch("source", "output", 2, { sameFolder: false } as never);
+      });
+      await act(async () => {
+        await result.current.cancelBatch();
+      });
+      act(() => {
+        bridgeEvents.emit("batch.finished", complete({ cancelled: true }), { operationId: "batch_c", terminal: true });
+      });
+      expect(result.current.batchStatus).toBe("cancelled");
+
+      // The watchdog must not fire afterwards and must not overwrite the real outcome
+      await act(async () => { await vi.advanceTimersByTimeAsync(121_000); });
+      expect(result.current.batchStatus).toBe("cancelled");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

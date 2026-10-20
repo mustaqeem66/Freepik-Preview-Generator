@@ -2,6 +2,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { BatchStatus, BatchSummary, PreviewState } from "../types";
 import { ApiBridge, bridgeEvents } from "../api/bridge";
 
+// A cancelled batch must emit batch.finished (the backend always terminates a
+// render budget); this backstops a lost terminal envelope so the UI never
+// sits in "Cancelling…" or "generating" forever.
+const CANCEL_TERMINAL_DEADLINE_MS = 120_000;
+
 function mapSummaryStatus(summary: BatchSummary): BatchStatus {
   if (summary.cancelled || summary.status === "cancelled") return "cancelled";
   switch (summary.status) {
@@ -42,6 +47,11 @@ export function useBatch() {
   const replayRef = useRef<(operationId: string) => void>(() => {});
   const startPendingRef = useRef<boolean>(false);
   const bufferedEventsRef = useRef<Array<{ kind: "progress" | "finished"; payload: any; meta: { operationId?: string; sequence?: number } }>>([]);
+  const cancelDeadlineRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (cancelDeadlineRef.current !== null) clearTimeout(cancelDeadlineRef.current);
+  }, []);
 
   useEffect(() => {
     const applyProgress = ({ current, total, message }: { current: number; total: number; message: string }, meta: { operationId?: string; sequence?: number }) => {
@@ -56,6 +66,10 @@ export function useBatch() {
 
     const applyFinished = (summary: BatchSummary, meta: { operationId?: string; sequence?: number }) => {
       if (!activeOpIdRef.current || meta?.operationId !== activeOpIdRef.current) return;
+      if (cancelDeadlineRef.current !== null) {
+        clearTimeout(cancelDeadlineRef.current);
+        cancelDeadlineRef.current = null;
+      }
       isTerminalRef.current = true;
       if (typeof meta?.sequence === "number") latestSeqRef.current = Math.max(latestSeqRef.current, meta.sequence);
       setIsProcessing(false);
@@ -136,6 +150,10 @@ export function useBatch() {
       activeOpIdRef.current = null;
       startPendingRef.current = true;
       bufferedEventsRef.current = [];
+      if (cancelDeadlineRef.current !== null) {
+        clearTimeout(cancelDeadlineRef.current);
+        cancelDeadlineRef.current = null;
+      }
       setRequiresTruncationAck(false);
       setProgress({ current: 0, total: totalFiles, message: "Starting batch generation…" });
 
@@ -160,11 +178,27 @@ export function useBatch() {
 
   const cancelBatch = useCallback(async () => {
     setBatchStatus("batch-cancelling");
+    if (cancelDeadlineRef.current !== null) clearTimeout(cancelDeadlineRef.current);
+    // Even if the cancel request itself fails to reach the backend, the
+    // deadline keeps the UI honest: a late batch.finished still clears it.
+    cancelDeadlineRef.current = setTimeout(() => {
+      cancelDeadlineRef.current = null;
+      if (isTerminalRef.current) return;
+      isTerminalRef.current = true;
+      activeOpIdRef.current = null;
+      setIsProcessing(false);
+      setBatchStatus("failed");
+      setProgress((prev) => ({ ...prev, message: "Cancellation timed out — no completion event arrived from the backend." }));
+    }, CANCEL_TERMINAL_DEADLINE_MS);
     try {
       const api = await ApiBridge.getApi(3000);
       if (!api) throw new Error("Backend unavailable. The batch cancellation was not delivered.");
       await api.cancel_batch();
     } catch (error) {
+      if (cancelDeadlineRef.current !== null) {
+        clearTimeout(cancelDeadlineRef.current);
+        cancelDeadlineRef.current = null;
+      }
       setBatchStatus("generating");
       setBatchErrors([error instanceof Error ? error.message : "Could not cancel the batch"]);
     }

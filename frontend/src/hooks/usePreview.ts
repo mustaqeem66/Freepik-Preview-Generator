@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { ApiBridge, bridgeEvents } from "../api/bridge";
 import type { FileInfo, PreviewHandle, PreviewState, PyWebViewApi } from "../types";
 
+// Backstop for a lost preview.completed/preview.failed envelope. The backend
+// bounds every render (worker timeouts), so this only fires when the event
+// itself never arrived; it must stay above the backend render budget.
+const PREVIEW_OPERATION_TIMEOUT_MS = 120_000;
+
 export function usePreview(activeFile: FileInfo | undefined, state: PreviewState) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewMeta, setPreviewMeta] = useState<{ width: number; height: number; name: string }>({
@@ -18,6 +23,14 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
   const activeOpIdRef = useRef<string | null>(null);
   const ownedHandleRef = useRef<PreviewHandle | null>(null);
   const apiRef = useRef<PyWebViewApi | undefined>(undefined);
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearWatchdog = () => {
+    if (watchdogRef.current !== null) {
+      clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+  };
 
   const releaseHandle = (handle: PreviewHandle | null): void => {
     const api = apiRef.current;
@@ -34,6 +47,7 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
         releaseHandle({ id: payload.previewId || payload.url, url: payload.url, requestId: 0 });
         return;
       }
+      clearWatchdog();
       setIsLoading(false);
       setRenderError(null);
       const newHandle: PreviewHandle = {
@@ -56,6 +70,7 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
 
     const unsubFailed = bridgeEvents.subscribe("preview.failed", (payload) => {
       if (!activeOpIdRef.current || payload.operationId !== activeOpIdRef.current) return;
+      clearWatchdog();
       setIsLoading(false);
       setRenderError(payload.error || "Preview generation failed");
     });
@@ -110,6 +125,13 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
           }
           if (res.ok && res.operationId) {
             activeOpIdRef.current = res.operationId;
+            // Watchdog: a lost terminal envelope must not pin "Rendering" forever.
+            watchdogRef.current = setTimeout(() => {
+              if (activeOpIdRef.current !== res.operationId) return;
+              activeOpIdRef.current = null;
+              setIsLoading(false);
+              setRenderError("Preview generation timed out. Try again or pick another asset.");
+            }, PREVIEW_OPERATION_TIMEOUT_MS);
           } else if (res.error) {
             setIsLoading(false);
             setRenderError(res.error);
@@ -162,9 +184,17 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      if (watchdogRef.current !== null) {
+        clearTimeout(watchdogRef.current);
+        watchdogRef.current = null;
+      }
       if (apiRef.current?.cancel_preview && activeOpIdRef.current) {
         apiRef.current.cancel_preview(activeOpIdRef.current).catch(() => {});
       }
+      // Invalidate the operation gate immediately: a preview.completed for the
+      // superseded (old-config) operation must never overwrite the result of
+      // the newer request that is still in flight.
+      activeOpIdRef.current = null;
     };
   }, [
     activeFile,

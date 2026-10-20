@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Download, Loader2, Lock, Maximize2, X } from "lucide-react";
 import { ApiBridge } from "../api/bridge";
 import { AssetProbe } from "../types";
 
 const PRESETS = [1024, 2048, 2400, 4096, 8192];
+// Coalesces per-keystroke backend dimension requests; low enough to feel instant.
+const DIMENSION_REQUEST_DEBOUNCE_MS = 180;
 const KIND_LABELS: Record<string, string> = {
   vector: "Vector — resizable", procedural: "Rendered — resizable", raster: "Raster — limited",
 };
@@ -38,25 +40,39 @@ export function ExportSizePanel({ filePath, probe, isProbing, aspectWidth, aspec
   const [draftW, setDraftW] = useState(String(displayW));
   const [draftH, setDraftH] = useState(String(displayH));
   useEffect(() => { setDraftW(String(displayW)); setDraftH(String(displayH)); }, [displayW, displayH]);
-  const applyLongest = async (requested: number) => {
+  const requestSeqRef = useRef(0);
+  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (pendingTimerRef.current !== null) clearTimeout(pendingTimerRef.current);
+  }, []);
+  const applyLongest = (requested: number) => {
     const target = Math.max(1, Math.min(maxLongest, Math.round(requested)));
     const targetW = ratio >= 1 ? target : Math.max(1, Math.round(target * ratio));
     const targetH = ratio >= 1 ? Math.max(1, Math.round(target / ratio)) : target;
+    const seq = ++requestSeqRef.current;
 
     // Authoritative backend resolution: if available, reconcile with canonical calculations
     if (filePath) {
-      try {
-        const api = await ApiBridge.getApi(500);
-        if (api?.calculate_export_dimensions) {
-          const res = await api.calculate_export_dimensions(filePath, targetW, targetH);
-          if (res?.ok && res.value) {
-            onChange(res.value.width, res.value.height);
-            return;
+      if (pendingTimerRef.current !== null) clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = setTimeout(async () => {
+        try {
+          const api = await ApiBridge.getApi(500);
+          if (api?.calculate_export_dimensions) {
+            const res = await api.calculate_export_dimensions(filePath, targetW, targetH);
+            // A newer keystroke/preset supersedes this response; discarding it
+            // prevents an out-of-order backend reply from committing stale dims.
+            if (seq !== requestSeqRef.current) return;
+            if (res?.ok && res.value) {
+              onChange(res.value.width, res.value.height);
+              return;
+            }
           }
+        } catch {
+          // Fallback to local ratio computation
         }
-      } catch {
-        // Fallback to local ratio computation
-      }
+        if (seq === requestSeqRef.current) onChange(targetW, targetH);
+      }, DIMENSION_REQUEST_DEBOUNCE_MS);
+      return;
     }
     onChange(targetW, targetH);
   };

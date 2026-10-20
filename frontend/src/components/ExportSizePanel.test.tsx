@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { act } from "react";
 import { ExportSizePanel, ExportSizePanelProps } from "./ExportSizePanel";
+import { ApiBridge } from "../api/bridge";
 import { AssetProbe } from "../types";
 
 const vectorProbe: AssetProbe = {
@@ -76,5 +78,44 @@ describe("ExportSizePanel", () => {
   it("disables the toggle when no asset is selected", () => {
     setup({ disabled: true });
     expect((screen.getByTestId("export-size-toggle") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("ignores an out-of-order backend dimension response", async () => {
+    ApiBridge.clearCache();
+    vi.useFakeTimers();
+    try {
+      const gates = new Map<number, ReturnType<typeof Promise.withResolvers<unknown>>>();
+      const fakeApi = {
+        calculate_export_dimensions: vi.fn(async (_path: string, w: number) => {
+          const gate = Promise.withResolvers<unknown>();
+          gates.set(w, gate);
+          return gate.promise.then(() => ({ ok: true, value: { width: w, height: w } }));
+        }),
+      };
+      // @ts-expect-error mock window.pywebview
+      window.pywebview = { api: fakeApi };
+
+      const props = setup({ filePath: "a.png" });
+      fireEvent.change(screen.getByTestId("output-width"), { target: { value: "800" } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(fakeApi.calculate_export_dimensions).toHaveBeenCalledTimes(1);
+
+      // A newer keystroke supersedes the pending request before it resolves
+      fireEvent.change(screen.getByTestId("output-width"), { target: { value: "900" } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(fakeApi.calculate_export_dimensions).toHaveBeenCalledTimes(2);
+
+      // The stale 800 response lands first: generation guard must discard it
+      await act(async () => { gates.get(800)!.resolve(undefined); });
+      expect(props.onChange).not.toHaveBeenCalled();
+
+      await act(async () => { gates.get(900)!.resolve(undefined); });
+      expect(props.onChange).toHaveBeenCalledTimes(1);
+      expect(props.onChange).toHaveBeenCalledWith(900, 900);
+    } finally {
+      vi.useRealTimers();
+      ApiBridge.clearCache();
+      delete window.pywebview;
+    }
   });
 });
