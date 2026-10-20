@@ -1,278 +1,181 @@
-# PreviewGen
+# PreviewGen Studio
 
-**The Automated Batch Preview Studio for Marketplace Contributors & Digital Artists.**  
-Transform folders of transparent **2D assets (PNG, WebP, SVG, TIFF, PSD)**, **3D models (GLB, GLTF, OBJ, STL, PLY, BLEND)**, and **CAD drawings/solids (DXF, DWG, MAX, F3D, MB, STEP, IGES)** into marketplace-compliant, split-diagonal JPG previews in seconds.
+**Local-first desktop software for creating diagonal-split JPG previews from creative assets.**
 
----
+PreviewGen scans a folder, displays supported artwork, lets you adjust the split background, text/logo watermark and (where applicable) 3D camera, and generates JPGs with a batch report. It uses **Python + pywebview** for desktop integration and **React + TypeScript** for the interface.
 
-## 🎯 The Purpose: Why We Built PreviewGen
+> **Release status (October 2026):** The latest published installer is **v2.1.1**. The `main` branch contains subsequent development changes with source version `2.1.2`. A successful development test does **not** mean the GitHub Release includes those changes. For a reproducible report, always include the exact EXE version or commit.
 
-Selling digital assets on top marketplaces like **Freepik, Adobe Stock, Shutterstock, Creative Market, Envato, and Etsy** is a high-volume business. However, digital asset platforms have a strict requirement:
+![PreviewGen Studio dark theme](preview-dark.png)
 
-> **Every transparent asset (PNG, PSD, 3D model, or CAD drawing) must be accompanied by a high-resolution JPG preview that clearly proves transparency to potential buyers before they purchase.**
+## Features at a glance
 
-### The Pain Points We Solve
+- **Batch export:** choose a source folder, select an output location, configure appearance, then generate JPG previews. Reports record successes, failures, skips and relevant safety limits.
+- **Live preview:** select an asset in the library to inspect the output before exporting.
+- **Background and branding:** solid/transparent-looking diagonal split, color presets, text, outline and optional logo/font.
+- **3D controls:** camera presets, yaw/pitch and orbit controls where the renderer supports them.
+- **Local processing:** inputs are handled locally; image previews are served only over a tokenized `127.0.0.1` endpoint. The app does not require uploading artwork to a remote conversion service.
+- **Reliability safeguards:** bounded discovery, cancellable work, isolated rendering, error reports, output overwrite policy and per-operation event IDs.
+- **Optional desktop notifications:** disabled by default and subject to your operating system's notification permissions.
 
-| The Pain Point | How Designers Handled It Before | How PreviewGen Solves It |
-|---|---|---|
-| ⏳ **Extreme Time Waste** | Manually opening Photoshop, drawing diagonal masks, generating checkerboards, pasting text badges, and saving one file at a time. | **1-Click Batch Processing**: Queue a whole folder with live per-file progress. Throughput depends on format, resolution and hardware; benchmark your own library before quoting a rate. |
-| ❌ **Marketplace Rejections** | Rejections from reviewers because the preview didn't clearly communicate transparency or lacked a standard split. | **Strict Marketplace Compliance**: Standard diagonal split (checkerboard transparency vs. solid background) approved by reviewers. |
-| 🔒 **Privacy & Cloud Leaks** | Uploading unreleased, proprietary art to sketchy "free online converter" websites that steal or scrape artwork. | **100% Local & Offline**: Your files never leave your computer. Complete privacy and zero data leakage. |
-| 🔍 **Distortion & Cropping** | Batch scripts that accidentally stretch, crop, trim padding, or decimate complex 3D meshes (like vehicle wheels). | **Zero Distortion Guarantee**: Original alpha channel, dimensions, and pristine 3D vertices/normals are preserved with zero decimation. |
-| 🎨 **Ugly / Generic Watermarks** | Bland or unreadable watermarks locked to rigid corners that obscure critical artwork details. | **Full Customization Studio**: Custom brand logo upload, custom font file upload (`.ttf`, `.otf`), outline strokes, and continuous freeform X/Y position sliders. |
-| 🛠️ **Missing 3D & CAD Software** | Unable to preview `.blend`, `.dwg`, `.max`, or `.f3d` files on computers without Blender, AutoCAD, or 3ds Max installed. | **Zero-Dependency Native Extraction**: Extracts embedded scene renders and converts CAD solids directly in pure Python without needing host software. |
+**File-format note:** Discovery recognizes more formats than every installation can necessarily render with full fidelity. Some native design/CAD formats rely on embedded thumbnails rather than converting editable project content. See [Format support](#format-support-and-limitations).
 
----
+## Install
 
-## 👥 Who Is This For?
+Download the appropriate package from [the latest GitHub Release](https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/latest).
 
-- **Stock Marketplace Contributors** (Freepik, Adobe Stock, Shutterstock, 123RF, Dreamstime)
-- **Freelance Illustrators & Vector Artists** preparing asset packs for commercial clients
-- **Icon & UI/UX Designers** exporting hundreds of transparent components for showcase
-- **3D Artists & Game Asset Creators** packaging transparent character renders, props, and textures
-- **CAD Engineers & Industrial Designers** generating previews for AutoCAD drawings, SolidWorks parts, and 3D prints
-- **Creative Studios & Agencies** looking to automate repetitive post-production export workflows
+| Platform / package | What happens | Install location / shortcut |
+| --- | --- | --- |
+| Windows `PreviewGen-Setup.exe` | Inno Setup wizard | Choose the destination; Start Menu entry and optional Desktop icon |
+| Windows `PreviewGen-Windows.zip` | Portable application | Extract before running `PreviewGen.exe`; no setup wizard |
+| macOS `PreviewGen-macOS.dmg` | macOS app disk image | Drag `PreviewGen.app` to Applications |
+| Linux `PreviewGen-Linux.AppImage` | Standalone AppImage | Make executable; desktop integration depends on your environment |
 
----
+### Windows PowerShell setup
 
-## 💡 Why You Should Use PreviewGen
+The optional script downloads the **latest published** `PreviewGen-Setup.exe`, checks its SHA-256 against the release manifest and opens the **interactive** installer:
 
-1. **Reclaim Hours of Your Week**: Stop doing repetitive monkey-work in Photoshop. Load your folder, click one button, and let the background worker handle thousands of assets while you focus on creating art.
-2. **Increase Submission Approval Rates**: Reviewers on platforms like Freepik accept submissions faster when previews follow the industry-standard diagonal split convention.
-3. **Studio-Grade Control**: Whether your brand uses pure white, off-white, light gray, or dark solid backgrounds, customize colors with the interactive palette and instant live preview.
-4. **Responsive Native Desktop UI**: An asynchronous background renderer keeps the bridge usable during large batches. Preview and 3D-orbit smoothness depend on model complexity, output size and GPU; no fixed frame rate is guaranteed.
-
----
-
-## ⚡ Install PreviewGen
-
-On Windows, the standard setup wizard lets you choose the installation folder and optional Desktop shortcut. The portable ZIP does not open an installation wizard.
-
-### 🪟 Windows (PowerShell)
-Open PowerShell and run:
 ```powershell
-irm https://raw.githubusercontent.com/Mustaqeem66/Freepik-Preview-Generator/main/install.ps1 | iex
-```
-- Downloads `PreviewGen-Setup.exe` from the latest published GitHub release, or the release specified by `PREVIEWGEN_VERSION`.
-- Requires `SHA256SUMS.txt` and verifies the downloaded installer before launching it.
-- Opens the Inno Setup wizard for destination choice, Start Menu integration, an optional Desktop shortcut, uninstallation and optional launch.
-- Code-signing reputation and Windows SmartScreen warnings are separate from checksum verification.
-- Review downloaded scripts before executing them in PowerShell.
-
-### 🍎 macOS (Terminal)
-Open **Terminal** and run:
-```bash
-curl -fsSL https://raw.githubusercontent.com/Mustaqeem66/Freepik-Preview-Generator/main/install.sh | bash
-```
-- Installs directly to `/Applications/PreviewGen.app`
-- Verifies the downloaded disk image against the release `SHA256SUMS.txt` and aborts if it is missing or mismatched
-- Creates a **Desktop Shortcut** (`~/Desktop/PreviewGen.app`)
-- Launches PreviewGen automatically
-- Does **not** clear Apple's quarantine attribute; if Gatekeeper blocks the first launch, open the app once with right-click > Open
-
----
-
-### 🐧 Linux (Terminal)
-Open your terminal and run:
-```bash
-curl -fsSL https://raw.githubusercontent.com/Mustaqeem66/Freepik-Preview-Generator/main/install.sh | bash
-```
-- Installs standalone AppImage to `~/.local/bin/previewgen`
-- Configures permissions (`chmod +x`) and installs system icon
-- Registers desktop entry (`previewgen.desktop`) and creates **Desktop Shortcut**
-- Launches PreviewGen automatically
-
----
-
-## 📦 Alternative: Manual Download (GitHub Releases)
-
-Prefer downloading manually?
-1. Visit the [**Latest Releases**](https://github.com/Mustaqeem66/Freepik-Preview-Generator/releases/latest).
-2. Download your platform package:
-   - **Windows (Installer Wizard)**: `PreviewGen-Setup.exe` — Complete setup wizard with License Agreement, custom directory picker, and Desktop icon checkbox.
-   - **Windows (Portable)**: `PreviewGen-Windows.zip` — Extract and double-click `Install-Desktop-Icon.bat`.
-   - **macOS**: `PreviewGen-macOS.dmg` — Open the DMG and drag `PreviewGen.app` to Applications; if Gatekeeper blocks the first launch, open it once with right-click > Open.
-   - **Linux**: `PreviewGen-Linux.AppImage` — Run `chmod +x PreviewGen-Linux.AppImage` and double-click.
-
----
-
-## 📖 How to Use PreviewGen (Step-by-Step Guide)
-
-PreviewGen makes bulk preview creation effortless in 6 simple steps:
-
-```
- 1. Select Folder ──► 2. Browse Files ──► 3. Adjust 3D Angle ──► 4. Add Brand Logo ──► 5. Pick Colors ──► 6. Batch Export!
-    (or ZIP file)       (◀ Prev / Next ▶)   (Orbit 360° View)      (Freeform Sliders)     (Diagonal Split)     (1-Click JPGs)
+irm https://raw.githubusercontent.com/mustaqeem66/Freepik-Preview-Generator/main/install.ps1 | iex
 ```
 
-1. **Select Input Folder (or ZIP Archive)**:
-   - Click **Browse…** in panel `1 · Folders` or paste your folder path directly into the input box and press Enter!
-   - 💡 **Best Practice (Clean Batches)**: For consistent branding and maximum speed, organize your files into dedicated folders containing **one type of asset at a time** (e.g. one folder with all your `.png` cutouts, another folder with `.psd` files, and another with your `.glb`/`.obj` 3D models). This ensures 3D camera angles and watermark settings remain perfectly calibrated for the entire batch.
-   - Use the **`◀ Prev`** and **`Next ▶`** buttons in the toolbar (or press **Left/Right Arrow keys** on your keyboard) to preview any asset in your folder instantly.
-3. **Rotate 3D Models & CAD Solids in Full 360°**:
-   - Click and drag your mouse directly on the preview image to orbit the model in 360°.
-   - Or click an angle preset like **Isometric (3/4)**, **Front**, **Side**, **Top**, or **Back**.
-4. **Add Brand Watermarks (Logo, Text, or Both)**:
-   - Upload your logo image (`.png`, `.svg`, `.ico`) and adjust **Scale** and **Opacity**.
-   - Upload custom brand fonts (`.ttf`, `.otf`, `.woff`) for watermark text.
-   - Use the **X** and **Y** position sliders to place your logo and watermark text at any exact percentage coordinate on the canvas.
-5. **Choose Split Direction & Background Color**:
-   - Choose whether the solid color sits on the Left or Right half.
-   - Click the color swatch or choose a preset (White, Off-White, Light Gray, Dark).
-6. **Click "Generate All JPG Previews"**:
-   - The asynchronous worker processes files in the background without freezing the UI.
-   - Optionally enable **Desktop notifications** in Settings to receive an OS notification when a batch finishes (off by default; requires system notification permission).
-   - Once finished, click **Open Output Folder** to inspect your ready-to-upload marketplace JPG previews!
+Review [install.ps1](install.ps1) before executing downloaded scripts. The installer **does not automatically update** when a new commit lands on `main`. To install a specific published tag, set `PREVIEWGEN_VERSION` before running the script.
 
----
+**Wizard versus portable:** Double-clicking the `PreviewGen.exe` inside the ZIP launches the app directly. It is *not* supposed to show an installation wizard. Download `PreviewGen-Setup.exe` if you want a selectable destination and normal uninstaller.
 
+Windows may show a SmartScreen publisher warning for unsigned or unrecognized builds. A SHA-256 match protects against download corruption but does not establish publisher identity. Never bypass OS protections without checking the source and release provenance.
 
-## 🚀 Key Features
+On macOS/Linux, review [install.sh](install.sh) before using the optional terminal installer.
 
-### 1. Multi-Format 2D Ingestion (PNG, WebP, SVG, TIFF, PSD)
-- **PNG**: Pixel-perfect alpha compositing with zero canvas crop or distortion.
-- **WebP**: Full support for modern web & mobile transparent assets, with animated WebP keyframe fallback.
-- **SVG Vector**: Smooth vector rasterization with exact dimension preservation using high-performance `resvg`.
-- **TIFF / TIF**: High-bit-depth cutouts with Pillow's built-in CMYK/YCbCr to RGB conversion. Embedded ICC profile management is not performed.
-- **PSD (Photoshop)**: Headless composite layer extraction directly from Photoshop binaries via `psd-tools` — no Adobe software required!
+## First-run workflow
 
-### 2. Full 360° 3D Model Studio (GLB, GLTF, OBJ, STL, PLY, BLEND)
-- **360° Interactive Orbit**: Click and drag your mouse directly on the preview image to rotate 3D models from any angle in real-time.
-- **Zero-Distortion Mesh Rendering**: Complex geometries (such as car models, thin vehicle panels, wheels, and interior parts) preserve their exact vertices, normals, and submesh transforms without destructive mesh decimation.
-- **Zero-Dependency .blend Previews**: Extracts embedded preview renders directly from `.blend` file headers in pure Python—no need to install Blender!
-- **Studio Angle Presets**: 1-click presets for **Isometric 3/4**, **Front**, **Side**, **Top**, and **Back** views with sliding pill animations.
-- **Fine-Grained Controls**: Sliders for horizontal **Yaw (0°–360°)** and vertical **Pitch (-85° to +85°)** with two-sided directional lighting.
+1. Click **Choose Input Folder** and select the folder containing your source files. You can also paste a folder path. **The native folder-selection dialog intentionally hides individual files**; selecting a folder initiates discovery inside it.
+2. Wait for the **Assets** library to populate. If the scan finds nothing, check the folder contents and file formats; if it stops at a safety limit or is cancelled, the results may be partial.
+3. Select an asset and adjust its **Background**, **Watermark** and any available **3D camera** options.
+4. In **Destination**, optionally choose **Same as input** or use a dedicated output folder.
+5. Choose the overwrite behavior and export dimensions, then use **Generate Previews** (batch) or single-file export.
+6. Use **Open Output Folder** to inspect JPGs and the batch report. A JPG has an opaque background: the checkerboard visualization is printed, not actual JPG transparency.
 
-### 3. CAD & Engineering Formats (DXF, DWG, MAX, F3D, MB, STEP, IGES)
-- **AutoCAD DXF (`.dxf`)**: Vector path & geometry rasterization via `ezdxf` with automatic line drawing transparency conversion.
-- **AutoCAD DWG (`.dwg`)**: Pure Python binary header extraction of embedded BMP/PNG thumbnail sections without needing AutoCAD.
-- **Autodesk 3ds Max (`.max`)**: OLE Structured Storage thumbnail extraction via `olefile`—reads the embedded viewport render.
-- **Autodesk Fusion 360 (`.f3d`)**: Native archive decompression extracting pre-rendered high-res thumbnails.
-- **Autodesk Maya (`.mb`, `.ma`)**: Header IFF / base64 swatch parser extracting viewport preview chunks.
-- **Universal Solids (`.step`, `.stp`, `.iges`, `.igs`)**: Converts B-Rep engineering solids directly into 3D meshes for 360° interactive orbit!
+The input and output selectors are **folder** pickers, not individual multi-file pickers. Direct file selection and drag-and-drop are planned, not currently implemented.
 
-### 4. Custom Brand Logo & Icon Overlay
-- **Upload Any Logo**: Upload brand watermarks (`.png`, `.webp`, `.svg`, `.ico`).
-- **Independent Sizing & Opacity**: Scale logos from 20% to 250% and adjust opacity from 10% to 100%.
-- **Freeform Position Sliders**: Position logos and text anywhere with continuous horizontal (X: 0–100%) and vertical (Y: 0–100%) offset sliders.
-- **Dual Branding**: Run logo only, text watermark only, or display both concurrently.
+## Format support and limitations
 
-### 5. Bounded ZIP Member Extraction & Auto-Cleanup
-- **Depth-Capped Nested Extraction**: Scans supported files inside folder levels within a `.zip`, and unpacks nested `.zip` archives up to 2 levels deep on a single shared byte budget; archives left unpacked are reported in the batch summary instead of being skipped silently.
-- **Zip-Slip and Resource Limits**: Rejects escaping paths and enforces member, size, depth and timeout budgets.
-- **Metadata Rejection**: Skips `__MACOSX`, `.DS_Store`, `._*` AppleDouble files, and `Thumbs.db`.
-- **Path-Collision Protection**: Automatically prefixes folder slugs (e.g. `archive_assets_vectors_icon.jpg`) if duplicate file names exist across different subfolders.
-- **Safe Auto-Cleanup**: Automatically deletes all temporary unzipped artifacts immediately upon completion across Windows, macOS, and Linux.
+The configured discovery extensions are:
 
-### 6. Diagonal Split Backgrounds
-- **Two Equal-Area Triangles**: Cuts the canvas from corner to corner.
-- **Directional Flip**: Choose between *Left Solid / Right Transparent* or *Left Transparent / Right Solid*.
-- **Interactive Color Palette**: Pick any custom hex color or select from one-click presets (White, Off-White, Light Gray, Dark).
+| Group | Extensions | Important qualification |
+| --- | --- | --- |
+| Raster/layered | `.png`, `.webp`, `.tif`, `.tiff`, `.psd` | Layered/composite and color handling vary by source |
+| Vector | `.svg`, `.svgz`, `.ai`, `.eps` | Some formats require a usable embedded preview or renderer support |
+| 3D | `.glb`, `.gltf`, `.obj`, `.stl`, `.ply`, `.3mf`, `.dae`, `.blend` | Models may exceed memory/geometry limits; native project files may expose thumbnails only |
+| CAD / design | `.dxf`, `.dwg`, `.max`, `.f3d`, `.mb`, `.ma`, `.step`, `.stp`, `.iges`, `.igs` | CAD conversion and embedded-thumbnail extraction differ by format |
+| Creator/font | `.procreate`, `.brush`, `.brushset`, `.clip`, `.kra`, `.afdesign`, `.afphoto`, `.afpub`, `.indd`, `.abr`, `.ttf`, `.otf`, `.woff`, `.woff2` | Not every asset has a visually meaningful standalone preview |
+| Archives | `.zip` | Bounded member extraction, depth, size and time limits |
 
-### 7. Typography, Custom Fonts & Outline Engine
-- **Custom Font Upload**: Click **Browse Font File…** to load any `.ttf`, `.otf`, or `.woff` font file from your PC and render watermarks in your exact brand typography.
-- **Customizable Label**: Defaults to `100% TRANSPARENT`, or enter your own custom text (or leave blank).
-- **Outer Outline / Stroke**: Toggleable stroke with custom color and thickness (Thin, Normal, Medium, Thick, Extra Bold) so text remains readable over any image.
-- **Live Sliders**: Real-time Font Scale (50% to 180%) and Text Opacity (10% to 100%).
+Files that are encrypted, malformed, unsupported by the specific renderer or beyond resource limits can fail individually. Do not treat a scan listing an extension as proof every source of that type will render.
 
----
+## Troubleshooting
 
-## 📸 App Preview & Visual Showcase
+### Windows says “PreviewGen (Not Responding)”
 
-### Light Mode (graphite-neutral `#ececef` surface with `#f7f7f9` cards)
-<p align="center">
-  <img src="preview-light.png" alt="PreviewGen Light Mode Interface" width="850">
-</p>
+A faded window and “Not Responding” in the title bar mean Windows believes the desktop window is **not processing messages**. This cannot be diagnosed from a screenshot alone. An unresponsive native WebView2 window, blocking filesystem activity, modal system dialog, renderer failure or a graphics-driver problem can look similar.
 
-### Dark Mode (`#161618` surface with `#202023` panels)
-<p align="center">
-  <img src="preview-dark.png" alt="PreviewGen Dark Mode Interface" width="850">
-</p>
+**Before force-closing the app:**
 
----
+1. Wait briefly, especially if selecting a large/network folder, opening a picker, or ending a batch. Note whether the issue occurs **at launch**, **while idle**, **after opening a folder**, **during preview**, or **on exit**.
+2. If the interface still responds, click **Diagnostics** in the toolbar. Otherwise open `%LOCALAPPDATA%\PreviewGen\logs` in File Explorer and inspect `previewgen.log`.
+3. Search for `HANG DIAGNOSTIC`, `WATCHDOG`, `ERROR` and traceback messages. Newer source builds probe the Windows message pump even while idle and record Python stacks after repeated timeouts. These logs establish **where Python threads were**, not necessarily the cause of a native WebView2 hang.
+4. Check Windows Event Viewer → Windows Logs → Application for an associated crash or hang event. Check whether the **Microsoft Edge WebView2 Runtime** is installed and functioning.
+5. Retry after restarting the app, then test a small local folder of PNGs. Record your Windows version, GPU, app version and exact steps.
 
-## 💻 Developer Quickstart (Run from Source)
+If the app is fully frozen, Task Manager → **Details** → right-click `PreviewGen.exe` → **Create memory dump file** may help native debugging. **Do not post dumps publicly**: they may contain artwork, full file paths, tokens or personal data. Redact identifying paths in logs too. Open a GitHub issue with non-sensitive steps and a redacted excerpt.
 
-CI builds with **Python 3.12.8** and **Node.js 24.15.0** (see `.github/workflows/build.yml`).
+This repository includes a *diagnostic watchdog*, not an automatic hang cure. Reproducing the Windows freeze and inspecting the resulting traces are still required to confirm the native root cause.
+
+### Folder dialog says “No items match your search”
+
+That is expected if the current directory contains only files: **Choose Input Folder** displays subfolders, not individual images. Select the folder itself using **Select Folder**; the asset list is scanned afterward.
+
+### No supported assets found
+
+Check the selected path, file extensions, access permissions and whether the scan ended partially. Files hidden inside unsupported or encrypted containers may not be discoverable.
+
+### Setup does not appear
+
+Use **`PreviewGen-Setup.exe`**, not the `PreviewGen.exe` extracted from the portable ZIP. Check the installer filename, release tag and Windows security dialogs.
+
+### Batch or renderer errors
+
+Review the output report and `previewgen.log`. Try a single small asset of the same format, then compare results. Limits exist to protect the machine from oversized or malformed input.
+
+## Run from source
+
+Development versions use **Python 3.12.8** and **Node.js 24.15.0** in CI.
 
 ```bash
-# Clone the repository
-git clone https://github.com/Mustaqeem66/Freepik-Preview-Generator.git
+git clone https://github.com/mustaqeem66/Freepik-Preview-Generator.git
 cd Freepik-Preview-Generator
-
-# Set up virtual environment
 python -m venv .venv
-source .venv/bin/activate       # On Windows: .venv\Scripts\activate
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+# macOS/Linux: source .venv/bin/activate
+python -m pip install --require-hashes -r requirements-dev-lock.txt
 
-# Install dependencies
-# Reproducible, hash-pinned install (recommended, byte-for-byte reproducible builds):
-pip install --require-hashes -r requirements-lock.txt
-# Or, for development/build work (adds pytest, ruff, pyinstaller at pinned versions):
-# pip install --require-hashes -r requirements-dev-lock.txt
-# Loose top-level spec (resolves to the latest matching versions):
-# pip install -r requirements.txt
+cd frontend
+npm ci
+npm run typecheck
+npm test
+npm run build
+cd ..
 
-# Run Desktop Studio (pywebview + React + Vite)
 python app.py
-
-# Or run with Python launcher
-python main.py
 ```
 
-### ✅ Verifying a build (reproducible audit)
-
-Prove every advertised format works on a given machine with one command (no
-frozen build required):
+**Checks used by pull-request CI:**
 
 ```bash
-# 1. Confirm all mandatory renderer engines resolve (raster, SVG, PSD, 3D, DXF, STEP, text)
+python -m ruff check .
+python -m pytest tests/ -q
+cd frontend && npm run typecheck && npm test && npm run build
+```
+
+Additional renderer/environment checks (dependent on system libraries and fixture availability):
+
+```bash
 python scripts/verify_environment.py
-
-# 2. Run the full Python suite (add PREVIEWGEN_REQUIRE_FRONTEND_BUNDLE=1 to require the React bundle)
-python -m pytest tests/ -v
-
-# 3. Render every deterministic fixture through the real renderer stack
 python app.py --render-test-all --fixtures tests/fixtures
 ```
 
-Notes for independent audits:
+To make release binaries, use the checked-in workflows; a frontend unit test or Linux build is not proof that the Windows installer, native dialogs and WebView2 message loop work on a clean Windows VM. Release-signing and notarization credentials are needed for official tagged builds.
 
-- The **frontend** gate is Node 24.15.0: `cd frontend && npm ci && npm run typecheck && npm test && npm run build`.
-  `npm ci` must finish before `vitest`/`vite` exist; a time-limited sandbox should allow it to complete.
-- The **packaged gate** (`tests/integration/test_release_renderers_gate.py`) exercises the frozen
-  binary when `PREVIEWGEN_BINARY` points at a built `dist/PreviewGen/PreviewGen[.exe]` and
-  `PREVIEWGEN_RELEASE_GATE=1` is set; otherwise those tests skip.
-- `scripts/verify_environment.py` reports which optional engines (`olefile`, `pypdfium2`, `brotli`)
-  are missing; only the mandatory engines block a release.
+## Architecture
 
----
+```text
+React UI / TypeScript
+    ↕ typed pywebview bridge + operation IDs
+DesktopApi (Python)
+    ├── ScannerService — bounded discovery
+    ├── PreviewCoordinator / ProbeCoordinator — isolated workers
+    ├── LifecycleManager — batch cancellation / orderly shutdown
+    ├── PreviewFileServer — tokenized loopback JPEG delivery
+    ├── Settings — validated, locally stored preferences
+    └── UI watchdog — diagnostic-only native responsiveness checks
+```
 
-## 📜 License
+Design direction and outstanding work are tracked in [Premium UI/UX Plan](docs/PREMIUM_UI_UX_PLAN.md) and [Remediation TODO](docs/REMEDIATION_TODO.md). Further priorities: actual multi-file import, resizable panes, searchable thumbnails, explicit renderer capability results, Windows UI scaling tests, and measured performance.
 
-PreviewGen is released under the **MIT License**. It is free to use, modify,
-and distribute for **personal and commercial** projects.
+## Screenshots
 
-You may use it to generate previews for marketplace assets, client work,
-agency production, products, or internal business workflows at no cost.
-The only requirement is that the copyright notice and permission notice are
-included in copies or substantial portions of the software. The software is
-provided **without warranty**.
+| Light theme | Dark theme |
+| --- | --- |
+| ![PreviewGen light theme](preview-light.png) | ![PreviewGen dark theme](preview-dark.png) |
 
-See [LICENSE](LICENSE) for the full text.
+## Privacy and security
 
----
+PreviewGen is designed for local processing. It stores settings, temporary previews, logs and output files on the user's machine. The preview server listens on loopback; there is no artwork upload step in the standard workflow. Native OS notifications are optional. You are responsible for reviewing files and redacting logs/dumps before sharing them.
 
-## 🤝 Sponsorships & Partnerships
+Please report security issues privately as described in [SECURITY.md](SECURITY.md). See [LICENSE](LICENSE) for the MIT license.
 
-Are you a design agency, marketplace vendor, or tool developer interested in supporting PreviewGen, requesting custom integrations, or featuring your brand?
+## Contributions and support
 
-We welcome sponsors and partners! Get in touch directly:
-- **Email**: [zenartisan66@gmail.com](mailto:zenartisan66@gmail.com)
-- **Subject**: `PreviewGen Sponsorship / Partnership`
+Pull requests should include tests, a reason for the change and a note about Windows/macOS/Linux behavior. Use [GitHub Issues](https://github.com/mustaqeem66/Freepik-Preview-Generator/issues) for reproducible non-sensitive defects and feature requests.
 
----
-
-## 👤 Author
-
-Created with care by **[Mustaqeem66](https://github.com/Mustaqeem66)** (ZenArtisan).  
-If PreviewGen saves you time, please give the repository a **⭐ Star** on GitHub!
+Maintained by [Mustaqeem66](https://github.com/mustaqeem66). Feedback and contributions are welcome.
