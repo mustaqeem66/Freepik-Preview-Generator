@@ -223,6 +223,8 @@ export default function App() {
               onClick={() => selectIndex(currentIdx + 1)}><ChevronRight size={16} /></button></div></div>
         <div className="canvas-stage"><PreviewCanvas previewUrl={previewUrl} isLoading={isLoading} renderError={renderError}
           name={previewFile?.name || ""} width={previewMeta.width} height={previewMeta.height} is3D={is3D && !busy}
+          hasSourceFolder={Boolean(state.inputFolder)} canChooseFolder={!busy && capabilities.canBrowse && isLoaded}
+          onChooseFolder={() => void browse("browse_input_folder")}
           yaw={state.yaw} pitch={state.pitch} onOrbit={(yaw, pitch) => setState((previous) => ({ ...previous, yaw, pitch }))} />
           <ExportSizePanel filePath={activeFile?.path} probe={probe} isProbing={isProbing} aspectWidth={previewMeta.width} aspectHeight={previewMeta.height}
             outputWidth={state.outputWidth} outputHeight={state.outputHeight}
