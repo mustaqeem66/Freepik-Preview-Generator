@@ -46,7 +46,7 @@ This checklist compares the public GitHub branch with the user-supplied `Preview
 
 ## Security, operations and performance
 
-- [ ] Restrict bridge path authorization to user-selected or committed roots (no implicit expansion during export).
+- [x] Restrict bridge path authorization to user-selected or committed roots (no implicit expansion during export).
 - [ ] Add and regression-test a restrictive CSP compatible with packaged frontend and pywebview.
 - [ ] Review untrusted ZIP, Blender, DXF, CAD, font, SVG and model parsing and subprocess time budgets.
 - [ ] Replace per-file process spawn only after a measured, isolated worker-pool design passes cancellation and crash tests.

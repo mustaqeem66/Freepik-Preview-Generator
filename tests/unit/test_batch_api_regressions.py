@@ -34,6 +34,7 @@ def test_single_export_skip_corrupt_target(tmp_path):
     Image.new("RGB", (32, 32), "red").save(source)
     output.write_bytes(b"not a valid jpeg")
     api = DesktopApi()
+    api.add_authorized_folder(tmp_path)  # Simulates the user-selected root from the folder picker
     result = api.export_preview(str(source), {
         "outputFolder": str(tmp_path), "overwritePolicy": "skip"
     })
@@ -49,12 +50,37 @@ def test_single_export_rename_does_not_overwrite(tmp_path):
     Image.new("RGB", (32, 32), "red").save(source)
     output.write_bytes(b"existing output")
     api = DesktopApi()
+    api.add_authorized_folder(tmp_path)
     result = api.export_preview(str(source), {
         "outputFolder": str(tmp_path), "overwritePolicy": "rename"
     })
     assert result["ok"]
     assert result["value"]["path"].endswith("asset_copy1.jpg")
     assert output.read_bytes() == b"existing output"
+
+
+def test_single_export_rejects_unauthorized_output(tmp_path):
+    source = tmp_path / "asset.png"
+    Image.new("RGB", (32, 32), "red").save(source)
+    outside = tmp_path.parent / f"unauthorized_out_{tmp_path.name}"
+    api = DesktopApi()
+    result = api.export_preview(str(source), {"outputFolder": str(outside)})
+    assert result["ok"] is False
+    assert result["error"] == "UNAUTHORIZED_PATH"
+    assert not outside.exists()
+
+
+def test_single_export_same_folder_requires_authorized_source_root(tmp_path):
+    source = tmp_path / "asset.png"
+    Image.new("RGB", (32, 32), "red").save(source)
+    api = DesktopApi()
+    result = api.export_preview(str(source), {})
+    assert result["ok"] is False
+    assert result["error"] == "UNAUTHORIZED_PATH"
+    api.add_authorized_folder(tmp_path)
+    result = api.export_preview(str(source), {})
+    assert result["ok"] is True, result
+    assert (tmp_path / "asset.jpg").is_file()
 
 
 def test_batch_start_returns_id_and_emits_typed_events(tmp_path):
