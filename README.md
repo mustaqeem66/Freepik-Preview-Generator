@@ -1,23 +1,31 @@
 <div align="center">
 
-# PreviewGen Studio
+<h1>PreviewGen Studio</h1>
 
-### Turn creative assets into presentation-ready JPG previews — right on your desktop.
+<p><strong>Turn creative assets into presentation-ready JPG previews — right on your desktop.</strong></p>
 
-**A free, open-source preview studio for digital artists, designers, stock contributors and 3D creators.**
+<p>A free, open-source studio for digital artists, designers, marketplace contributors and 3D creators.<br>
+Choose artwork, refine its presentation and generate consistent JPG previews in batches.</p>
 
-Select a folder of artwork, preview each asset, customize its appearance and export polished JPG previews in batches — without manually rebuilding the same composition for every file.
+<p>
+  <a href="https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/latest"><strong>Download PreviewGen</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#getting-started">Get started</a>
+  &nbsp;·&nbsp;
+  <a href="#what-previewgen-can-do">Explore features</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/mustaqeem66/Freepik-Preview-Generator/issues">Report an issue</a>
+</p>
 
-[**Download PreviewGen**](https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/latest) · [**Get started**](#getting-started) · [**Explore features**](#what-previewgen-can-do) · [**Report an issue**](https://github.com/mustaqeem66/Freepik-Preview-Generator/issues)
-
-![GitHub release](https://img.shields.io/github/v/release/mustaqeem66/Freepik-Preview-Generator?label=latest%20release)
-![MIT License](https://img.shields.io/github/license/mustaqeem66/Freepik-Preview-Generator)
-![Windows](https://img.shields.io/badge/Windows-Desktop-0078D4)
-![macOS](https://img.shields.io/badge/macOS-Desktop-555555)
-![Linux](https://img.shields.io/badge/Linux-AppImage-FCC624)
+<p>
+  <img src="https://img.shields.io/github/v/release/mustaqeem66/Freepik-Preview-Generator?label=latest%20release" alt="Latest GitHub release">
+  <img src="https://img.shields.io/github/license/mustaqeem66/Freepik-Preview-Generator" alt="MIT license">
+  <img src="https://img.shields.io/badge/Windows-Desktop-0078D4" alt="Windows">
+  <img src="https://img.shields.io/badge/macOS-Desktop-555555" alt="macOS">
+  <img src="https://img.shields.io/badge/Linux-AppImage-FCC624" alt="Linux">
+</p>
 
 </div>
-
 ---
 
 ## Meet PreviewGen
@@ -159,7 +167,7 @@ Use the official [**GitHub Releases page**](https://github.com/mustaqeem66/Freep
 3. Run the setup wizard, choose your install directory, optionally select **Create a desktop icon**, and finish.
 4. Launch PreviewGen from Start or its desktop shortcut.
 
-The installer is configured for a **per-user installation**, with a default location under `%LOCALAPPDATA%\\Programs\\PreviewGen`. It provides a normal uninstaller through Windows Apps settings.
+The installer is configured for a **per-user installation**, with a default location under `%LOCALAPPDATA%\Programs\PreviewGen`. It provides a normal uninstaller through Windows Apps settings.
 
 **Option B: PowerShell installation**
 
@@ -256,8 +264,8 @@ If **Microsoft Defender SmartScreen** warns about an unrecognized app:
 Check a Windows download's hash in PowerShell:
 
 ```powershell
-Get-FileHash .\\PreviewGen-Setup.exe -Algorithm SHA256
-Get-AuthenticodeSignature .\\PreviewGen-Setup.exe | Format-List Status, SignerCertificate
+Get-FileHash .\PreviewGen-Setup.exe -Algorithm SHA256
+Get-AuthenticodeSignature .\PreviewGen-Setup.exe | Format-List Status, SignerCertificate
 ```
 
 Compare the SHA-256 value with the `PreviewGen-Setup.exe` entry in the same release's `SHA256SUMS.txt`. A missing publisher signature may explain a reputation warning, but a matching SHA-256 by itself does not prove a file is benign.
@@ -383,7 +391,7 @@ git clone https://github.com/mustaqeem66/Freepik-Preview-Generator.git
 cd Freepik-Preview-Generator
 
 python -m venv .venv
-# Windows PowerShell: .venv\\Scripts\\Activate.ps1
+# Windows PowerShell: .venv\Scripts\Activate.ps1
 # macOS / Linux: source .venv/bin/activate
 
 python -m pip install --require-hashes -r requirements-dev-lock.txt
@@ -428,13 +436,14 @@ Contributions, reproducible bug reports, renderer fixtures and UI suggestions ar
 ---
 
 <div align="center">
-
-### Make every asset presentation-ready.
-
-**Created and maintained by [Mustaqeem66](https://github.com/mustaqeem66) (ZenArtisan).**
-
-[Download the latest release](https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/latest) · [View source](https://github.com/mustaqeem66/Freepik-Preview-Generator) · [Report an issue](https://github.com/mustaqeem66/Freepik-Preview-Generator/issues)
-
-If PreviewGen helps with your creative workflow, consider starring the repository.
-
+<h3>Make every asset presentation-ready.</h3>
+<p><strong>Created and maintained by <a href="https://github.com/mustaqeem66">Mustaqeem66</a> (ZenArtisan).</strong></p>
+<p>
+  <a href="https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/latest">Download the latest release</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/mustaqeem66/Freepik-Preview-Generator">View source</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/mustaqeem66/Freepik-Preview-Generator/issues">Report an issue</a>
+</p>
+<p>If PreviewGen helps with your creative workflow, consider starring the repository.</p>
 </div>
