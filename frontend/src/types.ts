@@ -79,6 +79,7 @@ export interface PreviewState {
   pitch: number;
   modelColor?: string;
   theme: "light" | "dark";
+  desktopNotifications: boolean;
   overwritePolicy?: "overwrite" | "skip" | "rename";
   outputWidth: number;
   outputHeight: number;
