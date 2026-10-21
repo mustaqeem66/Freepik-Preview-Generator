@@ -78,4 +78,40 @@ describe("useSettings hook", () => {
       expect(revisions[i]).toBeGreaterThan(revisions[i - 1]);
     }
   });
+  it("retries a transient disk failure without losing the latest settings snapshot", async () => {
+    ApiBridge.clearCache();
+    const onSaveError = vi.fn();
+    let calls = 0;
+    const saved: string[] = [];
+    const fakeApi = {
+      get_initial_state: async () => ({ ok: true, value: {}, error: null }),
+      save_settings: async (settings: { text: string }) => {
+        calls += 1;
+        if (calls === 1) return { ok: false, error: "temporary disk error" };
+        saved.push(settings.text);
+        return { ok: true, value: true, error: null };
+      },
+    };
+    // @ts-expect-error mock window.pywebview
+    window.pywebview = { api: fakeApi };
+    const { result } = renderHook(() => useSettings(onSaveError));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    await act(async () => result.current.setState((prev) => ({ ...prev, text: "Retried value" })));
+    await waitFor(() => expect(result.current.saveStatus).toBe("saved"), { timeout: 4000 });
+    expect(saved).toContain("Retried value");
+    expect(onSaveError).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks settings unsaved when the save bridge disappears", async () => {
+    ApiBridge.clearCache();
+    const fakeApi = {
+      get_initial_state: async () => ({ ok: true, value: {}, error: null }),
+      save_settings: async () => { throw new Error("disconnected"); },
+    };
+    // @ts-expect-error mock window.pywebview
+    window.pywebview = { api: fakeApi };
+    const { result } = renderHook(() => useSettings());
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    await waitFor(() => expect(result.current.saveStatus).toBe("error"), { timeout: 2500 });
+  });
 });

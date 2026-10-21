@@ -113,4 +113,35 @@ describe("FileList virtualization", () => {
     rerender(<FileList files={files} activeIndex={50} onSelect={() => {}} height={200} />);
     expect(list.getAttribute("aria-activedescendant")).toBe("/assets/asset-50.png");
   });
+  it("filters filenames without changing the original selection index", () => {
+    const files = makeFiles(40);
+    const onSelect = vi.fn();
+    render(<FileList files={files} activeIndex={0} onSelect={onSelect} height={200} />);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "asset-27" } });
+    const rows = screen.getAllByTestId("file-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].getAttribute("data-asset-id")).toBe("/assets/asset-27.png");
+    fireEvent.click(rows[0]);
+    expect(onSelect).toHaveBeenCalledWith(27);
+    expect(screen.getByTestId("file-list").getAttribute("aria-activedescendant")).toBeNull();
+  });
+
+  it("keeps offscreen active descendants mounted for screen readers", () => {
+    const files = makeFiles(200);
+    render(<FileList files={files} activeIndex={120} onSelect={() => {}} height={200} />);
+    const list = screen.getByTestId("file-list");
+    const selectedId = list.getAttribute("aria-activedescendant");
+    expect(selectedId).toBe("/assets/asset-120.png");
+    expect(document.getElementById(selectedId as string)).not.toBeNull();
+    expect(screen.getAllByTestId("file-row").length).toBeLessThanOrEqual(14);
+  });
+
+  it("does not dispatch invalid navigation when search finds zero items", () => {
+    const onSelect = vi.fn();
+    render(<FileList files={makeFiles(20)} activeIndex={0} onSelect={onSelect} height={200} />);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "nope-no-match" } });
+    fireEvent.keyDown(screen.getByTestId("file-list"), { key: "ArrowDown" });
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.getByText(/No matching assets/)).toBeTruthy();
+  });
 });

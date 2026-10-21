@@ -203,6 +203,14 @@ class DesktopApi:
     def get_initial_state(self) -> dict[str, Any]:
         """Load persistent user preferences with schema version validation."""
         validated = load_settings()
+        # Paths restored from this user's on-disk preferences should retain the
+        # native folder-picker authorization across desktop restarts. This is
+        # a local-user trust decision, not a security boundary against malware
+        # that can already edit the settings file on disk.
+        for key in ("inputFolder", "outputFolder"):
+            selected = validated.get(key)
+            if isinstance(selected, str) and selected.strip() and Path(selected).is_dir():
+                self.add_authorized_folder(selected)
         return {"ok": True, "value": validated, "error": None}
 
     def save_settings(self, settings_dict: dict[str, Any]) -> dict[str, Any]:
@@ -695,10 +703,13 @@ class DesktopApi:
             if not output.parent.is_dir():
                 raise ValueError("Output folder parent does not exist")
             op_id = f"batch_{uuid.uuid4().hex[:12]}"
-            # Commit the user-chosen roots so the batch may write inside them;
-            # export never authorizes new paths implicitly.
-            self.add_authorized_folder(source)
-            self.add_authorized_folder(output)
+            # Never authorize a destination just because JavaScript requested it.
+            # Source roots come from the folder chooser or scan workflow; output
+            # roots come from the native chooser or restored saved preferences.
+            if not self.is_authorized_path(source):
+                return {"ok": False, "error": "UNAUTHORIZED_INPUT_PATH"}
+            if not self.is_authorized_path(output):
+                return {"ok": False, "error": "UNAUTHORIZED_OUTPUT_PATH"}
             with self._batch_start_lock:
                 self._batch_operation_id = op_id
                 self.lifecycle.start_batch(
