@@ -180,7 +180,8 @@ export interface PyWebViewApi {
   open_folder: (
     path: string
   ) => Promise<{ ok: boolean; value: boolean | null; error: string | null; message?: string }>;
-  open_diagnostics_folder?: () => Promise<{ ok: boolean; error: string | null }>;
+  // Delegates to open_folder(), so it can carry the same NO_FOLDER_OPENER message.
+  open_diagnostics_folder?: () => Promise<{ ok: boolean; error: string | null; message?: string }>;
   start_scan: (path: string, paged?: boolean) => Promise<{ ok: boolean; scanId: string }>;
   cancel_scan: (scanId?: string) => Promise<{ ok: boolean; cancelled?: boolean; error?: string } | void>;
   get_scan_page?: (scanId: string, offset: number, limit: number) => Promise<ApiResponse<{
