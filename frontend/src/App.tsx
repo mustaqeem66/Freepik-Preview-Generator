@@ -447,7 +447,7 @@ export default function App() {
             aria-label={compareRequested ? "Exit Before and After comparison" : "Compare source and JPG preview"}
             aria-pressed={compareRequested}
             title="Inspect unbranded source visualization against the current JPG preview"
-            disabled={busy || !sourceComparisonAllowed || !previewUrl || isLoading}
+            disabled={!compareRequested && (busy || !sourceComparisonAllowed || !previewUrl || isLoading)}
             onClick={() => setCompareRequested((open) => !open)}>
             <Columns2 size={15} aria-hidden="true"/><span>{compareRequested ? "Close compare" : "Compare"}</span>
           </button>
