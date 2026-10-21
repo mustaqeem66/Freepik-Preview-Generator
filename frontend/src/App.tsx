@@ -17,7 +17,7 @@ import { FolderPicker } from "./components/FolderPicker";
 import { PreviewCanvas } from "./components/PreviewCanvas";
 import { ExportSizePanel } from "./components/ExportSizePanel";
 import { SettingsPanel } from "./components/SettingsPanel";
-import { BatchProgress } from "./components/BatchProgress";
+import { CanvasExportDock } from "./components/CanvasExportDock";
 import { FileList } from "./components/FileList";
 import { ErrorNotice, NoticeMessage } from "./components/ErrorNotice";
 import { mergeSelectedAssets } from "./selectedAssets";
@@ -466,21 +466,18 @@ export default function App() {
             canExport={capabilities.canGenerate && !busy && scanReady && destinationReady}
             isExporting={isExporting} disabled={!activeFile || !scanReady || !destinationReady} /></div>
         <div className="canvas-footnote"><span>{compareRequested ? "Source visualization · Flattened formats may differ from editable originals" : "Diagonal split · Original proportions"}</span><span>{compareRequested ? "Before uses checkerboard for transparency; After is the JPG preview." : "JPG is opaque; checkerboard is printed."}</span></div>
-        <div className="canvas-export-dock" role="region" aria-label="Batch export actions">
-          <BatchProgress isProcessing={isProcessing}
-            canCancelBatch={canCancelBatch} isCancelling={batchStatus === "batch-cancelling"}
-            progress={progress} stats={stats} batchErrors={batchErrors}
-            truncated={requiresTruncationAck} truncationReasons={truncationReasons} discovered={discovered}
-            onStartBatch={() => { if (!busy && scanReady && destinationReady) void startBatch(
-              usingFiles ? "" : state.inputFolder, state.outputFolder, fileList.length, state,
-              usingFiles ? fileList.map((file) => file.path) : undefined,
-            ); }}
-            onCancelBatch={() => void cancelBatch()} canStart={capabilities.canGenerate && !busy && scanReady && destinationReady &&
-              fileList.length > 0 && !requiresTruncationAck} />
-          <button type="button" className="button dock-open-output" aria-label="Open output folder"
-            disabled={!(usingFiles ? state.outputFolder : state.inputFolder) || !capabilities.canOpenReport || busy}
-            onClick={() => void openOutput()}><FolderOpen size={15} aria-hidden="true" />Open output</button>
-        </div>
+        <CanvasExportDock isProcessing={isProcessing}
+          canCancelBatch={canCancelBatch} isCancelling={batchStatus === "batch-cancelling"}
+          progress={progress} stats={stats} batchErrors={batchErrors}
+          truncated={requiresTruncationAck} truncationReasons={truncationReasons} discovered={discovered}
+          onStartBatch={() => { if (!busy && scanReady && destinationReady) void startBatch(
+            usingFiles ? "" : state.inputFolder, state.outputFolder, fileList.length, state,
+            usingFiles ? fileList.map((file) => file.path) : undefined,
+          ); }}
+          onCancelBatch={() => void cancelBatch()} canStart={capabilities.canGenerate && !busy && scanReady && destinationReady &&
+            fileList.length > 0 && !requiresTruncationAck}
+          canOpenOutput={Boolean(usingFiles ? state.outputFolder : state.inputFolder) && capabilities.canOpenReport && !busy}
+          onOpenOutput={() => void openOutput()} />
       </section>
       {!isFocused && isWideWorkspace && <PaneResizer label="Resize inspector" value={actualInspectorWidth}
         initial={300} min={260} max={380} reverse onChange={setInspectorWidth} />}
