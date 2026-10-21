@@ -32,4 +32,16 @@ describe("PreviewCanvas Component", () => {
     expect(screen.getByText("No preview selected")).toBeInTheDocument();
   });
 
+  it("zooms relative to fitted preview and resets when selecting a different asset", () => {
+    const renderPreview = (url: string) => <PreviewCanvas previewUrl={url} isLoading={false}
+      renderError={null} name="image.png" width={800} height={600} />;
+    const view = render(renderPreview("http://127.0.0.1:4242/a.jpg"));
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    expect(screen.getByText("125% of fit")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Fit preview" }));
+    expect(screen.getByText("100% of fit")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    view.rerender(renderPreview("http://127.0.0.1:4242/b.jpg"));
+    expect(screen.getByText("100% of fit")).toBeInTheDocument();
+  });
 });

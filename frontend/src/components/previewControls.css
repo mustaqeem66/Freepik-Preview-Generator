@@ -1,0 +1,35 @@
+.preview-zoom-controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 7;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  background: var(--toolbar-bg);
+  color: var(--text);
+  border: 1px solid var(--card-border);
+  border-radius: 9px;
+  padding: 4px;
+  box-shadow: var(--shadow);
+  user-select: none;
+}
+.preview-zoom-controls button {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+}
+.preview-zoom-controls button:hover:not(:disabled) { background: var(--chip-bg); }
+.preview-zoom-controls button:disabled { opacity: .4; cursor: not-allowed; }
+.preview-zoom-level { font-size: 11px; min-width: 65px; text-align: center; font-variant-numeric: tabular-nums; }
+.zoom-pan-canvas { cursor: grab; touch-action: none; }
+.zoom-pan-canvas:active { cursor: grabbing; }
+.preview-canvas > img { transform-origin: center center; will-change: auto; }
+@media (max-width: 560px) { .preview-zoom-controls { top: 8px; right: 8px; } }
+@media (forced-colors: active) { .preview-zoom-controls { border: 1px solid ButtonText; } }
