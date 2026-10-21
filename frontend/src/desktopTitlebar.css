@@ -7,7 +7,7 @@
   width: calc(100% + 36px);
   margin-left: -18px;
   display: grid;
-  grid-template-columns: minmax(112px, 1fr) auto minmax(112px, 1fr);
+  grid-template-columns: 130px minmax(0, 1fr) 130px;
   background: var(--toolbar-bg);
   color: var(--text-sec);
   border-bottom: 1px solid var(--card-border);
