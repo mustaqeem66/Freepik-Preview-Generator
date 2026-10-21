@@ -172,6 +172,7 @@ export interface PyWebViewApi {
   get_initial_state: () => Promise<ApiResponse<Partial<PreviewState>>>;
   browse_input_folder: () => Promise<string>;
   browse_files?: () => Promise<ApiResponse<{ files: FileInfo[]; rejected: string[] } | null>>;
+  clear_selected_files?: () => Promise<ApiResponse<number>>;
   browse_output_folder: () => Promise<string>;
   browse_logo: () => Promise<string>;
   browse_font: () => Promise<string>;
