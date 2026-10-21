@@ -82,6 +82,8 @@ class DesktopApi:
         self._sequence_counter = itertools.count(1)
         self._authorized_folders: set[Path] = set()
         self._authorized_files: set[Path] = set()
+        self._authorized_input_folders: set[Path] = set()
+        self._authorized_auxiliary_files: set[Path] = set()
         self._authorized_output_folders: set[Path] = set()
         self._authorized_lock = threading.Lock()
         self._scan_page_lock = threading.Lock()
@@ -163,6 +165,84 @@ class DesktopApi:
             return False
         except Exception:
             return False
+
+    def add_authorized_input_folder(self, folder: Path | str) -> None:
+        """Grant source reads ONLY after a native folder selection or trusted restore."""
+        target = Path(folder).resolve()
+        self.add_authorized_folder(target)
+        with self._authorized_lock:
+            self._authorized_input_folders.add(target)
+
+    def is_authorized_input_path(self, path: Path | str) -> bool:
+        try:
+            target = Path(path).resolve()
+            with self._authorized_lock:
+                roots = tuple(self._authorized_input_folders)
+            return any(target == root or root in target.parents for root in roots)
+        except (OSError, ValueError, TypeError):
+            return False
+
+    def _source_read_error(self, source: str) -> str | None:
+        """Central bridge read boundary: grant, type and archive entry checks.
+
+        This must run before scheduling any renderer/probe or extracting ZIP data.
+        Source and output/log/config permissions are intentionally different.
+        """
+        if not isinstance(source, str) or not source.strip():
+            return "INVALID_SOURCE"
+        try:
+            if source.startswith("zip://"):
+                import urllib.parse
+                from pathlib import PurePosixPath
+
+                uri = urllib.parse.urlparse(source)
+                query = urllib.parse.parse_qs(uri.query)
+                entries = query.get("entry", [])
+                if uri.scheme != "zip" or len(entries) != 1:
+                    return "INVALID_SOURCE"
+                entry = entries[0]
+                entry_path = PurePosixPath(entry.replace("\\", "/"))
+                if (not entry or "\x00" in entry or entry_path.is_absolute()
+                        or ".." in entry_path.parts or entry_path.name in ("", ".", "..")
+                        or entry_path.suffix.lower() not in SUPPORTED_EXTENSIONS
+                        or entry_path.suffix.lower() == ".zip"):
+                    return "INVALID_SOURCE"
+                archive = Path(urllib.parse.unquote(uri.netloc + uri.path)).resolve()
+                if archive.suffix.lower() != ".zip":
+                    return "INVALID_SOURCE"
+                if not self.is_authorized_input_path(archive):
+                    return "UNAUTHORIZED_SOURCE"
+                return None
+
+            selected = Path(source).resolve()
+            if selected.suffix.lower() not in SUPPORTED_EXTENSIONS or selected.suffix.lower() == ".zip":
+                return "UNSUPPORTED_SOURCE"
+            if not (self.is_authorized_input_path(selected)
+                    or self.is_authorized_selected_file(selected)):
+                return "UNAUTHORIZED_SOURCE"
+            return None
+        except (ValueError, OSError, TypeError):
+            return "INVALID_SOURCE"
+
+    def _auxiliary_read_error(self, config: Any) -> str | None:
+        """Logo and custom font paths are read capabilities, not free bridge inputs."""
+        if not isinstance(config, dict):
+            return None  # Strict parsing of bad configurations is done by PreviewConfig.
+        for camel, snake in (("logoPath", "logo_path"), ("fontPath", "font_path")):
+            raw = config.get(camel, config.get(snake, ""))
+            if not raw:
+                continue
+            if not isinstance(raw, str):
+                return "UNAUTHORIZED_AUXILIARY_PATH"
+            try:
+                path = Path(raw).resolve()
+                with self._authorized_lock:
+                    allowed = path in self._authorized_auxiliary_files
+                if not allowed:
+                    return "UNAUTHORIZED_AUXILIARY_PATH"
+            except (OSError, ValueError, TypeError):
+                return "UNAUTHORIZED_AUXILIARY_PATH"
+        return None
 
     def add_authorized_output_folder(self, folder: Path | str) -> None:
         """Grant output capability only through the native destination picker."""
@@ -374,7 +454,14 @@ class DesktopApi:
                 if key == "outputFolder":
                     self.add_authorized_output_folder(selected)
                 else:
-                    self.add_authorized_folder(selected)
+                    self.add_authorized_input_folder(selected)
+        # Restored logo/font settings are trusted only after they were previously
+        # saved under their own native-picker grant.
+        for key in ("logoPath", "fontPath"):
+            selected = validated.get(key)
+            if isinstance(selected, str) and selected.strip() and Path(selected).is_file():
+                with self._authorized_lock:
+                    self._authorized_auxiliary_files.add(Path(selected).resolve())
         return {"ok": True, "value": validated, "error": None}
 
     def save_settings(self, settings_dict: dict[str, Any]) -> dict[str, Any]:
@@ -385,6 +472,15 @@ class DesktopApi:
         # explicit output grant. Forbid a bridge caller from saving a new
         # arbitrary path and then calling get_initial_state() to launder that
         # unselected path into an authorized output directory.
+        input_folder = settings_dict.get("inputFolder")
+        if (isinstance(input_folder, str) and input_folder.strip()
+                and not self.is_authorized_input_path(input_folder)):
+            return {"ok": False, "value": False, "error": "UNAUTHORIZED_INPUT_PATH",
+                    "code": "UNAUTHORIZED_INPUT_PATH"}
+        auxiliary_error = self._auxiliary_read_error(settings_dict)
+        if auxiliary_error:
+            return {"ok": False, "value": False, "error": auxiliary_error,
+                    "code": auxiliary_error}
         output_folder = settings_dict.get("outputFolder")
         if (
             isinstance(output_folder, str)
@@ -485,7 +581,7 @@ class DesktopApi:
             res = self.window.create_file_dialog(int(__import__('webview').FOLDER_DIALOG))
             path = res[0] if res else ""
             if path:
-                self.add_authorized_folder(path)
+                self.add_authorized_input_folder(path)
             return path
         except Exception as exc:
             logging.warning("Folder dialog failed: %s", exc)
@@ -516,7 +612,11 @@ class DesktopApi:
                     "*.png;*.webp;*.svg;*.ico;*.jpg;*.jpeg",
                 )
             )
-            return res[0] if res else ""
+            selected = res[0] if res else ""
+            if selected:
+                with self._authorized_lock:
+                    self._authorized_auxiliary_files.add(Path(selected).resolve())
+            return selected
         except Exception as exc:
             logging.warning("Logo dialog failed: %s", exc)
             return ""
@@ -530,7 +630,11 @@ class DesktopApi:
                 int(__import__('webview').OPEN_DIALOG),
                 file_types=("Font Files (*.ttf;*.otf;*.woff;*.woff2)", "*.ttf;*.otf;*.woff;*.woff2")
             )
-            return res[0] if res else ""
+            selected = res[0] if res else ""
+            if selected:
+                with self._authorized_lock:
+                    self._authorized_auxiliary_files.add(Path(selected).resolve())
+            return selected
         except Exception as exc:
             logging.warning("Font dialog failed: %s", exc)
             return ""
@@ -595,9 +699,9 @@ class DesktopApi:
             return {"ok": False, "error": str(exc)}
 
     def scan_folder(self, folder_path: str) -> dict[str, Any]:
-        """Synchronous scan (used for initial load)."""
-        if folder_path and Path(folder_path).is_dir():
-            self.add_authorized_folder(folder_path)
+        """Synchronous scan of a native-authorized input root only."""
+        if not self.is_authorized_input_path(folder_path):
+            return {"ok": False, "files": [], "total": 0, "error": "UNAUTHORIZED_INPUT_PATH"}
         return self.scanner.scan_folder(folder_path)
 
     def start_scan(self, folder_path: str, paged: bool = False) -> dict[str, Any]:
@@ -607,8 +711,8 @@ class DesktopApi:
         with self._scan_page_lock:
             self._scan_page_state = None
             self._scan_paging_enabled = paged is True
-        if folder_path and Path(folder_path).is_dir():
-            self.add_authorized_folder(folder_path)
+        if not self.is_authorized_input_path(folder_path):
+            return {"ok": False, "error": "UNAUTHORIZED_INPUT_PATH"}
         return self.scanner.start_scan(folder_path)
 
     def cancel_scan(self, scan_id: str | None = None) -> dict[str, Any]:
@@ -650,7 +754,7 @@ class DesktopApi:
                 # Avoid up to sixteen synchronous file stats on a potentially
                 # offline network share. File existence/decoding is checked by
                 # the isolated thumbnail worker, never on the bridge thread.
-                if not (self.is_authorized_path(source) or self.is_authorized_selected_file(source)):
+                if self._source_read_error(raw):
                     return {"ok": False, "value": None, "error": "UNAUTHORIZED_THUMBNAIL_SOURCE"}
                 validated.append(raw)
             urls = self.thumbnail_coordinator.request(validated)
@@ -691,7 +795,7 @@ class DesktopApi:
                     or extension in SUPPORTED_3D_EXTENSIONS
                     or extension in {".step", ".stp", ".iges", ".igs"}):
                 return {"ok": False, "value": None, "error": "UNSUPPORTED_SOURCE_COMPARISON"}
-            if not (self.is_authorized_path(target) or self.is_authorized_selected_file(target)):
+            if self._source_read_error(source):
                 return {"ok": False, "value": None, "error": "UNAUTHORIZED_SOURCE"}
             urls = self.comparison_coordinator.request([source])
             return {"ok": True, "value": urls, "error": None}
@@ -710,6 +814,13 @@ class DesktopApi:
         """
         if not isinstance(file_path, str) or not file_path.strip():
             return {"ok": False, "error": "Empty file path"}
+
+        source_error = self._source_read_error(file_path)
+        if source_error:
+            return {"ok": False, "error": source_error}
+        auxiliary_error = self._auxiliary_read_error(config_dict)
+        if auxiliary_error:
+            return {"ok": False, "error": auxiliary_error}
 
         op_id = f"preview_{request_id or uuid.uuid4().hex[:6]}"
         try:
@@ -753,6 +864,12 @@ class DesktopApi:
         (potentially the pywebview bridge) thread, so a hostile asset cannot
         pin the GUI. ``zip://`` members are extracted inside the worker.
         """
+        source_error = self._source_read_error(file_path)
+        if source_error:
+            return {"ok": False, "value": None, "error": source_error}
+        auxiliary_error = self._auxiliary_read_error(config_dict)
+        if auxiliary_error:
+            return {"ok": False, "value": None, "error": auxiliary_error}
         op_id = f"render_preview_{request_id or uuid.uuid4().hex[:6]}"
         op = ActiveOperation(operation_id=op_id, kind="preview_render")
         self.lifecycle.register_operation(op)
@@ -818,6 +935,9 @@ class DesktopApi:
         if not isinstance(file_path, str) or not file_path.strip():
             return {"ok": False, "error": "Empty file path"}
 
+        source_error = self._source_read_error(file_path)
+        if source_error:
+            return {"ok": False, "error": source_error}
         op_id = f"probe_{request_id or uuid.uuid4().hex[:6]}"
         try:
             if file_path.startswith("zip://"):
@@ -847,6 +967,9 @@ class DesktopApi:
 
     def probe_asset(self, file_path: str, request_id: int | None = None) -> dict[str, Any]:
         """Synchronous asset probe fallback retained for test/CLI compatibility."""
+        source_error = self._source_read_error(file_path)
+        if source_error:
+            return {"ok": False, "value": None, "error": source_error}
         op_id = f"probe_{request_id or uuid.uuid4().hex[:6]}"
         op = ActiveOperation(operation_id=op_id, kind="asset_probe")
         self.lifecycle.register_operation(op)
@@ -894,6 +1017,9 @@ class DesktopApi:
         self, file_path: str, requested_width: int = 0, requested_height: int = 0
     ) -> dict[str, Any]:
         """Expose canonical export-dimension calculations to eliminate frontend/backend drift."""
+        source_error = self._source_read_error(file_path)
+        if source_error:
+            return {"ok": False, "value": None, "error": source_error}
         temp_dir: Path | None = None
         try:
             if not isinstance(file_path, str) or not file_path.strip():
@@ -937,6 +1063,12 @@ class DesktopApi:
         Rendering runs in an isolated child process with a hard timeout and
         the destination must live under a user-selected (authorized) root.
         """
+        source_error = self._source_read_error(file_path)
+        if source_error:
+            return {"ok": False, "value": None, "error": source_error}
+        auxiliary_error = self._auxiliary_read_error(config_dict)
+        if auxiliary_error:
+            return {"ok": False, "value": None, "error": auxiliary_error}
         temp_dir: Path | None = None
         export_op: ActiveOperation | None = None
         try:
@@ -1058,8 +1190,11 @@ class DesktopApi:
             # Never authorize a destination just because JavaScript requested it.
             # Source roots come from the folder chooser or scan workflow; output
             # roots come from the native chooser or restored saved preferences.
-            if not self.is_authorized_path(source):
+            if not self.is_authorized_input_path(source):
                 return {"ok": False, "error": "UNAUTHORIZED_INPUT_PATH"}
+            auxiliary_error = self._auxiliary_read_error(config_dict)
+            if auxiliary_error:
+                return {"ok": False, "error": auxiliary_error}
             if not self.is_authorized_path(output):
                 return {"ok": False, "error": "UNAUTHORIZED_OUTPUT_PATH"}
             with self._batch_start_lock:
@@ -1098,6 +1233,9 @@ class DesktopApi:
             output = Path(output_folder).resolve()
             if not self.is_authorized_output_path(output):
                 return {"ok": False, "error": "UNAUTHORIZED_OUTPUT_PATH"}
+            auxiliary_error = self._auxiliary_read_error(config_dict)
+            if auxiliary_error:
+                return {"ok": False, "error": auxiliary_error}
             if not output.parent.is_dir():
                 return {"ok": False, "error": "Output folder parent does not exist"}
 

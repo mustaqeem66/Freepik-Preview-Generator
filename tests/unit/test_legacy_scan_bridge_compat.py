@@ -50,6 +50,7 @@ def test_new_frontend_can_explicitly_request_paged_result(monkeypatch):
     rows = [{"name": str(i), "path": f"/root/{i}.png", "ext": "PNG",
              "is_3d": False} for i in range(200)]
     try:
+        api.add_authorized_input_folder("/root")
         assert api.start_scan("/root", paged=True)["ok"] is True
         assert api._scan_paging_enabled is True
         api._on_scan_finished("new", {"files": rows, "total": 200})

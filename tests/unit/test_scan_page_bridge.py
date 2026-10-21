@@ -138,6 +138,7 @@ def test_scan_pages_are_sequential_and_revoked_when_new_scan_starts(monkeypatch)
         assert api.get_scan_page("old", 0)["error"] == "SCAN_PAGE_OUT_OF_ORDER"
 
         monkeypatch.setattr(api.scanner, "start_scan", lambda folder: {"ok": True, "scanId": "new"})
+        api.add_authorized_input_folder("/some/folder")
         assert api.start_scan("/some/folder") == {"ok": True, "scanId": "new"}
         assert api.get_scan_page("old", first["value"]["nextOffset"])["error"] == "SCAN_RESULT_EXPIRED"
     finally:

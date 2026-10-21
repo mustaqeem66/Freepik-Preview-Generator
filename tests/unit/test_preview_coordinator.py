@@ -115,6 +115,7 @@ def test_start_preview_defers_extraction_off_the_bridge_thread(tmp_path, monkeyp
     monkeypatch.setattr(limits, "extract_zip_member_bounded", _boom)
 
     uri = _zip_uri(zip_path, "asset.png")
+    api.add_authorized_input_folder(tmp_path)
     result = api.start_preview(uri, {}, request_id=7)
 
     assert result["ok"] is True
@@ -129,7 +130,7 @@ def test_start_preview_rejects_invalid_zip_uri_without_extracting(tmp_path):
     result = api.start_preview("zip:///no/such/archive.zip?entry=asset.png", {})
 
     assert result["ok"] is False
-    assert "zip" in result["error"].lower()
+    assert result["error"] == "UNAUTHORIZED_SOURCE"
 
 
 def test_control_plane_calls_never_block_on_worker_reap(monkeypatch):
