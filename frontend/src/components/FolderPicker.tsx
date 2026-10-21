@@ -26,7 +26,7 @@ export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseIn
     <label className="sr-only" htmlFor="input-folder">Input folder path</label>
     <input id="input-folder" type="text" value={input} placeholder="Paste a folder path…"
       disabled={disabled} readOnly title="Use Choose Folder to authorize a source directory"
-      onChange={() => {}} />
+      />
     <div className="source-choice-actions" role="group" aria-label="Choose artwork source">
       <button type="button" className="button source-folder-button" disabled={disabled} onClick={onBrowseInput}>
         <FolderOpen size={15} aria-hidden="true" />Choose Folder
