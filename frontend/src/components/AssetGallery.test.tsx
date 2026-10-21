@@ -51,7 +51,7 @@ describe("Asset gallery", () => {
     bridgeEvents.emit("thumbnail.ready", {
       path: "/art/0.png", url: "http://127.0.0.1:4567/token/1.jpg",
     });
-    await waitFor(() => expect(screen.getByRole("img", { hidden: true }).getAttribute("src"))
+    await waitFor(() => expect(document.querySelector(".gallery-art img")?.getAttribute("src"))
       .toBe("http://127.0.0.1:4567/token/1.jpg"));
   });
 
