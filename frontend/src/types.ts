@@ -179,7 +179,7 @@ export interface PyWebViewApi {
   ) => Promise<{ ok: boolean; value: boolean | null; error: string | null; message?: string }>;
   open_diagnostics_folder?: () => Promise<{ ok: boolean; error: string | null }>;
   start_scan: (path: string) => Promise<{ ok: boolean; scanId: string }>;
-  cancel_scan: () => Promise<void>;
+  cancel_scan: (scanId?: string) => Promise<{ ok: boolean; cancelled?: boolean; error?: string } | void>;
   start_preview?: (
     filePath: string,
     config: PreviewState,

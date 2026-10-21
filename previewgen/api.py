@@ -349,9 +349,13 @@ class DesktopApi:
             self.add_authorized_folder(folder_path)
         return self.scanner.start_scan(folder_path)
 
-    def cancel_scan(self) -> None:
-        """Signal active folder scan to stop."""
-        self.scanner.cancel_scan()
+    def cancel_scan(self, scan_id: str | None = None) -> dict[str, Any]:
+        """Request cancellation of a specific scan to prevent stale commands.
+
+        An omitted scan ID is retained for backwards compatibility, but
+        current desktop clients should always supply the returned scanId.
+        """
+        return {"ok": True, "cancelled": self.scanner.cancel_scan(scan_id)}
 
     def start_preview(
         self, file_path: str, config_dict: dict[str, Any], request_id: int | None = None

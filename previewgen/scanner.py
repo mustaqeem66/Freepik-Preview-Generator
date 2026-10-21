@@ -61,12 +61,19 @@ class ScannerService:
         self._progress_callback = progress_callback
         self._finished_callback = finished_callback
 
-    def cancel_scan(self) -> None:
-        """Signal active folder scan to stop."""
+    def cancel_scan(self, scan_id: str | None = None) -> bool:
+        """Only cancel the identified scan, never a newer active scan.
+
+        Older internal callers without an ID remain supported. The React
+        bridge must send the stable scan ID to avoid delayed-cancel races.
+        """
         with self.scan_lock:
-            if self.active_scan_context:
-                self.active_scan_context.cancel_event.set()
-                logging.info("Cancel signal dispatched to scan %s", self.active_scan_context.scan_id)
+            ctx = self.active_scan_context
+            if ctx is None or (scan_id is not None and ctx.scan_id != scan_id):
+                return False
+            ctx.cancel_event.set()
+            logging.info("Cancel signal dispatched to scan %s", ctx.scan_id)
+            return True
 
     def start_scan(self, folder_path: str) -> dict[str, Any]:
         """Start background asynchronous folder scan with independent context and cancellation token."""

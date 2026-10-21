@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { FileInfo, ScanFolderResult, ScanStatus } from "../types";
+import { FileInfo, PyWebViewApi, ScanFolderResult, ScanStatus } from "../types";
 import { ApiBridge, bridgeEvents } from "../api/bridge";
 
 export type { ScanStatus };
@@ -14,14 +14,48 @@ export function useScanner() {
   const [scanTruncationReasons, setScanTruncationReasons] = useState<string[]>([]);
   const [scanDiscovered, setScanDiscovered] = useState(0);
   const generation = useRef(0);
+  const activeFolder = useRef("");
   const activeScanId = useRef<string | null>(null);
   const latestScanSeq = useRef(0);
   const scanTerminal = useRef(false);
   const starting = useRef(false);
   // A tiny folder can finish before start_scan's bridge promise resolves.
   const earlyResults = useRef(new Map<string, ScanFolderResult>());
+  const lastResultsFolder = useRef("");
+  const cancelRequested = useRef(false);
+  const cancelDeadline = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearCancelDeadline = useCallback(() => {
+    if (cancelDeadline.current !== null) clearTimeout(cancelDeadline.current);
+    cancelDeadline.current = null;
+  }, []);
+
+  const failCancellation = useCallback((request: number, reason: string) => {
+    if (request !== generation.current || !cancelRequested.current || scanTerminal.current) return;
+    clearCancelDeadline();
+    cancelRequested.current = false;
+    activeScanId.current = null;
+    starting.current = false;
+    setIsScanning(false);
+    setScanStatus("idle");
+    setScanError(reason);
+  }, [clearCancelDeadline]);
+
+  const requestCancelFor = useCallback(async (scanId: string, request: number, knownApi?: PyWebViewApi) => {
+    if (request !== generation.current || activeScanId.current !== scanId || scanTerminal.current) return;
+    try {
+      const api = knownApi ?? await ApiBridge.getApi(2000);
+      if (!api) throw new Error("Backend unavailable. Cancellation was not delivered.");
+      const result = await api.cancel_scan(scanId);
+      if (result && result.ok === false) throw new Error(result.error || "Scan cancellation rejected.");
+      // A bridge response only acknowledges the signal. Await scan.finished.
+    } catch (error) {
+      failCancellation(request, error instanceof Error ? error.message : "Could not cancel the scan.");
+    }
+  }, [failCancellation]);
 
   const applyResult = useCallback((result: ScanFolderResult) => {
+    clearCancelDeadline();
+    cancelRequested.current = false;
     setIsScanning(false);
     activeScanId.current = null;
     if (result.status === "cancelled") {
@@ -37,8 +71,9 @@ export function useScanner() {
     setScanTruncationReasons(result.truncationReasons ?? []);
     setScanDiscovered(result.discovered ?? result.files.length);
     setFileList(result.files);
+    lastResultsFolder.current = activeFolder.current;
     setScanStatus(truncated ? "scan-truncated" : "completed");
-  }, []);
+  }, [clearCancelDeadline]);
 
   useEffect(() => {
     const offProgress = bridgeEvents.subscribe("scan.progress", ({ scanId, count }, meta) => {
@@ -61,13 +96,24 @@ export function useScanner() {
       generation.current++;
       starting.current = false;
       activeScanId.current = null;
+      cancelRequested.current = false;
+      clearCancelDeadline();
       offProgress();
       offFinished();
     };
-  }, [applyResult]);
+  }, [applyResult, clearCancelDeadline]);
 
   const scanFolder = useCallback(async (folderPath: string) => {
     const request = ++generation.current;
+    clearCancelDeadline();
+    cancelRequested.current = false;
+    const selectedFolder = folderPath.trim();
+    activeFolder.current = selectedFolder;
+    if (selectedFolder !== lastResultsFolder.current) {
+      // Old-folder rows must never be displayed as the new folder's assets.
+      setFileList([]);
+      setScanDiscovered(0);
+    }
     activeScanId.current = null;
     latestScanSeq.current = 0;
     scanTerminal.current = false;
@@ -76,7 +122,8 @@ export function useScanner() {
     setScanError(null);
     setScanTruncationReasons([]);
     setScannedCount(0);
-    if (!folderPath.trim()) {
+    if (!selectedFolder) {
+      lastResultsFolder.current = "";
       starting.current = false;
       setFileList([]);
       setIsScanning(false);
@@ -89,41 +136,47 @@ export function useScanner() {
       const api = await ApiBridge.getApi(3000);
       if (request !== generation.current) return;
       if (!api) throw new Error("Backend unavailable. Reconnect before scanning.");
-      const response = await api.start_scan(folderPath);
-      if (request !== generation.current) return;
+      const response = await api.start_scan(selectedFolder);
+      if (request !== generation.current) {
+        // Superseded requests must only cancel their own ID, not a newer scan.
+        if (response?.ok && response.scanId) {
+          void api.cancel_scan(response.scanId).catch(() => undefined);
+        }
+        return;
+      }
       if (!response.ok || !response.scanId) throw new Error("The folder scan could not be started.");
       activeScanId.current = response.scanId;
       starting.current = false;
       const early = earlyResults.current.get(response.scanId);
       earlyResults.current.clear();
       if (early) applyResult(early);
+      else if (cancelRequested.current) void requestCancelFor(response.scanId, request, api);
     } catch (error) {
       if (request !== generation.current) return;
       starting.current = false;
+      cancelRequested.current = false;
+      clearCancelDeadline();
+      activeScanId.current = null;
       setIsScanning(false);
       setScanStatus("idle");
       setScanError(error instanceof Error ? error.message : "Folder scanning failed");
     }
-  }, [applyResult]);
+  }, [applyResult, clearCancelDeadline, requestCancelFor]);
 
   const cancelScan = useCallback(async () => {
-    generation.current++;
-    activeScanId.current = null;
-    starting.current = false;
-    earlyResults.current.clear();
+    if (!isScanning || cancelRequested.current) return;
+    const request = generation.current;
+    cancelRequested.current = true;
     setScanStatus("scan-cancelling");
-    try {
-      const api = await ApiBridge.getApi(2000);
-      if (!api) throw new Error("Backend unavailable. The scan cancellation was not delivered.");
-      await api.cancel_scan();
-      setScanStatus("scan-cancelled");
-    } catch (error) {
-      setScanStatus("idle");
-      setScanError(error instanceof Error ? error.message : "Could not cancel the scan");
-    } finally {
-      setIsScanning(false);
-    }
-  }, []);
+    clearCancelDeadline();
+    cancelDeadline.current = setTimeout(() => {
+      failCancellation(request, "Cancellation could not be confirmed. Rescan before exporting.");
+    }, 30_000);
+    const scanId = activeScanId.current;
+    if (scanId) await requestCancelFor(scanId, request);
+    // If start_scan is still pending, its promise handler sends the ID-scoped
+    // cancellation as soon as the backend returns it.
+  }, [isScanning, clearCancelDeadline, failCancellation, requestCancelFor]);
 
   return { fileList, setFileList, isScanning, scanStatus,
     scanTruncated: scanStatus === "scan-truncated", scanTruncationReasons,

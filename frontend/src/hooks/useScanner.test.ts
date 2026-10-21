@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { useScanner } from "./useScanner";
 import { ApiBridge } from "../api/bridge";
 
@@ -94,7 +94,7 @@ describe("useScanner hook", () => {
     // A subsequent cancelled scan must not wipe the existing list.
     fakeApi.start_scan = async () => ({ ok: true, scanId: "scan-b" });
     await act(async () => {
-      await result.current.scanFolder("/path/two");
+      await result.current.scanFolder("/path/one");
     });
     act(() => {
       window.__onScanFinished?.("scan-b", { files: [], total: 0, status: "cancelled" });
@@ -123,6 +123,11 @@ describe("useScanner hook", () => {
       await result.current.cancelScan();
     });
 
+    expect(result.current.scanStatus).toBe("scan-cancelling");
+    expect(result.current.isScanning).toBe(true);
+    act(() => {
+      window.__onScanFinished?.("scan-c", { files: [], total: 0, status: "cancelled" });
+    });
     expect(result.current.scanStatus).toBe("scan-cancelled");
     expect(result.current.isScanning).toBe(false);
   });
@@ -158,5 +163,54 @@ describe("useScanner hook", () => {
     expect(result.current.scanDiscovered).toBe(5000);
     expect(result.current.isScanning).toBe(false);
     expect(result.current.fileList).toHaveLength(1);
+  });
+  it("clears stale assets before scanning a different folder", async () => {
+    let scanId = "A";
+    const fakeApi = { start_scan: async () => ({ ok: true, scanId }) };
+    // @ts-expect-error mock window.pywebview
+    window.pywebview = { api: fakeApi };
+    const { result } = renderHook(() => useScanner());
+    await act(async () => { await result.current.scanFolder("/folder/a"); });
+    act(() => {
+      window.__onScanFinished?.("A", {
+        files: [{ name: "a.png", path: "/folder/a/a.png", ext: "PNG", is_3d: false }],
+        total: 1, status: "completed",
+      });
+    });
+    expect(result.current.fileList).toHaveLength(1);
+    scanId = "B";
+    await act(async () => { await result.current.scanFolder("/folder/b"); });
+    expect(result.current.fileList).toEqual([]);
+    expect(result.current.isScanning).toBe(true);
+    act(() => { window.__onScanFinished?.("B", { files: [], total: 0, status: "cancelled" }); });
+    expect(result.current.fileList).toEqual([]);
+    expect(result.current.scanStatus).toBe("scan-cancelled");
+  });
+
+  it("sends a scan-specific cancellation if Cancel occurs before start resolves", async () => {
+    let finishStart!: (response: { ok: boolean; scanId: string }) => void;
+    const deferred = new Promise<{ ok: boolean; scanId: string }>((resolve) => { finishStart = resolve; });
+    const cancel_scan = vi.fn(async () => ({ ok: true, cancelled: true }));
+    // @ts-expect-error mock window.pywebview
+    window.pywebview = { api: { start_scan: () => deferred, cancel_scan } };
+    const { result } = renderHook(() => useScanner());
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current.scanFolder("/slow");
+      await Promise.resolve();
+    });
+    await act(async () => { await result.current.cancelScan(); });
+    expect(result.current.scanStatus).toBe("scan-cancelling");
+    expect(cancel_scan).not.toHaveBeenCalled();
+    await act(async () => {
+      finishStart({ ok: true, scanId: "slow-id" });
+      await pending;
+    });
+    await waitFor(() => expect(cancel_scan).toHaveBeenCalledWith("slow-id"));
+    expect(result.current.scanStatus).toBe("scan-cancelling");
+    act(() => {
+      window.__onScanFinished?.("slow-id", { files: [], total: 0, status: "cancelled" });
+    });
+    expect(result.current.scanStatus).toBe("scan-cancelled");
   });
 });
