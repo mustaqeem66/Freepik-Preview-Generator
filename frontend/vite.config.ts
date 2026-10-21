@@ -1,8 +1,22 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
+import { injectProductionCsp } from "./security/csp";
 import react from "@vitejs/plugin-react";
 
+// Keep the native desktop CSP out of Vite dev mode (HMR requires its own
+// WebSocket/script privileges); enforce it in shipped dist/index.html instead.
+function desktopProductionCsp(): Plugin {
+  return {
+    name: "previewgen-production-csp",
+    apply: "build",
+    transformIndexHtml: {
+      order: "pre",
+      handler: injectProductionCsp,
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), desktopProductionCsp()],
   base: "./",
   build: {
     outDir: "dist",

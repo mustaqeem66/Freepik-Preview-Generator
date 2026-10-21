@@ -25,3 +25,22 @@ def test_frontend_bundle_discovery():
     content = dist_html.read_text(encoding="utf-8")
     assert '<div id="root">' in content
     assert "<script" in content
+
+
+def test_production_webview_csp_when_bundle_exists():
+    """A production bundle must carry the security policy before its scripts."""
+    html_path = PROJECT_ROOT / "frontend" / "dist" / "index.html"
+    if not html_path.is_file():
+        if REQUIRE_BUNDLE:
+            pytest.fail("Production bundle missing; CSP cannot be verified.")
+        pytest.skip("Build the frontend to verify shipped CSP.")
+
+    content = html_path.read_text(encoding="utf-8")
+    marker = 'data-previewgen-csp="production"'
+    assert content.count(marker) == 1, "Production CSP missing or duplicated"
+    assert content.index(marker) < content.index("<script"), "CSP must precede scripts"
+    assert 'http-equiv="Content-Security-Policy"' in content
+    assert "script-src 'self' 'unsafe-eval'" in content
+    assert "script-src 'self' 'unsafe-eval' 'unsafe-inline'" not in content
+    assert "img-src 'self' data: blob: http://127.0.0.1:*" in content
+    assert "connect-src 'self' http://127.0.0.1:*" in content
