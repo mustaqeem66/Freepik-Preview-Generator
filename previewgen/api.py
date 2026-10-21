@@ -61,6 +61,7 @@ class DesktopApi:
         self._sequence_counter = itertools.count(1)
         self._authorized_folders: set[Path] = set()
         self._authorized_files: set[Path] = set()
+        self._authorized_output_folders: set[Path] = set()
         self._authorized_lock = threading.Lock()
         self._last_heartbeat_time = time.time()
         self._register_default_authorized_paths()
@@ -99,6 +100,23 @@ class DesktopApi:
                     continue
             return False
         except Exception:
+            return False
+
+    def add_authorized_output_folder(self, folder: Path | str) -> None:
+        """Grant output capability only through the native destination picker."""
+        target = Path(folder).resolve()
+        self.add_authorized_folder(target)
+        with self._authorized_lock:
+            self._authorized_output_folders.add(target)
+
+    def is_authorized_output_path(self, path: Path | str) -> bool:
+        """Check explicit destination grants, independently of source roots."""
+        try:
+            target = Path(path).resolve()
+            with self._authorized_lock:
+                roots = tuple(self._authorized_output_folders)
+            return any(target == root or root in target.parents for root in roots)
+        except (OSError, ValueError, TypeError):
             return False
 
     def is_authorized_selected_file(self, path: Path | str) -> bool:
@@ -220,7 +238,10 @@ class DesktopApi:
         for key in ("inputFolder", "outputFolder"):
             selected = validated.get(key)
             if isinstance(selected, str) and selected.strip() and Path(selected).is_dir():
-                self.add_authorized_folder(selected)
+                if key == "outputFolder":
+                    self.add_authorized_output_folder(selected)
+                else:
+                    self.add_authorized_folder(selected)
         return {"ok": True, "value": validated, "error": None}
 
     def save_settings(self, settings_dict: dict[str, Any]) -> dict[str, Any]:
@@ -320,7 +341,7 @@ class DesktopApi:
             res = self.window.create_file_dialog(int(__import__('webview').FOLDER_DIALOG))
             path = res[0] if res else ""
             if path:
-                self.add_authorized_folder(path)
+                self.add_authorized_output_folder(path)
             return path
         except Exception as exc:
             logging.warning("Folder dialog failed: %s", exc)
@@ -810,7 +831,7 @@ class DesktopApi:
             if not isinstance(output_folder, str) or not output_folder.strip():
                 return {"ok": False, "error": "OUTPUT_FOLDER_REQUIRED"}
             output = Path(output_folder).resolve()
-            if not self.is_authorized_path(output):
+            if not self.is_authorized_output_path(output):
                 return {"ok": False, "error": "UNAUTHORIZED_OUTPUT_PATH"}
             if not output.parent.is_dir():
                 return {"ok": False, "error": "Output folder parent does not exist"}
