@@ -72,6 +72,7 @@ def plan_checks(
             Check("frontend-production-build", (npm, "run", "build"), frontend_dir),
             Check("frontend-bundle-csp", (py, "-m", "pytest", "tests/frontend/test_bundle.py", "-q"),
                   root, require_bundle=True),
+            Check("frontend-studio-design", (py, "scripts/verify_studio_bundle.py"), root),
         ))
 
     return checks
