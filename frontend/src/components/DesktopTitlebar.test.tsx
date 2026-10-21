@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiBridge } from "../api/bridge";
 import { DesktopTitlebar } from "./DesktopTitlebar";
@@ -11,15 +11,15 @@ async function setup(platform: "windows" | "linux" | "macos", enabled = true) {
     get_window_chrome: async () => ({ ok: true, value: { enabled, platform }, error: null }),
     window_action,
   } as never);
-  render(<DesktopTitlebar />);
+  const view = render(<DesktopTitlebar />);
   if (enabled) await waitFor(() => expect(screen.getByTestId("desktop-titlebar")).toBeTruthy());
-  return window_action;
+  return { window_action, unmount: view.unmount };
 }
 
 describe("platform titlebar", () => {
   it("uses left minimize/fullscreen and right close on Windows and Linux", async () => {
     for (const platform of ["windows", "linux"] as const) {
-      const call = await setup(platform);
+      const { window_action: call, unmount } = await setup(platform);
       const leading = document.querySelector(".titlebar-leading")!;
       const trailing = document.querySelector(".titlebar-trailing")!;
       expect(leading.querySelector('[aria-label="Minimize window"]')).toBeTruthy();
@@ -27,12 +27,12 @@ describe("platform titlebar", () => {
       expect(trailing.querySelector('[aria-label="Close application"]')).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "Minimize window" }));
       await waitFor(() => expect(call).toHaveBeenCalledWith("minimize"));
-      screen.getByTestId("desktop-titlebar").remove();
+      unmount();
     }
   });
 
   it("places all three buttons on the right on macOS", async () => {
-    const call = await setup("macos");
+    const { window_action: call } = await setup("macos");
     const trailing = document.querySelector(".titlebar-trailing")!;
     expect(trailing.querySelectorAll("button")).toHaveLength(3);
     fireEvent.click(screen.getByRole("button", { name: "Toggle fullscreen" }));
