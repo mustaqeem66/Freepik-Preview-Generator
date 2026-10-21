@@ -94,8 +94,11 @@ class ThumbnailCoordinator:
                     self._thread = None
                     return
             try:
+                # Deliberately omit user overlays and expensive per-asset
+                # inspector changes from gallery navigation thumbnails.
                 result = self._render(
-                    path, {}, max_dimension=THUMBNAIL_MAX_DIMENSION,
+                    path, {"text": "", "opacity": 0, "logoPath": ""},
+                    max_dimension=THUMBNAIL_MAX_DIMENSION,
                     timeout_seconds=THUMBNAIL_RENDER_TIMEOUT,
                 )
                 if result.get("status") != "success":
