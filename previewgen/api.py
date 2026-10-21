@@ -208,7 +208,10 @@ class DesktopApi:
     def _on_scan_finished(self, scan_id: str, result: dict[str, Any]) -> None:
         """Keep large scan rows off the synchronous evaluate_js event path."""
         files = result.get("files")
-        if isinstance(files, list) and len(files) > SCAN_INLINE_RESULT_LIMIT:
+        if (isinstance(files, list) and (
+            len(files) > SCAN_INLINE_RESULT_LIMIT
+            or len(json.dumps(files, ensure_ascii=False).encode("utf-8")) > SCAN_PAGE_MAX_BYTES
+        )):
             # Scanner callbacks can race a newer scan start just after their
             # own is-current check. Never replace the new scan's page cache.
             with self.scanner.scan_lock:
@@ -221,8 +224,12 @@ class DesktopApi:
             metadata["files"] = []
             metadata["paged"] = {"total": len(files), "pageSize": SCAN_PAGE_MAX_ITEMS}
         else:
-            with self._scan_page_lock:
-                self._scan_page_state = None
+            with self.scanner.scan_lock:
+                ctx = self.scanner.active_scan_context
+                if ctx is not None and ctx.scan_id != scan_id:
+                    return
+                with self._scan_page_lock:
+                    self._scan_page_state = None
             metadata = result
         self._dispatch_envelope(
             "scan.finished", {"scanId": scan_id, "result": metadata},
@@ -250,7 +257,7 @@ class DesktopApi:
                 return {"ok": False, "value": None, "error": "SCAN_PAGE_OUT_OF_ORDER"}
 
             chunk: list[dict[str, Any]] = []
-            payload_bytes = 64
+            payload_bytes = 512
             for file in files[offset:offset + limit]:
                 encoded_size = len(json.dumps(file, ensure_ascii=False).encode("utf-8")) + 2
                 if payload_bytes + encoded_size > SCAN_PAGE_MAX_BYTES:

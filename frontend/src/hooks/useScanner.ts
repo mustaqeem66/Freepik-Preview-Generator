@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { FileInfo, PyWebViewApi, ScanFolderResult, ScanStatus } from "../types";
 import { ApiBridge, bridgeEvents } from "../api/bridge";
+import { fetchScanPages } from "../scannerPages";
 
 export type { ScanStatus };
 const TRUNCATED_STATUSES: Record<string, true> = { truncated: true, completed_with_warnings: true };
@@ -53,26 +54,63 @@ export function useScanner() {
     }
   }, [failCancellation]);
 
-  const applyResult = useCallback((result: ScanFolderResult) => {
-    clearCancelDeadline();
-    cancelRequested.current = false;
-    setIsScanning(false);
-    activeScanId.current = null;
-    if (result.status === "cancelled") {
-      setScanStatus("scan-cancelled");
+  const applyResult = useCallback((result: ScanFolderResult, scanId: string, request: number) => {
+    if (request !== generation.current || activeScanId.current !== scanId) return;
+    // The scanner has stopped traversing. Suppress subsequent progress events;
+    // transfer the completed rows in bounded bridge calls if necessary.
+    scanTerminal.current = true;
+
+    const finish = (completed: ScanFolderResult) => {
+      if (request !== generation.current || activeScanId.current !== scanId) return;
+      clearCancelDeadline();
+      cancelRequested.current = false;
+      setIsScanning(false);
+      activeScanId.current = null;
+      if (completed.status === "cancelled") {
+        setScanStatus("scan-cancelled");
+        return;
+      }
+      if (completed.status === "failed") {
+        setScanStatus("idle");
+        setScanError(completed.error || "Folder scanning failed");
+        return;
+      }
+      const truncated = completed.truncated === true ||
+        TRUNCATED_STATUSES[completed.status ?? ""] === true;
+      setScanTruncationReasons(completed.truncationReasons ?? []);
+      setScanDiscovered(completed.discovered ?? completed.files.length);
+      setFileList(completed.files);
+      lastResultsFolder.current = activeFolder.current;
+      setScanStatus(truncated ? "scan-truncated" : "completed");
+    };
+
+    if (!result.paged || result.status === "failed" || result.status === "cancelled") {
+      finish(result);
       return;
     }
-    if (result.status === "failed") {
+    // No intermediate rows are committed: incomplete transfers must never
+    // look like successful (but mysteriously partial) folder scans.
+    void (async () => {
+      const api = await ApiBridge.getApi(2000);
+      const rows = await fetchScanPages(
+        api, scanId, result.paged!.total,
+        () => request === generation.current && activeScanId.current === scanId,
+        (received) => setScannedCount(received),
+      );
+      finish({ ...result, files: rows });
+    })().catch((error: unknown) => {
+      if (request !== generation.current || activeScanId.current !== scanId) return;
+      clearCancelDeadline();
+      cancelRequested.current = false;
+      activeScanId.current = null;
+      setIsScanning(false);
       setScanStatus("idle");
-      setScanError(result.error || "Folder scanning failed");
-      return;
-    }
-    const truncated = result.truncated === true || TRUNCATED_STATUSES[result.status ?? ""] === true;
-    setScanTruncationReasons(result.truncationReasons ?? []);
-    setScanDiscovered(result.discovered ?? result.files.length);
-    setFileList(result.files);
-    lastResultsFolder.current = activeFolder.current;
-    setScanStatus(truncated ? "scan-truncated" : "completed");
+      setScanError(
+        error instanceof Error
+          ? `Scan finished, but the results could not be loaded: ${error.message}`
+          : "Scan results were incomplete. Rescan this folder.",
+      );
+    });
   }, [clearCancelDeadline]);
 
   useEffect(() => {
@@ -85,8 +123,7 @@ export function useScanner() {
     const offFinished = bridgeEvents.subscribe("scan.finished", ({ scanId, result }, meta) => {
       if (meta?.sequence) latestScanSeq.current = Math.max(latestScanSeq.current, meta.sequence);
       if (scanId === activeScanId.current) {
-        scanTerminal.current = true;
-        applyResult(result);
+        applyResult(result, scanId, generation.current);
       } else if (starting.current) {
         if (earlyResults.current.size >= 16) earlyResults.current.clear();
         earlyResults.current.set(scanId, result);
@@ -149,7 +186,7 @@ export function useScanner() {
       starting.current = false;
       const early = earlyResults.current.get(response.scanId);
       earlyResults.current.clear();
-      if (early) applyResult(early);
+      if (early) applyResult(early, response.scanId, request);
       else if (cancelRequested.current) void requestCancelFor(response.scanId, request, api);
     } catch (error) {
       if (request !== generation.current) return;
@@ -165,6 +202,17 @@ export function useScanner() {
 
   const cancelScan = useCallback(async () => {
     if (!isScanning || cancelRequested.current) return;
+    if (scanTerminal.current) {
+      // The native scan has already ended; cancel only the remaining local
+      // page retrieval. The generation gate suppresses late bridge replies.
+      generation.current++;
+      clearCancelDeadline();
+      activeScanId.current = null;
+      starting.current = false;
+      setIsScanning(false);
+      setScanStatus("scan-cancelled");
+      return;
+    }
     const request = generation.current;
     cancelRequested.current = true;
     setScanStatus("scan-cancelling");

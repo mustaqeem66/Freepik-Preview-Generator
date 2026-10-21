@@ -164,6 +164,7 @@ export interface ScanFolderResult {
   truncated?: boolean;
   truncationReasons?: TruncationReason[] | string[];
   discovered?: number;
+  paged?: { total: number; pageSize: number };
   error?: string;
 }
 
@@ -182,6 +183,9 @@ export interface PyWebViewApi {
   open_diagnostics_folder?: () => Promise<{ ok: boolean; error: string | null }>;
   start_scan: (path: string) => Promise<{ ok: boolean; scanId: string }>;
   cancel_scan: (scanId?: string) => Promise<{ ok: boolean; cancelled?: boolean; error?: string } | void>;
+  get_scan_page?: (scanId: string, offset: number, limit: number) => Promise<ApiResponse<{
+    scanId: string; offset: number; total: number; nextOffset: number; files: FileInfo[];
+  } | null>>;
   start_preview?: (
     filePath: string,
     config: PreviewState,
