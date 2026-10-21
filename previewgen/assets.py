@@ -173,8 +173,12 @@ def probe_asset(source_path: Path | str) -> dict[str, object]:
     kind = classify_asset(path)
     limits.validate_source_before_parse(path)
     native = probe_native_size(path, kind)
+    from previewgen.renderers.capabilities import capability_for
+
+    capability = capability_for(path.suffix)
     return {
         "kind": kind,
+        "previewSupport": capability.public() if capability else None,
         "resizable": is_resizable(kind),
         "nativeWidth": native[0] if native else None,
         "nativeHeight": native[1] if native else None,

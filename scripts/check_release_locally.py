@@ -62,6 +62,7 @@ def plan_checks(
         else:
             checks.append(Check("backend-all-tests", (py, "-m", "pytest", "tests", "-q"), root))
             checks.append(Check("renderer-capabilities", (py, "scripts/verify_environment.py"), root))
+            checks.append(Check("renderer-format-inventory", (py, "scripts/audit_renderer_matrix.py"), root))
 
     if frontend:
         if npm_ci:

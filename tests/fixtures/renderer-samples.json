@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "description": "Existing repository fixture inventory. These samples do NOT establish compatibility with every version of the source applications.",
+  "samples": [
+    {
+      "file": "sample.png",
+      "sourceApp": "bundled fixture"
+    },
+    {
+      "file": "sample.jpg",
+      "sourceApp": "bundled fixture"
+    },
+    {
+      "file": "sample.svg",
+      "sourceApp": "bundled fixture"
+    },
+    {
+      "file": "sample.psd",
+      "sourceApp": "bundled fixture"
+    },
+    {
+      "file": "sample.dxf",
+      "sourceApp": "bundled fixture"
+    },
+    {
+      "file": "sample.obj",
+      "sourceApp": "bundled fixture"
+    },
+    {
+      "file": "sample.glb",
+      "sourceApp": "bundled fixture"
+    },
+    {
+      "file": "sample.step",
+      "sourceApp": "bundled fixture"
+    },
+    {
+      "file": "sample.dae",
+      "sourceApp": "bundled fixture"
+    }
+  ]
+}
