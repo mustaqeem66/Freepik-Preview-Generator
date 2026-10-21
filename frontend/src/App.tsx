@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { PaneResizer } from "./components/PaneResizer";
 import { Box, ChevronLeft, ChevronRight, FolderOpen, Layers, Moon, RefreshCw, Sun, Activity } from "lucide-react";
 import { ApiBridge } from "./api/bridge";
 import { useBackend } from "./hooks/useBackend";
@@ -23,7 +24,36 @@ const LIFECYCLE_LABELS: Record<LifecycleState, string> = {
   "completed-with-warnings": "Completed with warnings", "completed-with-errors": "Completed with errors", failed: "Failed",
 };
 
+const readPaneWidth = (key: string, fallback: number, min: number, max: number) => {
+  try {
+    const value = Number(window.localStorage.getItem(key));
+    return Number.isFinite(value) && value >= min && value <= max ? value : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 export default function App() {
+  const [libraryWidth, setLibraryWidth] = useState(() => readPaneWidth("previewgen.libraryWidth", 250, 200, 360));
+  const [inspectorWidth, setInspectorWidth] = useState(() => readPaneWidth("previewgen.inspectorWidth", 300, 260, 380));
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const updateSize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", updateSize);
+    return () => window.removeEventListener("resize", updateSize);
+  }, []);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("previewgen.libraryWidth", String(libraryWidth));
+      window.localStorage.setItem("previewgen.inspectorWidth", String(inspectorWidth));
+    } catch {
+      // Storage might be unavailable in a restricted embedded WebView.
+    }
+  }, [libraryWidth, inspectorWidth]);
+  const isWideWorkspace = viewportWidth > 850;
+  const widthBudget = viewportWidth - (viewportWidth > 1100 ? 36 : 20) - 16;
+  const actualLibraryWidth = Math.min(libraryWidth, Math.max(200, widthBudget - inspectorWidth - 292));
+  const actualInspectorWidth = Math.min(inspectorWidth, Math.max(260, widthBudget - actualLibraryWidth - 292));
   const { status, capabilities, retry } = useBackend();
   const [notices, setNotices] = useState<NoticeMessage[]>([]);
   const showNotice = useCallback((notice: NoticeMessage) => {
@@ -197,7 +227,9 @@ export default function App() {
     </div>}
     <ErrorNotice notices={notices} onDismiss={(id) => setNotices((previous) => previous.filter((item) => item.id !== id))} />
 
-    <main className="studio-workspace">
+    <main className="studio-workspace" style={isWideWorkspace ? {
+      gridTemplateColumns: `${actualLibraryWidth}px 6px minmax(280px, 1fr) 6px ${actualInspectorWidth}px`
+    } : undefined}>
       <aside className="library-pane" aria-label="Asset library">
         <FolderPicker inputFolder={state.inputFolder} outputFolder={state.outputFolder} sameFolder={state.sameFolder}
           disabled={busy || !isLoaded || !capabilities.canBrowse}
@@ -217,7 +249,8 @@ export default function App() {
             ? "No assets listed. Check the folder path or rescan." : "Choose a folder to build your asset library."}</p></div>}
         <div className="library-footnote"><span className="status-dot" />Local processing · No uploads</div>
       </aside>
-
+      {isWideWorkspace && <PaneResizer label="Resize asset library" value={actualLibraryWidth}
+        initial={250} min={200} max={360} onChange={setLibraryWidth} />}
       <section className="canvas-pane" aria-label="Preview workspace">
         <div className="canvas-toolbar"><div className="asset-title">{is3D ? <Box size={16} /> : <Layers size={16} />}
           <span title={activeFile?.name}>{activeFile?.name || "Live preview"}</span>{activeFile && <span className="format-badge">{activeFile.ext}</span>}</div>
@@ -238,7 +271,8 @@ export default function App() {
             isExporting={isExporting} disabled={!activeFile || !scanReady} /></div>
         <div className="canvas-footnote"><span>Diagonal split · Original proportions</span><span>JPG is opaque; checkerboard is printed.</span></div>
       </section>
-
+      {isWideWorkspace && <PaneResizer label="Resize inspector" value={actualInspectorWidth}
+        initial={300} min={260} max={380} reverse onChange={setInspectorWidth} />}
       <aside className="inspector-pane" aria-label="Preview inspector">
         <div className="inspector-heading"><h2>Inspector</h2><span className="muted">Live adjustments</span></div>
         <fieldset disabled={busy || !isLoaded}><legend className="sr-only">Preview settings</legend>
