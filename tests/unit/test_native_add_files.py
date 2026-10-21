@@ -151,8 +151,10 @@ def test_duplicate_basename_sources_keep_independent_batch_outputs(tmp_path, mon
             if path.name != "previewgen-report-latest.json"
         ]
         assert payloads
-        reported = {rec["source"] for rec in payloads[0]["files"]}
-        assert reported == {str(source) for source in sources}
+        reported = payloads[0]["files"]
+        assert [rec["source"] for rec in reported] == ["same.png", "same.png"]
+        assert {rec["sourceIndex"] for rec in reported} == {0, 1}
+        assert all(str(tmp_path) not in str(rec) for rec in reported)
     finally:
         api.cleanup()
 
