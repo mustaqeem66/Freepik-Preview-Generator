@@ -54,3 +54,14 @@
 | macOS DMG / Linux AppImage | Platform-specific | Platform-specific | Platform-specific | Manual as currently packaged |
 
 The ZIP was built from another source snapshot. Always develop feature changes on the current GitHub `main`, preserving the merged backend fixes.
+
+## 2026-10-21 — Searchable asset browser (proposed PR)
+
+- [x] Add filename search without copying the complete asset list when the search is empty.
+- [x] Keep original source indices for selection and export; a filtered result cannot silently retarget a different file.
+- [x] Keep `aria-activedescendant` referencing an existing option even when that option is outside the current virtual window.
+- [x] Support a no-matches state and filtered keyboard navigation.
+- [x] Add regression cases for searching, original-index selection, zero results and virtualized active descendants.
+- [ ] Locally run `cd frontend && npm ci && npm run typecheck && npm test && npm run build`.
+- [ ] Verify real WebView2 scrolling and screen-reader behavior; source-level semantics alone are not an accessibility certification.
+- [ ] Add thumbnail browser as a separate opt-in implementation after backend thumbnail budget and cache limits are designed.
