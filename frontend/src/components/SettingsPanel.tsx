@@ -1,3 +1,4 @@
+import { type CSSProperties } from "react";
 import { Box, Image as ImageIcon, Palette, Type, X } from "lucide-react";
 import { PreviewState } from "../types";
 
@@ -9,11 +10,24 @@ interface SettingsPanelProps {
   is3D: boolean;
 }
 
-function Slider({ label, value, min = 0, max = 100, unit = "%", onChange }: {
-  label: string; value: number; min?: number; max?: number; unit?: string; onChange: (value: number) => void;
+function Slider({ label, value, min = 0, max = 100, unit = "%", hints, onChange }: {
+  label: string; value: number; min?: number; max?: number; unit?: string;
+  hints?: readonly [string, string, string]; onChange: (value: number) => void;
 }) {
-  return <label className="slider-field"><span>{label}<output>{Math.round(value)}{unit}</output></span>
-    <input type="range" min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+  // Input remains a real native range control: keyboard, pointer, touch and
+  // screen-reader interaction never depend on a custom drag implementation.
+  const progress = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
+  const style = { "--slider-progress": `${progress}%` } as CSSProperties;
+
+  return <label className="slider-field precision-slider">
+    <span className="precision-slider-heading"><span>{label}</span><output>{Math.round(value)}{unit}</output></span>
+    <span className="precision-slider-track">
+      <input type="range" aria-label={label} min={min} max={max} value={value}
+        style={style} onChange={(event) => onChange(Number(event.target.value))} />
+    </span>
+    {hints && <span className="precision-slider-hints" aria-hidden="true">
+      <span>{hints[0]}</span><span>{hints[1]}</span><span>{hints[2]}</span>
+    </span>}
   </label>;
 }
 
@@ -61,8 +75,10 @@ export function SettingsPanel({ state, onChange, onBrowseLogo, onBrowseFont, is3
       <label className="field-label">Text<input type="text" maxLength={100} value={state.text}
         placeholder="Leave empty for no text" onChange={(e) => onChange({ text: e.target.value })} /></label>
       <Color label="Text color" value={state.textColor} onChange={(textColor) => onChange({ textColor })} />
-      <Slider label="Text opacity" value={state.opacity} onChange={(opacity) => onChange({ opacity })} />
-      <Slider label="Font scale" value={state.fontScale} min={20} max={300} onChange={(fontScale) => onChange({ fontScale })} />
+      <Slider label="Text opacity" value={state.opacity} hints={["Subtle", "Balanced", "Opaque"]}
+        onChange={(opacity) => onChange({ opacity })} />
+      <Slider label="Font scale" value={state.fontScale} min={20} max={300}
+        hints={["Smaller", "Standard", "Larger"]} onChange={(fontScale) => onChange({ fontScale })} />
       <div className="paired-fields">
         <Slider label="Text X" value={state.textPosX} onChange={(textPosX) => onChange({ textPosX })} />
         <Slider label="Text Y" value={state.textPosY} onChange={(textPosY) => onChange({ textPosY })} />
@@ -86,8 +102,10 @@ export function SettingsPanel({ state, onChange, onBrowseLogo, onBrowseFont, is3
         {state.logoPath && <button type="button" className="icon-button" aria-label="Remove logo" onClick={() => onChange({ logoPath: "" })}><X size={14} /></button>}
       </div>
       {state.logoPath && <>
-        <Slider label="Logo scale" value={state.logoScale} min={20} max={300} onChange={(logoScale) => onChange({ logoScale })} />
-        <Slider label="Logo opacity" value={state.logoOpacity} onChange={(logoOpacity) => onChange({ logoOpacity })} />
+        <Slider label="Logo scale" value={state.logoScale} min={20} max={300}
+          hints={["Smaller", "Standard", "Larger"]} onChange={(logoScale) => onChange({ logoScale })} />
+        <Slider label="Logo opacity" value={state.logoOpacity}
+          hints={["Subtle", "Balanced", "Opaque"]} onChange={(logoOpacity) => onChange({ logoOpacity })} />
         <div className="paired-fields">
           <Slider label="Logo X" value={state.logoPosX} onChange={(logoPosX) => onChange({ logoPosX })} />
           <Slider label="Logo Y" value={state.logoPosY} onChange={(logoPosY) => onChange({ logoPosY })} />

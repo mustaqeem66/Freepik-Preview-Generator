@@ -4,7 +4,7 @@ import "./studioFocus.css";
 import "./fileSelection.css";
 import { PaneResizer } from "./components/PaneResizer";
 import { CommandPalette, type StudioCommand } from "./components/CommandPalette";
-import { Box, ChevronLeft, ChevronRight, FolderOpen, FilePlus2, Layers, Moon, RefreshCw, Sun, Activity, Maximize2, Minimize2, Command, Columns2 } from "lucide-react";
+import { Box, ChevronLeft, ChevronRight, FolderOpen, FilePlus2, Layers, Moon, RefreshCw, Sun, Maximize2, Minimize2, Columns2 } from "lucide-react";
 import { ApiBridge } from "./api/bridge";
 import { useBackend } from "./hooks/useBackend";
 import { useSettings } from "./hooks/useSettings";
@@ -52,7 +52,6 @@ export default function App() {
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
   }, []);
-  const paletteShortcut = /Macintosh|Mac OS/i.test(navigator.userAgent) ? "⌘ K" : "Ctrl K";
 
   // Focus mode is intentionally session-only; launch in the discoverable
   // three-pane workspace and let artists opt into distraction-free editing.
@@ -356,11 +355,6 @@ export default function App() {
       <div className="brand"><span className="brand-mark"><Layers size={21} strokeWidth={1.6} /></span>
         <div><h1>PreviewGen<span className="studio-badge">Studio</span></h1><p>Make every asset presentation-ready.</p></div></div>
       <div className="toolbar-actions">
-        <button type="button" className="button studio-command-trigger"
-          aria-label="Open quick actions" aria-haspopup="dialog" aria-expanded={paletteOpen}
-          onClick={() => setPaletteOpen(true)}>
-          <Command size={15} aria-hidden="true"/><span>Commands</span><kbd>{paletteShortcut}</kbd>
-        </button>
         <span className="lifecycle-badge" data-testid="lifecycle-state" data-state={lifecycle} role="status"
           title="Last frontend/backend state; a frozen Windows window may not update this label">
           <span className="status-dot" />{LIFECYCLE_LABELS[lifecycle]}</span>
@@ -369,9 +363,6 @@ export default function App() {
             saveStatus === "error" ? "Settings unsaved" : saveStatus === "unsaved" ? "Unsaved changes" : ""}
         </span>
         {saveStatus === "error" && <button type="button" className="button" onClick={retrySave}>Retry save</button>}
-        <button type="button" className="button diagnostics-button" title="Open local diagnostic logs (no upload)"
-          disabled={!capabilities.canBrowse}
-          onClick={() => void openDiagnostics()}><Activity size={15} /> Diagnostics</button>
         <button type="button" className="icon-button theme-toggle" aria-label={state.theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
           onClick={() => setState((previous) => ({ ...previous, theme: previous.theme === "light" ? "dark" : "light" }))}>
           {state.theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}</button>
@@ -475,6 +466,21 @@ export default function App() {
             canExport={capabilities.canGenerate && !busy && scanReady && destinationReady}
             isExporting={isExporting} disabled={!activeFile || !scanReady || !destinationReady} /></div>
         <div className="canvas-footnote"><span>{compareRequested ? "Source visualization · Flattened formats may differ from editable originals" : "Diagonal split · Original proportions"}</span><span>{compareRequested ? "Before uses checkerboard for transparency; After is the JPG preview." : "JPG is opaque; checkerboard is printed."}</span></div>
+        <div className="canvas-export-dock" role="region" aria-label="Batch export actions">
+          <BatchProgress isProcessing={isProcessing}
+            canCancelBatch={canCancelBatch} isCancelling={batchStatus === "batch-cancelling"}
+            progress={progress} stats={stats} batchErrors={batchErrors}
+            truncated={requiresTruncationAck} truncationReasons={truncationReasons} discovered={discovered}
+            onStartBatch={() => { if (!busy && scanReady && destinationReady) void startBatch(
+              usingFiles ? "" : state.inputFolder, state.outputFolder, fileList.length, state,
+              usingFiles ? fileList.map((file) => file.path) : undefined,
+            ); }}
+            onCancelBatch={() => void cancelBatch()} canStart={capabilities.canGenerate && !busy && scanReady && destinationReady &&
+              fileList.length > 0 && !requiresTruncationAck} />
+          <button type="button" className="button dock-open-output" aria-label="Open output folder"
+            disabled={!(usingFiles ? state.outputFolder : state.inputFolder) || !capabilities.canOpenReport || busy}
+            onClick={() => void openOutput()}><FolderOpen size={15} aria-hidden="true" />Open output</button>
+        </div>
       </section>
       {!isFocused && isWideWorkspace && <PaneResizer label="Resize inspector" value={actualInspectorWidth}
         initial={300} min={260} max={380} reverse onChange={setInspectorWidth} />}
@@ -487,18 +493,6 @@ export default function App() {
       </aside>}
     </main>
     <CommandPalette open={paletteOpen} actions={commands} onClose={() => setPaletteOpen(false)} />
-    <footer className="studio-footer"><BatchProgress isProcessing={isProcessing}
-      canCancelBatch={canCancelBatch} isCancelling={batchStatus === "batch-cancelling"} progress={progress} stats={stats} batchErrors={batchErrors}
-      truncated={requiresTruncationAck} truncationReasons={truncationReasons} discovered={discovered}
-      onStartBatch={() => { if (!busy && scanReady && destinationReady) void startBatch(
-        usingFiles ? "" : state.inputFolder, state.outputFolder, fileList.length, state,
-        usingFiles ? fileList.map((file) => file.path) : undefined,
-      ); }}
-      onCancelBatch={() => void cancelBatch()} canStart={capabilities.canGenerate && !busy && scanReady && destinationReady &&
-        fileList.length > 0 && !requiresTruncationAck} />
-      <button type="button" className="button" disabled={!(usingFiles ? state.outputFolder : state.inputFolder) || !capabilities.canOpenReport || busy}
-        onClick={() => void openOutput()}><FolderOpen size={15} />Open Output Folder</button>
-    </footer>
     {requiresTruncationAck && <dialog className="warning-dialog" ref={(dialog) => { if (dialog && !dialog.open) dialog.showModal(); }}
       aria-labelledby="truncation-title" onCancel={(event) => event.preventDefault()} data-testid="truncation-ack">
       <h2 id="truncation-title">Batch completed with warnings</h2><p>Discovery stopped early ({truncationReasons.join(", ") || "a safety limit"}).

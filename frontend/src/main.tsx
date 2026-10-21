@@ -5,6 +5,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./index.css";
 import "./studioPolish.css";
 import "./studioPremium.css";
+import "./studioControls.css";
 
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
