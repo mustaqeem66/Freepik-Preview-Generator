@@ -9,6 +9,12 @@ export const GALLERY_COLUMNS = 2;
 export const GALLERY_ROW_HEIGHT = 130;
 const MAX_VISIBLE = 16;
 
+function keepVisible(old: Record<string, string>, paths: Iterable<string>): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const path of paths) if (old[path]) next[path] = old[path];
+  return next;
+}
+
 interface Props {
   files: FileInfo[];
   matchedIndices: number[] | null;
@@ -69,7 +75,7 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
   useEffect(() => {
     const wanted: string[] = JSON.parse(pathsKey) as string[];
     wantedRef.current = new Set(wanted);
-    setImages((old) => Object.fromEntries(wanted.flatMap((p) => old[p] ? [[p, old[p]]] : [])));
+    setImages((old) => keepVisible(old, wanted));
     setFailed((old) => new Set([...old].filter((p) => wantedRef.current.has(p))));
     const generation = ++generationRef.current;
     // Debounce fast wheel navigation. Only the latest visible set reaches Python.
@@ -80,12 +86,8 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
         apiRef.current = api;
         const response = await api.request_thumbnails(wanted);
         if (generation !== generationRef.current || !response?.ok || !response.value) return;
-        setImages((old) => {
-          const visible = Object.fromEntries(
-            wanted.flatMap((p) => old[p] ? [[p, old[p]]] : [])
-          );
-          return { ...visible, ...response.value };
-        });
+        const cached = response.value;
+        setImages((old) => ({ ...keepVisible(old, wanted), ...cached }));
       } catch {
         // Gallery falls back to format tiles while the backend is unavailable.
       }
@@ -106,9 +108,7 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
         const returned = result.value;
         setImages((old) => {
           const current = wantedRef.current;
-          const visible = Object.fromEntries(
-            [...current].flatMap((p) => old[p] ? [[p, old[p]]] : [])
-          );
+          const visible = keepVisible(old, current);
           for (const [path, url] of Object.entries(returned)) {
             if (current.has(path)) visible[path] = url;
           }
