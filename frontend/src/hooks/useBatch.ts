@@ -161,7 +161,14 @@ export function useBatch() {
         const api = await ApiBridge.getApi(3000);
         if (!api) throw new Error("Backend unavailable. Reconnect before generating previews.");
         const response = await api.start_batch(inputFolder, config.sameFolder ? inputFolder : outputFolder || inputFolder, config);
-        if (!response?.ok || !response.operationId) throw new Error(response?.error || "Unable to start batch");
+        if (!response?.ok || !response.operationId) {
+          const reason = response?.error === "UNAUTHORIZED_OUTPUT_PATH"
+            ? "Select the output folder with Choose Output Folder before exporting."
+            : response?.error === "UNAUTHORIZED_INPUT_PATH"
+              ? "Select a source folder and scan it before exporting."
+              : response?.error || "Unable to start batch";
+          throw new Error(reason);
+        }
         activeOpIdRef.current = response.operationId;
         startPendingRef.current = false;
         replayRef.current(response.operationId);
