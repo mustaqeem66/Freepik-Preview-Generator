@@ -44,6 +44,7 @@ def _row(index: int, padding: int = 0) -> dict:
 def test_large_scan_completion_is_metadata_only_and_pages_stay_bounded() -> None:
     api = DesktopApi()
     api.scanner = ScannerService()
+    api._scan_paging_enabled = True
     window = FakeWindow()
     api.window = window
     files = [_row(i, padding=450) for i in range(5000)]
@@ -137,5 +138,24 @@ def test_scan_pages_are_sequential_and_revoked_when_new_scan_starts(monkeypatch)
         monkeypatch.setattr(api.scanner, "start_scan", lambda folder: {"ok": True, "scanId": "new"})
         assert api.start_scan("/some/folder") == {"ok": True, "scanId": "new"}
         assert api.get_scan_page("old", first["value"]["nextOffset"])["error"] == "SCAN_RESULT_EXPIRED"
+    finally:
+        api.cleanup()
+
+
+
+def test_legacy_scan_client_still_gets_complete_inline_result() -> None:
+    api = DesktopApi()
+    api.scanner = ScannerService()
+    window = FakeWindow()
+    api.window = window
+    rows = [_row(index, padding=100) for index in range(200)]
+    try:
+        # Old React clients do not opt into pagination.
+        assert api._scan_paging_enabled is False
+        api._on_scan_finished("legacy", {"files": rows, "total": 200})
+        payload = _last_event(window)["payload"]["result"]
+        assert payload["files"] == rows
+        assert "paged" not in payload
+        assert api._scan_page_state is None
     finally:
         api.cleanup()
