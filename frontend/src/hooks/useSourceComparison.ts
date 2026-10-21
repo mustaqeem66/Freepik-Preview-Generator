@@ -20,7 +20,8 @@ export function useSourceComparison(path: string | undefined, enabled: boolean) 
       setPendingPath(null);
       void ApiBridge.getApi(250).then((api) => {
         if (token !== generation.current) return;
-        return api?.request_source_comparison?.("").catch(() => {});
+        const request = api?.request_source_comparison?.("");
+        return request?.catch(() => {});
       }).catch(() => {});
       return;
     }
