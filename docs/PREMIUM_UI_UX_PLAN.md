@@ -54,3 +54,11 @@
 | macOS DMG / Linux AppImage | Platform-specific | Platform-specific | Platform-specific | Manual as currently packaged |
 
 The ZIP was built from another source snapshot. Always develop feature changes on the current GitHub `main`, preserving the merged backend fixes.
+
+## 2026-10-21 — Resizable studio panes (proposed PR)
+
+- [x] Add accessible keyboard and pointer separators between library/canvas and canvas/inspector.
+- [x] Bound pane widths, maintain canvas space, and leave compact layouts unchanged.
+- [x] Persist pane preferences to local WebView storage without changing backend settings schema; gracefully handle denied storage.
+- [x] Support double-click reset and add keyboard behavior tests.
+- [ ] Run frontend typecheck, Vitest, Vite build and actual Windows WebView pointer/scaling checks before merging.
