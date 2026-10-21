@@ -341,3 +341,11 @@ h2 { font-size: 13px; }
 .empty-canvas p { font-size: 13px; max-width: 285px; }
 .empty-formats { font-size: 11px; color: var(--text-muted); }
 @media (prefers-reduced-motion: reduce) { .empty-canvas-action { transition: none !important; } }
+
+/* Asset search is an index-only projection: no eager thumbnail decoding or
+   additional large-list DOM nodes. Keep the search readable in both themes. */
+.asset-list-group { min-width: 0; }
+.asset-search-row { display: flex; gap: 8px; align-items: center; margin: 9px 0 8px; min-width: 0; }
+.asset-search { width: 100%; min-width: 0; flex: 1; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--field-border); background: var(--card-bg); color: var(--text); font-size: 12px; }
+.asset-search-count { flex: none; font-size: 11px; color: var(--text-sec); font-variant-numeric: tabular-nums; }
+.asset-no-matches { font-size: 12px; text-align: center; color: var(--text-sec); padding: 28px 12px; line-height: 1.5; }
