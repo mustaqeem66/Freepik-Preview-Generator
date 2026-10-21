@@ -497,6 +497,11 @@ export default function App() {
           <SettingsPanel state={state} onChange={(patch) => setState((previous) => ({ ...previous, ...patch }))}
             onBrowseLogo={() => void browse("browse_logo")} onBrowseFont={() => void browse("browse_font")} is3D={is3D} />
         </fieldset>
+        {probe?.previewSupport && !["raster", "vector", "mesh", "font"].includes(probe.previewSupport.mode) &&
+          <div className="format-support-note" role="note" data-testid="format-preview-caveat">
+            <strong>Preview method: {probe.previewSupport.label}</strong>
+            <p>{probe.previewSupport.caveat}</p>
+          </div>}
         </div>
       </aside>}
     </main>

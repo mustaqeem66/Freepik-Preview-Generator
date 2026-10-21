@@ -128,6 +128,13 @@ export interface AssetProbe {
   maxDimension: number;
   defaultDimension: number;
   requestId?: number;
+  previewSupport?: {
+    mode: "raster" | "vector" | "conditional" | "composite" | "font" |
+      "mesh" | "cad" | "embedded" | "external_fallback" | "sample" | "container";
+    label: string;
+    engines: string[];
+    caveat: string;
+  } | null;
 }
 
 export interface ExportResult {

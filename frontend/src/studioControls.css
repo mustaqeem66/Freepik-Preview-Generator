@@ -226,3 +226,27 @@
 @media (max-width: 1150px) {
   .source-choice-actions { grid-template-columns: 1fr; }
 }
+
+/* Format capability is grounded in the loaded asset's Python probe metadata.
+   Discreet explanation, not a misleading universal support badge. */
+.format-support-note {
+  margin: 10px 12px 16px;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: var(--field-bg);
+  color: var(--text-sec);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.format-support-note strong {
+  display: block;
+  color: var(--text);
+  font-weight: 650;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.format-support-note p { margin: 0; }
+@media (forced-colors: active) {
+  .format-support-note { border-color: CanvasText; }
+}
