@@ -57,8 +57,8 @@ export default function App() {
   // Focus mode is intentionally session-only; launch in the discoverable
   // three-pane workspace and let artists opt into distraction-free editing.
   const { isFocused, toggleFocus } = useStudioFocus();
-  const libraryScrollRef = useLenisPane();
-  const inspectorScrollRef = useLenisPane();
+  const libraryScrollRef = useLenisPane(!isFocused);
+  const inspectorScrollRef = useLenisPane(!isFocused);
   const [libraryWidth, setLibraryWidth] = useState(() => readPaneWidth("previewgen.libraryWidth", 250, 200, 360));
   const [inspectorWidth, setInspectorWidth] = useState(() => readPaneWidth("previewgen.inspectorWidth", 300, 260, 380));
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
