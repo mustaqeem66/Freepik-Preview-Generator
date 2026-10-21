@@ -345,13 +345,15 @@ export default function App() {
     } : undefined}>
       {!isFocused && <aside className="library-pane" aria-label="Asset library">
         <FolderPicker inputFolder={state.inputFolder} outputFolder={state.outputFolder} sameFolder={state.sameFolder}
+          forceSeparateOutput={usingFiles}
           disabled={busy || !isLoaded || !capabilities.canBrowse}
           onBrowseInput={() => void browse("browse_input_folder")} onBrowseOutput={() => void browse("browse_output_folder")}
           onCommitInput={(inputFolder) => {
             setSourceMode("folder");
             setState((previous) => ({ ...previous, inputFolder }));
           }}
-          onToggleSameFolder={(sameFolder) => setState((previous) => ({ ...previous, sameFolder }))} />
+          onToggleSameFolder={(sameFolder) => setState((previous) => ({ ...previous,
+            sameFolder: usingFiles ? false : sameFolder }))} />
         <div className="library-heading"><h2>Assets<span className="count-badge">{fileList.length}</span></h2>
           <div className="library-heading-actions">
             <button type="button" className="button add-files-button" disabled={busy || !isLoaded || !capabilities.canBrowse}
