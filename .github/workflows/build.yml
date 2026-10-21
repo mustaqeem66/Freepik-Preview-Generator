@@ -38,6 +38,22 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12.8"
+
+      # ── Linux: install system webview deps ──
+      # Must run BEFORE the lock install: PyGObject publishes no wheels, so the
+      # hash-pinned step compiles it and needs the introspection/cairo headers.
+      # The GIR typelibs are required at build time as well, otherwise the
+      # PyInstaller gi hooks cannot find WebKit2 and the frozen app silently
+      # falls back to its headless smoke path.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-0 gir1.2-webkit2-4.1 gir1.2-gtk-3.0 \
+            libgirepository1.0-dev libcairo2-dev pkg-config python3-dev \
+            libgl1-mesa-glx libegl1 fuse libfuse2 xvfb
+
       - name: Install dependencies (hash-pinned lock)
         run: |
           python -m pip install --upgrade pip
@@ -46,12 +62,6 @@ jobs:
       - name: Lint Python (ruff)
         run: python -m ruff check .
 
-      # ── Linux: install system webview deps ──
-      - name: Install Linux system dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-0 libgl1-mesa-glx libegl1 fuse libfuse2 xvfb
       # ── Frontend gate: typecheck -> tests -> production bundle ──
       # Packaging must not start unless the frontend passes all three gates.
       - name: Set up Node.js 24.15.0
@@ -77,7 +87,12 @@ jobs:
       - name: Build executable
         shell: bash
         run: |
-          pyinstaller --noconsole --name PreviewGen --icon=app.ico \
+          # The gi hook for WebKit2 lives in hooks/ because neither PyInstaller nor
+          # its hook pack ships one; without it the frozen Linux build has no
+          # WebKit2 typelib and cannot open a real WebView.
+          HOOK_ARGS=""
+          if [ "$RUNNER_OS" = "Linux" ]; then HOOK_ARGS="--additional-hooks-dir hooks"; fi
+          pyinstaller --noconsole --name PreviewGen --icon=app.ico $HOOK_ARGS \
             --add-data "app.ico${{ runner.os == 'Windows' && ';' || ':' }}." \
             --add-data "frontend/dist${{ runner.os == 'Windows' && ';' || ':' }}frontend/dist" \
             --add-data "previewgen/settings_schema.json${{ runner.os == 'Windows' && ';' || ':' }}previewgen" \

@@ -105,3 +105,6 @@ local-check-report.json
 
 # Local CI sandbox created for WSL release-gate runs (not part of the project)
 .venv-ci/
+
+# Throwaway venv used only to validate the hash-pinned lock install locally
+.venv-lockcheck/
