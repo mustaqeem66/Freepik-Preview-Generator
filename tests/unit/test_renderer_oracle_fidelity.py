@@ -151,3 +151,38 @@ def test_require_oracles_never_certifies_smoke_only_render(tmp_path, monkeypatch
     assert result["samples"][0]["status"] == "passed"
     assert result["samples"][0]["fidelityVerified"] is False
     assert result["registry"]["oracleVerifiedFixtures"] == 0
+
+
+
+def test_require_oracles_rejects_empty_manifest(tmp_path):
+    manifest = tmp_path / "empty.json"
+    manifest.write_text(json.dumps({"samples": []}))
+    report = tmp_path / "results.json"
+    assert main([
+        "--manifest", str(manifest), "--report", str(report), "--require-oracles",
+    ]) == 1
+    assert json.loads(report.read_text())["registry"]["oracleVerifiedFixtures"] == 0
+
+
+def test_renderer_audit_records_source_deleted_since_inventory(tmp_path):
+    source = tmp_path / "part.png"
+    _gradient(source)
+    report = inspect_inventory({"samples": [{"file": "part.png"}]}, tmp_path)
+    source.unlink()
+    # The audit must continue to report evidence instead of crashing and
+    # concealing this failure from the other samples in the matrix.
+    verify_samples(report, tmp_path, timeout=2.0)
+    entry = report["samples"][0]
+    assert entry["status"] == "missing_fixture"
+    assert entry["sourcePreserved"] is False
+    assert "FileNotFoundError" in entry["failure"]
+
+
+def test_oracle_threshold_cannot_be_set_to_meaningless_255(tmp_path):
+    source = tmp_path / "part.png"
+    reference = tmp_path / "approved.png"
+    _gradient(source)
+    _gradient(reference)
+    manifest = _manifest(reference, error=255)
+    with pytest.raises(ValueError, match="between 0 and 32"):
+        inspect_inventory(manifest, tmp_path)
