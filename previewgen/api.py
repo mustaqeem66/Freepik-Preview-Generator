@@ -261,6 +261,19 @@ class DesktopApi:
         except (OSError, ValueError, TypeError):
             return False
 
+    def is_authorized_export_destination(
+        self, folder: Path | str, *, exact_file: bool = False
+    ) -> bool:
+        """Only explicit destination grants, or Same-as-input scanned folders.
+
+        A broad folder authorization also covers diagnostics and user settings;
+        that does not confer write permission. Exact Add Files grants never
+        authorize their parent directories for writes.
+        """
+        if self.is_authorized_output_path(folder):
+            return True
+        return not exact_file and self.is_authorized_input_path(folder)
+
     def is_authorized_selected_file(self, path: Path | str) -> bool:
         """File-picker grants are exact source paths, never parent directories."""
         try:
@@ -1112,17 +1125,13 @@ class DesktopApi:
             out_dir = Path(
                 requested_out if isinstance(requested_out, str) and requested_out.strip() else default_out_dir
             ).resolve()
-            if not self.is_authorized_path(out_dir):
-                return {"ok": False, "value": None, "error": "UNAUTHORIZED_PATH", "code": "UNAUTHORIZED_PATH"}
-            # A file selected directly via Add Files has no authorized
-            # writeable parent. Explicit-file exports must use a separate
-            # output-folder grant, even if a source-folder scan also happened
-            # to authorize the same directory for the legacy workflow.
-            if (not file_path.startswith("zip://")
-                    and self.is_authorized_selected_file(source_path)
-                    and not self.is_authorized_output_path(out_dir)):
-                return {"ok": False, "value": None, "error": "UNAUTHORIZED_OUTPUT_PATH",
-                        "code": "UNAUTHORIZED_OUTPUT_PATH"}
+            selected_exact = (
+                not file_path.startswith("zip://")
+                and self.is_authorized_selected_file(source_path)
+            )
+            if not self.is_authorized_export_destination(out_dir, exact_file=selected_exact):
+                code = "UNAUTHORIZED_OUTPUT_PATH" if selected_exact else "UNAUTHORIZED_PATH"
+                return {"ok": False, "value": None, "error": code, "code": code}
 
             cfg = PreviewConfig.from_mapping(config_dict, mode="strict-export")
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -1195,7 +1204,7 @@ class DesktopApi:
             auxiliary_error = self._auxiliary_read_error(config_dict)
             if auxiliary_error:
                 return {"ok": False, "error": auxiliary_error}
-            if not self.is_authorized_path(output):
+            if not self.is_authorized_export_destination(output):
                 return {"ok": False, "error": "UNAUTHORIZED_OUTPUT_PATH"}
             with self._batch_start_lock:
                 self._batch_operation_id = op_id
