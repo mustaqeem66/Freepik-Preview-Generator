@@ -181,7 +181,7 @@ export interface PyWebViewApi {
     path: string
   ) => Promise<{ ok: boolean; value: boolean | null; error: string | null; message?: string }>;
   open_diagnostics_folder?: () => Promise<{ ok: boolean; error: string | null }>;
-  start_scan: (path: string) => Promise<{ ok: boolean; scanId: string }>;
+  start_scan: (path: string, paged?: boolean) => Promise<{ ok: boolean; scanId: string }>;
   cancel_scan: (scanId?: string) => Promise<{ ok: boolean; cancelled?: boolean; error?: string } | void>;
   get_scan_page?: (scanId: string, offset: number, limit: number) => Promise<ApiResponse<{
     scanId: string; offset: number; total: number; nextOffset: number; files: FileInfo[];
