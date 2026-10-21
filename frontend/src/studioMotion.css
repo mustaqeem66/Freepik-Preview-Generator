@@ -55,9 +55,8 @@
   border-top: 1px solid var(--card-border);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
 }
-/* Slider rail is a real input: precise and immediate even while Lenis
-   smooths surrounding pane wheel scrolling. */
-.precision-slider input[type="range"] { touch-action: pan-y; }
+/* Sliders keep native pointer capture and touch interaction; Lenis
+   excludes all inputs from wheel interception. */
 .precision-slider input[type="range"]::-webkit-slider-thumb { transition: box-shadow 120ms ease; }
 .precision-slider input[type="range"]:hover::-webkit-slider-thumb {
   box-shadow: var(--precision-thumb-shadow), 0 0 0 3px rgba(82,152,251,.08);
