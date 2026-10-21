@@ -15,6 +15,8 @@
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 15px; }
 .gallery-asset-kind { font-size: 9px; color: var(--text-sec); line-height: 11px; }
 .gallery-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.asset-search-row { flex-wrap: wrap; }
+.asset-search-row .asset-search { flex-basis: 80px; }
 .asset-view-toggle { display: inline-flex; flex: none; gap: 2px; padding: 2px;
   border: 1px solid var(--card-border); border-radius: 7px; background: var(--chip-bg); }
 .asset-view-toggle button { display: grid; place-items: center; border: 0; border-radius: 5px;
