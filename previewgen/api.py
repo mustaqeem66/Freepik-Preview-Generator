@@ -248,6 +248,17 @@ class DesktopApi:
         """Save user preferences atomically to disk with backup and schema version."""
         if not isinstance(settings_dict, dict):
             return {"ok": False, "value": False, "error": "Invalid settings payload"}
+        # The persisted outputFolder is restored by get_initial_state() as an
+        # explicit output grant. Forbid a bridge caller from saving a new
+        # arbitrary path and then calling get_initial_state() to launder that
+        # unselected path into an authorized output directory.
+        output_folder = settings_dict.get("outputFolder")
+        if isinstance(output_folder, str) and output_folder.strip():
+            if not self.is_authorized_output_path(output_folder):
+                return {
+                    "ok": False, "value": False, "error": "UNAUTHORIZED_OUTPUT_PATH",
+                    "code": "UNAUTHORIZED_OUTPUT_PATH",
+                }
         try:
             if save_settings(settings_dict):
                 return {"ok": True, "value": True, "error": None}
@@ -728,6 +739,15 @@ class DesktopApi:
             ).resolve()
             if not self.is_authorized_path(out_dir):
                 return {"ok": False, "value": None, "error": "UNAUTHORIZED_PATH", "code": "UNAUTHORIZED_PATH"}
+            # A file selected directly via Add Files has no authorized
+            # writeable parent. Explicit-file exports must use a separate
+            # output-folder grant, even if a source-folder scan also happened
+            # to authorize the same directory for the legacy workflow.
+            if (not file_path.startswith("zip://")
+                    and self.is_authorized_selected_file(source_path)
+                    and not self.is_authorized_output_path(out_dir)):
+                return {"ok": False, "value": None, "error": "UNAUTHORIZED_OUTPUT_PATH",
+                        "code": "UNAUTHORIZED_OUTPUT_PATH"}
 
             cfg = PreviewConfig.from_mapping(config_dict, mode="strict-export")
             out_dir.mkdir(parents=True, exist_ok=True)
