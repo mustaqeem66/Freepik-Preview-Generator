@@ -491,7 +491,8 @@ class DesktopApi:
                     parsed = urllib.parse.urlparse(raw)
                     archive = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
                     entry = urllib.parse.parse_qs(parsed.query).get("entry", [""])[0]
-                    if not entry or Path(entry).suffix.lower() not in SUPPORTED_EXTENSIONS:
+                    if (not entry or Path(entry).suffix.lower() not in SUPPORTED_EXTENSIONS
+                            or Path(entry).suffix.lower() == ".zip" or archive.suffix.lower() != ".zip"):
                         return {"ok": False, "value": None, "error": "INVALID_THUMBNAIL_SELECTION"}
                     source = archive
                 else:
