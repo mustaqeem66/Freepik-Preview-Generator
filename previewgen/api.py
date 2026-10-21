@@ -10,6 +10,7 @@ import itertools
 import json
 import logging
 import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -518,8 +519,20 @@ class DesktopApi:
                 )
             else:
                 import subprocess
+                opener = shutil.which("xdg-open")
+                gio = shutil.which("gio") if not opener else None
+                if opener:
+                    command = [opener, str(target)]
+                elif gio:
+                    command = [gio, "open", str(target)]
+                else:
+                    return {
+                        "ok": False,
+                        "error": "NO_FOLDER_OPENER",
+                        "message": "No Linux file manager opener is installed (xdg-open or gio).",
+                    }
                 subprocess.Popen(
-                    ["xdg-open", str(target)],
+                    command,
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
