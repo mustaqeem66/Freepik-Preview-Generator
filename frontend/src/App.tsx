@@ -388,7 +388,9 @@ export default function App() {
         <FolderPicker inputFolder={state.inputFolder} outputFolder={state.outputFolder} sameFolder={state.sameFolder}
           forceSeparateOutput={usingFiles}
           disabled={busy || pickerBusy || !isLoaded || !capabilities.canBrowse}
-          onBrowseInput={() => void browse("browse_input_folder")} onBrowseOutput={() => void browse("browse_output_folder")}
+          onBrowseInput={() => void browse("browse_input_folder")}
+          onBrowseFiles={() => void addFiles()}
+          onBrowseOutput={() => void browse("browse_output_folder")}
           onCommitInput={(inputFolder) => {
             setSourceMode("folder");
             setState((previous) => ({ ...previous, inputFolder }));

@@ -121,10 +121,9 @@
   padding: 0 4px;
   border-radius: 12px;
 }
-.precision-slider-track:focus-within {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
-}
+/* Do not draw a rectangular blue ring around the entire rail when clicked.
+   Keyboard users retain a visible, subtle ring around the circular thumb. */
+.precision-slider-track:focus-within { outline: none; }
 .precision-slider input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
@@ -139,7 +138,17 @@
   box-shadow: inset 0 1px 2px rgba(0,0,0,.08);
   cursor: pointer;
 }
-.precision-slider input[type="range"]:focus-visible { outline: none; }
+.precision-slider input[type="range"]:focus,
+.precision-slider input[type="range"]:focus-visible { outline: none; box-shadow: inset 0 1px 2px rgba(0,0,0,.08); }
+.precision-slider input[type="range"]:focus:not(:focus-visible)::-webkit-slider-thumb {
+  box-shadow: var(--precision-thumb-shadow);
+}
+.precision-slider input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: var(--precision-thumb-shadow), 0 0 0 3px var(--focus-ring);
+}
+.precision-slider input[type="range"]:focus-visible::-moz-range-thumb {
+  box-shadow: var(--precision-thumb-shadow), 0 0 0 3px var(--focus-ring);
+}
 .precision-slider input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -194,4 +203,26 @@
     box-shadow: 0 0 0 1px ButtonText;
   }
   .canvas-export-dock { border-color: CanvasText; }
+}
+
+/* Only the precision slider track loses its broad focus rectangle;
+   retain high-contrast keyboard discoverability on the thumb itself. */
+@media (forced-colors: active) {
+  .precision-slider input[type="range"]:focus-visible::-webkit-slider-thumb {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+  .precision-slider input[type="range"]:focus-visible::-moz-range-thumb {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+/* Choosing a directory is not choosing individual artwork files. */
+.source-choice-actions { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 6px; }
+.source-choice-actions .button { min-width: 0; font-size: 11px; padding-inline: 5px; }
+.source-choice-actions .source-files-button { background: var(--chip-bg); font-weight: 650; }
+.source-choice-actions .source-files-button:hover:not(:disabled) { border-color: var(--accent); }
+@media (max-width: 1150px) {
+  .source-choice-actions { grid-template-columns: 1fr; }
 }

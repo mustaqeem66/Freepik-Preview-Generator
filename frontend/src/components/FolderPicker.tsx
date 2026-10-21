@@ -6,6 +6,7 @@ interface FolderPickerProps {
   outputFolder: string;
   sameFolder: boolean;
   onBrowseInput: () => void;
+  onBrowseFiles?: () => void;
   onBrowseOutput: () => void;
   onToggleSameFolder: (checked: boolean) => void;
   onCommitInput?: (path: string) => void;
@@ -14,7 +15,7 @@ interface FolderPickerProps {
 }
 
 export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseInput,
-  onBrowseOutput, onToggleSameFolder, onCommitInput, disabled = false,
+  onBrowseFiles, onBrowseOutput, onToggleSameFolder, onCommitInput, disabled = false,
   forceSeparateOutput = false }: FolderPickerProps) {
   const [input, setInput] = useState(inputFolder);
   const [output, setOutput] = useState(outputFolder);
@@ -29,10 +30,14 @@ export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseIn
       onChange={(e) => setInput(e.target.value)}
       onBlur={() => { if (input.trim() !== inputFolder) onCommitInput?.(input.trim()); }}
       onKeyDown={(e) => { if (e.key === "Enter") onCommitInput?.(input.trim()); }} />
-    <button type="button" className="button" disabled={disabled} onClick={onBrowseInput}>
-      <FolderOpen size={15} />Choose Input Folder
-    </button>
-    <p className="picker-hint"><Info size={14} aria-hidden="true" />The system dialog selects folders only; it won't display individual files. Choose a folder to scan supported assets inside it.</p>
+    <div className="source-choice-actions" role="group" aria-label="Choose artwork source">
+      <button type="button" className="button source-folder-button" disabled={disabled} onClick={onBrowseInput}>
+        <FolderOpen size={15} aria-hidden="true" />Choose Folder
+      </button>
+      {onBrowseFiles && <button type="button" className="button source-files-button" disabled={disabled}
+        onClick={onBrowseFiles}>Browse Files…</button>}
+    </div>
+    <p className="picker-hint"><Info size={14} aria-hidden="true" />Choose Folder selects a directory; the system may hide files in that dialog. To see and select PNG, PSD, SVG, 3D, CAD and other supported artwork files, use <strong>Browse Files…</strong>.</p>
     <div className="section-heading destination-heading"><FolderOutput size={16} /><h2>Destination</h2></div>
     <label className="check-row"><input type="checkbox" checked={sameFolder && !forceSeparateOutput}
       disabled={disabled || forceSeparateOutput}
