@@ -25,6 +25,7 @@ from previewgen.config import (
     SUPPORTED_EXTENSIONS,
     PreviewConfig,
 )
+from previewgen.destinations import protect_source_destinations
 from previewgen.errors import classify_exception
 from previewgen.lock import DirectoryLock
 from previewgen.renderer_process import render_file_with_timeout as _render_file_with_timeout
@@ -269,6 +270,10 @@ def process_folder(
                 allocated_names.add(out_name.lower())
                 work_items.append((src, out_name))
 
+        # Protect ALL original inputs, not just the file being rendered.
+        # A PNG with the same stem as a JPG must never replace that JPG.
+        protected_sources = {item.resolve() for item, _name in work_items}
+
         planned = len(work_items) + failed
         total = max(1, len(work_items) + failed)
         completed = failed
@@ -278,7 +283,9 @@ def process_folder(
             if is_cancelled():
                 cancelled = True
                 break
-            target_file = output_folder / out_name
+            target_file = protect_source_destinations(
+                output_folder / out_name, protected_sources, allocated_names
+            )
             if target_file.exists():
                 if config.overwrite_policy == "skip":
                     skipped += 1
@@ -287,9 +294,12 @@ def process_folder(
                     continue
                 elif config.overwrite_policy == "rename":
                     r_count = 1
-                    while target_file.exists():
+                    while target_file.exists() or target_file.resolve() in protected_sources:
                         target_file = output_folder / f"{Path(out_name).stem}_copy{r_count}.jpg"
                         r_count += 1
+                        target_file = protect_source_destinations(
+                            target_file, protected_sources, allocated_names
+                        )
 
             file_start = time.time()
             file_rec: dict[str, Any] = {
