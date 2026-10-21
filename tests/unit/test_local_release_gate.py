@@ -18,8 +18,10 @@ def test_core_plan_builds_frontend_before_bundle_csp(tmp_path: Path) -> None:
     assert names == [
         "backend-ruff", "backend-core-tests", "frontend-typecheck",
         "frontend-unit-tests", "frontend-production-build", "frontend-bundle-csp",
+        "frontend-studio-design",
     ]
-    assert checks[-1].require_bundle is True
+    assert checks[-2].require_bundle is True
+    assert checks[-1].name == "frontend-studio-design"
     assert "frontend-install" not in names
 
 
@@ -53,10 +55,11 @@ def test_bundle_csp_check_requires_production_bundle_environment(tmp_path: Path,
     report = tmp_path / "checks.json"
     checks = release.plan_checks(tmp_path, frontend=True, backend=False, python="python", npm="npm")
     assert release.run_checks(checks, root=tmp_path, report=report) == 0
-    assert calls[-1]["env"]["PREVIEWGEN_REQUIRE_FRONTEND_BUNDLE"] == "1"
+    assert calls[-2]["env"]["PREVIEWGEN_REQUIRE_FRONTEND_BUNDLE"] == "1"
+    assert calls[-1]["env"] is None
     assert calls[0]["env"] is None
     data = json.loads(report.read_text())
-    assert data["summary"]["passed"] == 4
+    assert data["summary"]["passed"] == 5
     assert data["summary"]["failed"] == 0
     assert all(entry["status"] == "pass" for entry in data["results"])
     assert all("/" not in entry["argv"][0] and "\\" not in entry["argv"][0]

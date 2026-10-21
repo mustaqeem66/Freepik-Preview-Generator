@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStudioFocus } from "./hooks/useStudioFocus";
+import { useLenisPane } from "./hooks/useLenisPane";
 import "./studioFocus.css";
 import "./fileSelection.css";
 import { PaneResizer } from "./components/PaneResizer";
@@ -56,6 +57,8 @@ export default function App() {
   // Focus mode is intentionally session-only; launch in the discoverable
   // three-pane workspace and let artists opt into distraction-free editing.
   const { isFocused, toggleFocus } = useStudioFocus();
+  const libraryScrollRef = useLenisPane(!isFocused);
+  const inspectorScrollRef = useLenisPane(!isFocused);
   const [libraryWidth, setLibraryWidth] = useState(() => readPaneWidth("previewgen.libraryWidth", 250, 200, 360));
   const [inspectorWidth, setInspectorWidth] = useState(() => readPaneWidth("previewgen.inspectorWidth", 300, 260, 380));
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
@@ -380,7 +383,8 @@ export default function App() {
     } : isWideWorkspace ? {
       gridTemplateColumns: `${actualLibraryWidth}px 6px minmax(280px, 1fr) 6px ${actualInspectorWidth}px`
     } : undefined}>
-      {!isFocused && <aside className="library-pane" aria-label="Asset library">
+      {!isFocused && <aside className="library-pane" aria-label="Asset library" ref={libraryScrollRef}>
+        <div className="library-scroll-content">
         <FolderPicker inputFolder={state.inputFolder} outputFolder={state.outputFolder} sameFolder={state.sameFolder}
           forceSeparateOutput={usingFiles}
           disabled={busy || pickerBusy || !isLoaded || !capabilities.canBrowse}
@@ -423,6 +427,7 @@ export default function App() {
           : <div className="empty-library"><FolderOpen size={24} strokeWidth={1.3} /><p>{isScanning ? "Finding your artwork…" : state.inputFolder
             ? "No assets listed. Check the folder path or rescan." : "Choose a folder to build your asset library."}</p></div>}
         <div className="library-footnote"><span className="status-dot" />Local processing · No uploads</div>
+        </div>
       </aside>}
       {!isFocused && isWideWorkspace && <PaneResizer label="Resize asset library" value={actualLibraryWidth}
         initial={250} min={200} max={360} onChange={setLibraryWidth} />}
@@ -481,12 +486,14 @@ export default function App() {
       </section>
       {!isFocused && isWideWorkspace && <PaneResizer label="Resize inspector" value={actualInspectorWidth}
         initial={300} min={260} max={380} reverse onChange={setInspectorWidth} />}
-      {!isFocused && <aside className="inspector-pane" aria-label="Preview inspector">
+      {!isFocused && <aside className="inspector-pane" aria-label="Preview inspector" ref={inspectorScrollRef}>
+        <div className="inspector-scroll-content">
         <div className="inspector-heading"><h2>Inspector</h2><span className="muted">Live adjustments</span></div>
         <fieldset disabled={busy || !isLoaded}><legend className="sr-only">Preview settings</legend>
           <SettingsPanel state={state} onChange={(patch) => setState((previous) => ({ ...previous, ...patch }))}
             onBrowseLogo={() => void browse("browse_logo")} onBrowseFont={() => void browse("browse_font")} is3D={is3D} />
         </fieldset>
+        </div>
       </aside>}
     </main>
     <CommandPalette open={paletteOpen} actions={commands} onClose={() => setPaletteOpen(false)} />
