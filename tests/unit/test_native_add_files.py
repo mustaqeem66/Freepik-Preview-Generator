@@ -208,3 +208,27 @@ def test_picked_asset_single_export_requires_explicit_output_grant(tmp_path, mon
         assert (output / "art.jpg").is_file()
     finally:
         api.cleanup()
+
+
+def test_clearing_collection_revokes_picker_read_capabilities(tmp_path, monkeypatch):
+    first = tmp_path / "a.png"
+    second = tmp_path / "b.png"
+    Image.new("RGB", (12, 12), "red").save(first)
+    Image.new("RGB", (12, 12), "blue").save(second)
+    api = DesktopApi()
+    try:
+        picked, _ = _grant(api, monkeypatch, [first, second])
+        assert len(picked["value"]["files"]) == 2
+        assert api.is_authorized_selected_file(first)
+        assert api.is_authorized_selected_file(second)
+        result = api.clear_selected_files()
+        assert result == {"ok": True, "value": 2, "error": None}
+        assert not api.is_authorized_selected_file(first)
+        assert not api.is_authorized_selected_file(second)
+        assert api.clear_selected_files()["value"] == 0
+        output = tmp_path / "output"
+        api.add_authorized_output_folder(output)
+        denied = api.start_batch_files([str(first)], str(output), {})
+        assert denied["error"] == "UNAUTHORIZED_SELECTED_FILE"
+    finally:
+        api.cleanup()
