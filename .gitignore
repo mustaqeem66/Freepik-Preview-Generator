@@ -99,3 +99,6 @@ previewgen_report*.csv
 # Temporary archive artifacts
 *.tar.gz.b64.txt
 project.tar.gz.b64.txt
+
+# Local-only QA evidence (never publish machine metadata by accident)
+local-check-report.json
