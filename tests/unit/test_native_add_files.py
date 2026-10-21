@@ -103,3 +103,52 @@ def test_selected_files_from_two_folders_are_batch_exported(tmp_path, monkeypatc
         assert not api.is_authorized_path(second)
     finally:
         api.cleanup()
+
+
+def test_raw_zip_is_rejected_in_file_picker_until_member_preview_is_supported(tmp_path, monkeypatch):
+    archive = tmp_path / "artwork.zip"
+    archive.write_bytes(b"not a previewable raw asset")
+    api = DesktopApi()
+    try:
+        result, _ = _grant(api, monkeypatch, [archive])
+        assert result["ok"]
+        assert result["value"]["files"] == []
+        assert "choose its folder" in result["value"]["rejected"][0]
+        assert not api.is_authorized_selected_file(archive)
+    finally:
+        api.cleanup()
+
+
+def test_duplicate_basename_sources_keep_independent_batch_outputs(tmp_path, monkeypatch):
+    import json
+
+    dirs = [tmp_path / "first", tmp_path / "second"]
+    for folder in dirs:
+        folder.mkdir()
+        Image.new("RGB", (16, 16), "blue").save(folder / "same.png")
+    output = tmp_path / "export"
+    output.mkdir()
+    api = DesktopApi()
+    try:
+        sources = [folder / "same.png" for folder in dirs]
+        selected, _ = _grant(api, monkeypatch, sources)
+        assert len(selected["value"]["files"]) == 2
+        api.add_authorized_folder(output)
+        started = api.start_batch_files([str(source) for source in sources], str(output), {})
+        assert started["ok"], started
+        worker = api.lifecycle.batch_thread
+        assert worker is not None
+        worker.join(timeout=45)
+        assert not worker.is_alive()
+        jpg_files = list(output.glob("*.jpg"))
+        assert len(jpg_files) == 2
+        payloads = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in output.glob("previewgen-report-*.json")
+            if path.name != "previewgen-report-latest.json"
+        ]
+        assert payloads
+        reported = {rec["source"] for rec in payloads[0]["files"]}
+        assert reported == {str(source) for source in sources}
+    finally:
+        api.cleanup()
