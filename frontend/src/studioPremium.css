@@ -1,0 +1,224 @@
+/*
+ * PreviewGen Studio / macOS-informed surface design, 2026-10-21.
+ *
+ * A custom React/pywebview desktop app, NOT native NSVisualEffectView/Liquid
+ * Glass, Mica or Apple's proprietary window chrome. Keep platform titlebars.
+ *
+ * The creative canvas is the content layer. Sidebar, toolbar and inspector are
+ * functional/navigation layers; avoid painting glass onto artwork itself.
+ */
+:root {
+  --bg: #eff1f5;
+  --card-bg: #f9fafc;
+  --surface: #ffffff;
+  --field-bg: #ffffff;
+  --preview-bg: #e5e8ee;
+  --card-border: rgba(41, 53, 71, .13);
+  --field-border: rgba(41, 53, 71, .22);
+  --text: #1b2430;
+  --text-main: var(--text);
+  --text-sec: #525f71;
+  --text-muted: #69768a;
+  --accent: #2165c5;
+  --accent-hover: #1856af;
+  --chip-bg: #e9edf4;
+  --toolbar-bg: rgba(249, 250, 252, .92);
+  --selection: #dce9fa;
+  --focus-ring: #226ecc;
+  --canvas-dot: rgba(71, 86, 112, .11);
+  --studio-shadow: 0 2px 4px rgba(22, 36, 57, .04),
+                   0 16px 36px rgba(22, 36, 57, .09);
+}
+[data-theme="dark"] {
+  --bg: #15191f;
+  --card-bg: #20252d;
+  --surface: #2b323c;
+  --field-bg: #252c36;
+  --preview-bg: #15191f;
+  --card-border: rgba(221, 229, 243, .13);
+  --field-border: rgba(221, 229, 243, .24);
+  --text: #f5f7fa;
+  --text-main: var(--text);
+  --text-sec: #c3cbd6;
+  --text-muted: #a2aec0;
+  --accent: #5298fb;
+  --accent-hover: #7aafff;
+  --chip-bg: #353e4b;
+  --toolbar-bg: rgba(32, 37, 45, .93);
+  --selection: #26456d;
+  --focus-ring: #85bbff;
+  --canvas-dot: rgba(181, 194, 215, .1);
+  --studio-shadow: 0 2px 4px rgba(0, 0, 0, .12),
+                   0 18px 44px rgba(0, 0, 0, .32);
+}
+.studio-shell {
+  padding-inline: clamp(10px, 1.5vw, 22px);
+  gap: 12px;
+}
+.studio-toolbar {
+  min-height: 73px;
+  padding: 9px 2px;
+  border-radius: 0;
+  border-bottom: 1px solid var(--card-border);
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.brand { gap: 11px; min-width: 0; }
+.brand-mark {
+  width: 42px; height: 42px;
+  border-radius: 13px;
+  color: var(--accent);
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(22, 36, 57, .08);
+}
+.brand h1 { font-size: 18px; font-weight: 680; letter-spacing: -.55px; }
+.brand p { color: var(--text-sec); }
+.studio-badge { background: var(--chip-bg); border-color: transparent; letter-spacing: .3px; }
+.toolbar-actions { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.lifecycle-badge {
+  padding: 8px 10px;
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  background: var(--card-bg);
+  gap: 7px;
+  white-space: nowrap;
+}
+.lifecycle-badge .status-dot { width: 7px; height: 7px; }
+.settings-save-status { color: var(--text-sec); font-size: 12px; white-space: nowrap; }
+.studio-workspace {
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  background: var(--card-border);
+  box-shadow: var(--studio-shadow);
+}
+.library-pane, .inspector-pane { background: var(--card-bg); }
+.library-pane { gap: 12px; padding: 19px 15px 14px; }
+.inspector-heading { background: var(--toolbar-bg); }
+.inspector-heading h2 { letter-spacing: -.15px; font-size: 14px; }
+.inspector-section { padding: 19px 16px; }
+.inspector-section .section-heading { margin-bottom: 1px; }
+.section-heading > svg { color: var(--text-muted); }
+.section-heading h2 { font-size: 13px; letter-spacing: -.1px; }
+.library-heading { border-top-color: var(--card-border); }
+.library-heading h2 { font-size: 13px; }
+.count-badge, .format-badge {
+  background: var(--chip-bg);
+  border: 1px solid var(--card-border);
+  color: var(--text-sec);
+  font-variant-numeric: tabular-nums;
+}
+.canvas-pane { background: var(--bg); }
+.canvas-toolbar {
+  padding-inline: 17px;
+  min-height: 52px;
+  border-bottom: 1px solid var(--card-border);
+}
+.asset-title { font-size: 13px; font-weight: 600; }
+.asset-title > svg { color: var(--text-sec); }
+.canvas-stage { margin: 15px; }
+.preview-canvas {
+  background-color: var(--preview-bg);
+  background-image: radial-gradient(var(--canvas-dot) .65px, transparent .75px);
+  background-size: 21px 21px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 5px rgba(15, 27, 43, .04);
+}
+/* No image-entry transform animation: it overrides the zoom/pan transform from
+   the interactive canvas and briefly shows an incorrect magnification. */
+.preview-canvas img {
+  animation: none;
+  box-shadow: 0 8px 28px rgba(10, 22, 40, .17);
+}
+[data-theme="dark"] .preview-canvas img {
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .42);
+}
+.preview-zoom-controls, .export-popover {
+  background: var(--toolbar-bg);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--studio-shadow);
+}
+.button, .icon-button {
+  border-radius: 9px;
+  border-color: var(--card-border);
+  box-shadow: none;
+  background: var(--surface);
+}
+.button.primary, [data-theme="dark"] .button.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 2px 6px rgba(21, 86, 165, .17);
+}
+.button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  filter: none;
+}
+.button:focus-visible, .icon-button:focus-visible, input:focus-visible,
+select:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.button:active:not(:disabled), .icon-button:active:not(:disabled) {
+  transform: none;
+}
+.picker-hint { color: var(--text-sec); }
+.asset-search {
+  background: var(--field-bg);
+  border-color: var(--field-border);
+  border-radius: 9px;
+  font-size: 12px;
+  min-height: 36px;
+}
+.library-pane [role="listbox"] {
+  border-color: var(--card-border);
+  border-radius: 9px;
+}
+.library-pane [role="option"][aria-selected="true"] {
+  background: var(--selection) !important;
+  box-shadow: inset 3px 0 var(--accent);
+}
+.studio-footer { gap: 12px; padding-bottom: 12px; }
+.batch-progress { background: var(--card-bg); border-radius: 12px; }
+.bp-title { letter-spacing: -.1px; }
+.bp-track { height: 6px; }
+.empty-canvas { gap: 12px; }
+.empty-canvas-icon { background: var(--card-bg); border-radius: 18px; }
+.empty-canvas h2 { font-weight: 650; }
+@media (max-width: 1100px) {
+  .studio-toolbar { gap: 10px; }
+  .toolbar-actions { gap: 6px; }
+  .studio-shell { padding-inline: 10px; }
+}
+@media (max-width: 680px) {
+  .settings-save-status { display: none; }
+  .studio-toolbar { min-height: 64px; }
+  .library-pane { padding: 15px 12px; }
+  .canvas-stage { margin: 10px; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .toolbar-bg, .inspector-heading, .preview-zoom-controls, .export-popover {
+    background: var(--card-bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (prefers-contrast: more) {
+  :root { --card-border: #677180; --field-border: #505967; }
+  [data-theme="dark"] { --card-border: #aab4c5; --field-border: #c0c7d6; }
+  .settings-save-status { color: var(--text); }
+}
+@media (forced-colors: active) {
+  .studio-workspace, .lifecycle-badge, .preview-canvas,
+  .batch-progress, .library-pane [role="listbox"] {
+    border: 1px solid CanvasText;
+  }
+  .preview-canvas { background-image: none; }
+  .library-pane [role="option"][aria-selected="true"] { box-shadow: inset 3px 0 Highlight; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .button, .icon-button, .bp-fill { transition: none !important; }
+}
