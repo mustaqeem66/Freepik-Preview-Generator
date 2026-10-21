@@ -50,7 +50,15 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
 
   useEffect(() => {
     const unReady = bridgeEvents.subscribe("thumbnail.ready", ({ path, url }) => {
-      if (wantedRef.current.has(path)) setImages((old) => ({ ...old, [path]: url }));
+      if (wantedRef.current.has(path)) {
+        setFailed((old) => {
+          if (!old.has(path)) return old;
+          const next = new Set(old);
+          next.delete(path);
+          return next;
+        });
+        setImages((old) => ({ ...old, [path]: url }));
+      }
     });
     const unFailed = bridgeEvents.subscribe("thumbnail.failed", ({ path }) => {
       if (wantedRef.current.has(path)) setFailed((old) => new Set(old).add(path));
@@ -85,10 +93,36 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
     return () => { window.clearTimeout(timer); generationRef.current++; };
   }, [pathsKey]);
 
+  useEffect(() => {
+    // Reconfirm currently visible tiles once a minute. The backend expires
+    // cached handles before the preview server's age-based cleanup can evict them.
+    const interval = window.setInterval(async () => {
+      const wanted = [...wantedRef.current];
+      const api = apiRef.current;
+      if (!wanted.length || !api?.request_thumbnails) return;
+      try {
+        const result = await api.request_thumbnails(wanted);
+        if (!result.ok || !result.value) return;
+        setImages((old) => {
+          const current = wantedRef.current;
+          const visible = Object.fromEntries(
+            [...current].flatMap((p) => old[p] ? [[p, old[p]]] : [])
+          );
+          for (const [path, url] of Object.entries(result.value)) {
+            if (current.has(path)) visible[path] = url;
+          }
+          return visible;
+        });
+      } catch { /* The icon placeholder remains available offline. */ }
+    }, 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   useEffect(() => () => {
     wantedRef.current.clear();
     // Release pending work; session LRU stays bounded for reopening gallery.
-    void apiRef.current?.request_thumbnails?.([]).catch(() => {});
+    const task = apiRef.current?.request_thumbnails?.([]);
+    void task?.catch(() => {});
   }, []);
 
   useEffect(() => {
