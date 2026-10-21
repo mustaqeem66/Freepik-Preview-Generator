@@ -269,8 +269,8 @@ export default function App() {
       const response = await api.export_preview(activeFile.path, state);
       if (!response.ok || !response.value) {
         throw new Error(
-          response.code === "UNAUTHORIZED_PATH"
-            ? "PreviewGen can only write inside a folder you chose. Pick an output folder and try again."
+          response.code === "UNAUTHORIZED_PATH" || response.code === "UNAUTHORIZED_OUTPUT_PATH"
+            ? "PreviewGen can only write inside an approved output folder. Choose the destination again and retry."
             : response.error || "Export failed"
         );
       }
