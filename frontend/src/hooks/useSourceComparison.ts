@@ -61,7 +61,19 @@ export function useSourceComparison(path: string | undefined, enabled: boolean) 
         setPendingPath(null);
       }
     }, 100);
+    // Session preview server expires aged image handles; proactively refresh
+    // this one visible source before its five-minute disk eviction budget.
+    const renew = window.setInterval(async () => {
+      try {
+        const api = await ApiBridge.getApi(250);
+        if (token !== generation.current || !api?.request_source_comparison) return;
+        const response = await api.request_source_comparison(current);
+        if (token !== generation.current || !response.ok || !response.value?.[current]) return;
+        setImage({ path: current, url: response.value[current] });
+      } catch { /* Keep the existing source visual or its fallback. */ }
+    }, 60_000);
     return () => {
+      window.clearInterval(renew);
       window.clearTimeout(timer);
       onReady();
       onFailed();
