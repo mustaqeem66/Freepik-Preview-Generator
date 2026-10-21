@@ -20,3 +20,10 @@ The existing folder-based batch runner uses `discover_files(input_folder)` and `
 - [ ] Run `python -m ruff check previewgen/api.py previewgen/lifecycle.py previewgen/batch/runner.py tests/unit/test_native_add_files.py`.
 - [ ] Run `python -m pytest tests/unit/test_native_add_files.py tests/unit/test_batch_api_regressions.py tests/unit/test_discovery.py -q`.
 - [ ] Real desktop export/cancel and ZIP coverage before merging; no GitHub Actions minutes are used.
+
+## Review corrections
+- The source-folder chooser is **not** an output authorization for selected-file batches. `add_authorized_output_folder()`, invoked by the output picker or restored output preference, provides a distinct destination grant.
+- Across repeated selections, a maximum of 5000 exact file grants are retained for this desktop session. No parent directory is authorized by Add Files.
+- A raw `.zip` is not a previewable row; the picker rejects it with instructions to select its containing folder, whose scan exposes `zip://` member assets. Folder ZIP processing remains supported.
+- For selected regular files, durable JSON file records include canonical source paths, distinguishing identical filenames selected from different folders. Existing CSV retains filename-only output for compatibility.
+- Expanded regression checks cover duplicate basenames, rejected ZIP files, source-vs-destination permissions and separate folders.
