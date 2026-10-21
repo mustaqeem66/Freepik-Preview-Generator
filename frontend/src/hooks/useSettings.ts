@@ -41,6 +41,9 @@ export function useSettings(onSaveError?: (err: string) => void, enabled = true)
   const [state, setState] = useState<PreviewState>(defaultState);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const revisionRef = useRef<number>(0);
+  const [saveStatus, setSaveStatus] = useState<"loading" | "unsaved" | "saving" | "saved" | "error">("loading");
+  const [retryKey, setRetryKey] = useState(0);
+  const retrySave = () => setRetryKey((previous) => previous + 1);
   const onSaveErrorRef = useRef(onSaveError);
   onSaveErrorRef.current = onSaveError;
   useEffect(() => {
@@ -75,28 +78,54 @@ export function useSettings(onSaveError?: (err: string) => void, enabled = true)
     };
   }, [enabled, isLoaded]);
 
+  // Do not treat a queued save as durable: the bridge can disappear while editing.
+  // Every snapshot has its own revision and cleanup cancels stale retry timers.
   useEffect(() => {
-    if (!isLoaded || !enabled) return;
-    const currentRev = ++revisionRef.current;
-    const timer = setTimeout(async () => {
-      const api = await ApiBridge.getApi(1000);
-      if (api && typeof api.save_settings === "function" && currentRev === revisionRef.current) {
-        try {
-          const res = await api.save_settings({ ...state, revision: currentRev });
-          if (currentRev === revisionRef.current && res && "ok" in res && res.ok === false) {
-            onSaveErrorRef.current?.(res.error || "Settings persistence rejected by backend.");
-          }
-        } catch (e) {
-          if (currentRev === revisionRef.current) {
-            const msg = e instanceof Error ? e.message : "Settings could not be saved.";
-            onSaveErrorRef.current?.(msg);
-          }
+    if (!isLoaded) return;
+    if (!enabled) {
+      setSaveStatus("unsaved");
+      return;
+    }
+    const revision = ++revisionRef.current;
+    let cancelled = false;
+    let reportedError = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const persist = async (attempt: number) => {
+      if (cancelled) return;
+      setSaveStatus("saving");
+      try {
+        const api = await ApiBridge.getApi(1000);
+        if (!api || typeof api.save_settings !== "function") {
+          throw new Error("Desktop backend unavailable; changes are not saved yet.");
+        }
+        const response = await api.save_settings({ ...state, revision });
+        if (!response || response.ok !== true) {
+          throw new Error(response?.error || "Settings persistence rejected by backend.");
+        }
+        if (!cancelled && revision === revisionRef.current) setSaveStatus("saved");
+      } catch (error) {
+        if (cancelled || revision !== revisionRef.current) return;
+        setSaveStatus("error");
+        if (!reportedError) {
+          reportedError = true;
+          onSaveErrorRef.current?.(error instanceof Error ? error.message : "Settings could not be saved.");
+        }
+        // Limited retries; never spin forever or mislabel unsaved edits as saved.
+        // Reconnection / explicit Retry also restarts persistence with a fresh revision.
+        if (attempt < 3) {
+          timer = setTimeout(() => void persist(attempt + 1), 500 * 2 ** attempt);
         }
       }
-    }, 800);
+    };
+    setSaveStatus("unsaved");
+    timer = setTimeout(() => void persist(0), 800);
 
-    return () => clearTimeout(timer);
-  }, [state, isLoaded, enabled]);
+    return () => {
+      cancelled = true;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [state, isLoaded, enabled, retryKey]);
 
-  return { state, setState, isLoaded };
+  return { state, setState, isLoaded, saveStatus, retrySave };
 }
