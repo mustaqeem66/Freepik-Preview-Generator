@@ -15,7 +15,6 @@ import csv
 import ctypes
 import datetime as dt
 import logging
-import os
 import sys
 import time
 from ctypes import wintypes
