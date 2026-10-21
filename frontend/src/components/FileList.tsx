@@ -1,6 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { assetId, type FileInfo } from "../types";
 import { useVirtualList } from "../hooks/useVirtualList";
+import { Grid2X2, List } from "lucide-react";
+import { AssetGallery } from "./AssetGallery";
 
 export const FILE_ROW_HEIGHT = 34;
 
@@ -57,6 +59,7 @@ interface FileListProps {
   activeIndex: number;
   onSelect: (index: number) => void;
   height?: number;
+  enableThumbnails?: boolean;
 }
 
 /**
@@ -64,8 +67,10 @@ interface FileListProps {
  * result never silently changes the export/preview target index.
  * Empty queries allocate no 100k-item projection, keeping the base list fast.
  */
-export function FileList({ files, activeIndex, onSelect, height = 320 }: FileListProps) {
+export function FileList({ files, activeIndex, onSelect, height = 320,
+  enableThumbnails = false }: FileListProps) {
   const [query, setQuery] = useState("");
+  const [view, setView] = useState<"list" | "gallery">("list");
   const matchedIndices = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     if (!normalized) return null;
@@ -138,8 +143,15 @@ export function FileList({ files, activeIndex, onSelect, height = 320 }: FileLis
         <span className="asset-search-count" role="status" aria-live="polite">
           {matchedIndices ? `${count} / ${files.length}` : `${files.length} assets`}
         </span>
+        <div className="asset-view-toggle" role="group" aria-label="Library view">
+          <button type="button" aria-label="List view" aria-pressed={view === "list"}
+            title="List view" onClick={() => setView("list")}><List size={14} aria-hidden="true"/></button>
+          <button type="button" aria-label="Gallery view" aria-pressed={view === "gallery"}
+            title="Gallery view" onClick={() => setView("gallery")}><Grid2X2 size={14} aria-hidden="true"/></button>
+        </div>
       </div>
-      <div
+      {view === "gallery" ? <AssetGallery files={files} matchedIndices={matchedIndices}
+        activeIndex={activeIndex} onSelect={onSelect} height={height} enabled={enableThumbnails} /> : <div
         ref={containerRef}
         role="listbox"
         aria-label="Asset list"
@@ -156,7 +168,7 @@ export function FileList({ files, activeIndex, onSelect, height = 320 }: FileLis
           <div style={{ height: totalHeight, position: "relative" }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0 }}>{rows}</div>
           </div>}
-      </div>
+      </div>}
     </div>
   );
 }

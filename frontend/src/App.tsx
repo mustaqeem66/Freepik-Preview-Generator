@@ -414,7 +414,8 @@ export default function App() {
             : "Scan cancelled. No completed results are available; choose a folder or rescan."}</p>}
         {!usingFiles && scanStatus === "scan-truncated" && <p className="scan-notice" data-testid="scan-truncated">
           Partial list: {fileList.length} of {scanDiscovered} discovered. {scanTruncationReasons.join(", ")}. Batch export scans the source again.</p>}
-        {fileList.length > 0 ? <FileList files={fileList} activeIndex={currentIdx} onSelect={selectIndex} height={260} />
+        {fileList.length > 0 ? <FileList files={fileList} activeIndex={currentIdx} onSelect={selectIndex} height={260}
+          enableThumbnails={capabilities.canPreview && scanReady} />
           : <div className="empty-library"><FolderOpen size={24} strokeWidth={1.3} /><p>{isScanning ? "Finding your artwork…" : state.inputFolder
             ? "No assets listed. Check the folder path or rescan." : "Choose a folder to build your asset library."}</p></div>}
         <div className="library-footnote"><span className="status-dot" />Local processing · No uploads</div>

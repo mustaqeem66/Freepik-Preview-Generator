@@ -7,6 +7,8 @@ export type BridgeEventMap = {
   "batch.finished": BatchSummary;
   "preview.completed": { operationId: string; url: string; previewId: string; width: number; height: number };
   "preview.failed": { operationId: string; error: string; code?: string };
+  "thumbnail.ready": { path: string; url: string };
+  "thumbnail.failed": { path: string };
   "probe.completed": { operationId: string; probe: AssetProbe };
   "probe.failed": { operationId: string; error: string; code?: string };
 };
