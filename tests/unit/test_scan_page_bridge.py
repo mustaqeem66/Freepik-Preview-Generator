@@ -25,9 +25,10 @@ class FakeWindow:
 
 
 def _last_event(window: FakeWindow) -> dict:
-    match = re.search(r"window\\.__onBridgeEvent\\((\\{.*\\})\\)", window.scripts[-1])
-    assert match
-    return json.loads(match.group(1))
+    prefix = "window.__onBridgeEvent("
+    script = window.scripts[-1]
+    assert prefix in script and script.endswith(")")
+    return json.loads(script.split(prefix, 1)[1][:-1])
 
 
 def _row(index: int, padding: int = 0) -> dict:
