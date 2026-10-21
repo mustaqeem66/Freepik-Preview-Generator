@@ -24,7 +24,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from previewgen.renderers.capabilities import CAPABILITIES, validate_registry
+# Importable only after that path insert; the script is run directly, not installed.
+from previewgen.renderers.capabilities import CAPABILITIES, validate_registry  # noqa: E402
 
 DEFAULT_MANIFEST = ROOT / "tests" / "fixtures" / "renderer-samples.json"
 DEFAULT_REPORT = ROOT / "renderer-matrix-local.json"
