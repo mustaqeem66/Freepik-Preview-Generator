@@ -19,7 +19,7 @@ describe("Asset gallery", () => {
     const tiles = screen.getAllByTestId("gallery-tile");
     expect(tiles.length).toBeGreaterThan(0);
     expect(tiles.length).toBeLessThanOrEqual(16);
-    expect(screen.getByTestId("asset-gallery").getAttribute("aria-rowcount")).toBe("50000");
+    expect(tiles[0].getAttribute("aria-setsize")).toBe("100000");
     expect(tiles[0].getAttribute("aria-selected")).toBe("true");
   });
 
