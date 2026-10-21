@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { preventPaneSmoothScroll, shouldSmoothPaneMotion, useLenisPane } from "./useLenisPane";
 
-const createLenis = vi.hoisted(() => vi.fn((_options?: Record<string, unknown>) => ({ destroy: vi.fn() })));
+// A function expression, not an arrow: the hook constructs Lenis with `new`,
+// and an arrow function has no [[Construct]] so it throws before the hook runs.
+const createLenis = vi.hoisted(() =>
+  vi.fn(function (_options?: Record<string, unknown>) {
+    return { destroy: vi.fn() };
+  }),
+);
 vi.mock("lenis", () => ({ default: createLenis }));
 
 function Pane() {
