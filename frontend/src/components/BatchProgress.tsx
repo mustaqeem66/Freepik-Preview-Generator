@@ -1,7 +1,7 @@
 import React from "react";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
 
-interface BatchProgressProps {
+export interface BatchProgressProps {
   isProcessing: boolean;
   canCancelBatch?: boolean;
   isCancelling?: boolean;
