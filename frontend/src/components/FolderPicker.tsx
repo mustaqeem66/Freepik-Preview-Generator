@@ -10,10 +10,12 @@ interface FolderPickerProps {
   onToggleSameFolder: (checked: boolean) => void;
   onCommitInput?: (path: string) => void;
   disabled?: boolean;
+  forceSeparateOutput?: boolean;
 }
 
 export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseInput,
-  onBrowseOutput, onToggleSameFolder, onCommitInput, disabled = false }: FolderPickerProps) {
+  onBrowseOutput, onToggleSameFolder, onCommitInput, disabled = false,
+  forceSeparateOutput = false }: FolderPickerProps) {
   const [input, setInput] = useState(inputFolder);
   const [output, setOutput] = useState(outputFolder);
   useEffect(() => setInput(inputFolder), [inputFolder]);
@@ -32,9 +34,13 @@ export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseIn
     </button>
     <p className="picker-hint"><Info size={14} aria-hidden="true" />The system dialog selects folders only; it won't display individual files. Choose a folder to scan supported assets inside it.</p>
     <div className="section-heading destination-heading"><FolderOutput size={16} /><h2>Destination</h2></div>
-    <label className="check-row"><input type="checkbox" checked={sameFolder} disabled={disabled}
+    <label className="check-row"><input type="checkbox" checked={sameFolder && !forceSeparateOutput}
+      disabled={disabled || forceSeparateOutput}
       onChange={(e) => onToggleSameFolder(e.target.checked)} />Same as input</label>
-    {sameFolder ? <p className="path-hint" title={inputFolder}>Saving in the source folder</p> : <>
+    {forceSeparateOutput && <p className="path-hint">
+      Selected files may come from different folders, so choose a separate output destination.
+    </p>}
+    {sameFolder && !forceSeparateOutput ? <p className="path-hint" title={inputFolder}>Saving in the source folder</p> : <>
       <label className="sr-only" htmlFor="output-folder">Output folder path</label>
       {/* Export only writes into folders selected through the native picker, so
           typing a path here would produce an UNAUTHORIZED_PATH error. */}
@@ -43,7 +49,7 @@ export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseIn
         aria-describedby="output-folder-hint" />
       <p id="output-folder-hint" className="picker-hint">Pick the destination with the button below so PreviewGen is allowed to write there.</p>
     </>}
-    <button type="button" className="button" disabled={disabled || sameFolder} onClick={onBrowseOutput}>
+    <button type="button" className="button" disabled={disabled || (sameFolder && !forceSeparateOutput)} onClick={onBrowseOutput}>
       <FolderOutput size={15} />Choose Output Folder
     </button>
   </div>;
