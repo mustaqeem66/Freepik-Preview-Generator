@@ -89,6 +89,9 @@ def test_batch_start_returns_id_and_emits_typed_events(tmp_path):
     source.mkdir()
     Image.new("RGB", (32, 32), "red").save(source / "test.png")
     api = DesktopApi()
+    # Simulate user-authorized source and output chooser roots.
+    api.add_authorized_folder(source)
+    api.add_authorized_folder(tmp_path / "out")
     window = FakeWindow()
     api.set_window(window)
     response = api.start_batch(str(source), str(tmp_path / "out"), {
@@ -194,3 +197,37 @@ def test_single_export_is_visible_as_outstanding_work(tmp_path, monkeypatch):
     assert api.has_outstanding_work() is False
     assert api.lifecycle.get_active_operations() == []
 
+
+
+def test_batch_rejects_destination_not_selected_by_user(tmp_path):
+    """Batch must not silently grant arbitrary output write capability."""
+    source = tmp_path / "source"
+    destination = tmp_path / "private" / "exports"
+    source.mkdir()
+    destination.parent.mkdir()
+    api = DesktopApi()
+    api.add_authorized_folder(source)
+    try:
+        response = api.start_batch(str(source), str(destination), {"overwritePolicy": "rename"})
+        assert response["ok"] is False
+        assert response["error"] == "UNAUTHORIZED_OUTPUT_PATH"
+        assert not destination.exists()
+        assert not api.is_authorized_path(destination)
+    finally:
+        api.cleanup()
+
+
+def test_batch_allows_output_after_explicit_folder_authorization(tmp_path, monkeypatch):
+    """A selected export destination remains usable; no implicit grant needed."""
+    source = tmp_path / "source"
+    destination = tmp_path / "exports"
+    source.mkdir()
+    destination.mkdir()
+    api = DesktopApi()
+    api.add_authorized_folder(source)
+    api.add_authorized_folder(destination)
+    response = api.start_batch(str(source), str(destination), {"overwritePolicy": "rename"})
+    assert response["ok"] is True, response
+    api.lifecycle.batch_thread.join(timeout=30)
+    assert not api.lifecycle.batch_thread.is_alive()
+    api.cleanup()

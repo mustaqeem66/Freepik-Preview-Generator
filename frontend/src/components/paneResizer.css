@@ -1,0 +1,7 @@
+
+/* Accessible, opt-in desktop pane resizing (handles omitted below 850px). */
+.pane-resizer { position: relative; width: 6px; min-width: 6px; cursor: col-resize; background: var(--card-border); touch-action: none; }
+.pane-resizer::after { content: ""; position: absolute; inset: 25% 1px; background: var(--text-muted); opacity: .23; border-radius: 10px; pointer-events: none; }
+.pane-resizer:hover, .pane-resizer:focus-visible { background: var(--focus-ring); }
+.pane-resizer:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -1px; }
+@media (forced-colors: active) { .pane-resizer { background: CanvasText; } }
