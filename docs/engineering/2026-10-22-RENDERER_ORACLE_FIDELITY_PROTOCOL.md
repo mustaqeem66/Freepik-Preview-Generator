@@ -56,3 +56,6 @@ python scripts/audit_renderer_matrix.py --strict --timeout 60
 - Current 47-extension inventory includes formats that only expose embedded thumbnails rather than native editable geometry. Fidelity expectations must reflect each capability's documented mode.
 
 **Status**: implementation and unit tests authored, no real proprietary/CAD oracle fixture evidence supplied or signed off. Do not close #60 solely due to this PR.
+
+## Fail-closed follow-up
+An empty manifest cannot pass `--require-oracles`. If a source file disappears between inventory and actual isolated rendering, the tool records `missing_fixture`, `sourcePreserved=false`, and the exception type instead of crashing and losing the audit report. Oracle thresholds are capped at a 32-channel-value mean absolute error to prevent a meaningless `255` threshold from treating unrelated images as approved. This is still not a substitute for human geometry and texture checks.
