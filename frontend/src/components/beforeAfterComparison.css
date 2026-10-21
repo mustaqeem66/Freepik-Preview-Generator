@@ -1,0 +1,27 @@
+.compare-root { width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column;
+  align-items: stretch; justify-content: center; gap: 6px; }
+.compare-images { width: 100%; flex: 1; min-height: 0; position: relative; overflow: hidden;
+  border: 1px solid var(--card-border); border-radius: 9px; background: var(--field-bg); }
+.preview-canvas .compare-images .compare-image { position: absolute; inset: 0; width: 100%; height: 100%;
+  max-height: none; max-width: none; object-fit: contain; box-shadow: none; animation: none;
+  pointer-events: none; }
+.compare-source-mask { position: absolute; inset: 0; overflow: hidden; }
+.compare-divider { position: absolute; top: 0; bottom: 0; width: 2px; transform: translateX(-1px);
+  background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.32); pointer-events: none; z-index: 2; }
+.compare-grip { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: grid; place-items: center; width: 33px; height: 33px; border-radius: 50%;
+  color: #152032; background: #fff; border: 1px solid rgba(0,0,0,.25);
+  box-shadow: 0 3px 12px rgba(0,0,0,.2); font-size: 16px; }
+.compare-tag { position: absolute; top: 9px; z-index: 2; font-size: 11px; font-weight: 650;
+  padding: 6px 9px; border-radius: 6px; background: rgba(20,26,37,.82); color: #fff;
+  pointer-events: none; }
+.compare-tag-before { left: 9px; } .compare-tag-after { right: 9px; }
+.compare-range { position: absolute; z-index: 3; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: ew-resize; margin: 0; }
+.compare-percentage { display: block; text-align: center; font-size: 11px;
+  color: var(--text-sec); font-variant-numeric: tabular-nums; }
+.compare-unavailable { display: grid; place-items: center; gap: 10px; text-align: center;
+  color: var(--text); padding: 20px; }
+.compare-unavailable p { color: var(--text-sec); font-size: 12px; }
+@media (forced-colors: active) { .compare-images { border: 1px solid CanvasText; }
+  .compare-divider, .compare-grip { border: 2px solid Highlight; } }
