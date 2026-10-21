@@ -65,6 +65,11 @@ SUPPORTED_CREATOR_EXTENSIONS: tuple[str, ...] = (
 )
 SUPPORTED_EXTENSIONS: tuple[str, ...] = (
     ".png",
+    ".jpg",
+    ".jpeg",
+    ".bmp",
+    ".gif",
+    ".ico",
     ".webp",
     ".tif",
     ".tiff",

@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 from previewgen import limits
 from previewgen.assets import calculate_export_dimensions as _calc_export_dimensions
 from previewgen.config import DISCOVERY_MAX_FILES, SUPPORTED_3D_EXTENSIONS, SUPPORTED_EXTENSIONS, PreviewConfig
+from previewgen.destinations import protect_source_destinations
 from previewgen.lifecycle import ActiveOperation, LifecycleManager
 from previewgen.preview_coordinator import DEFAULT_PREVIEW_TIMEOUT_SECONDS, PreviewCoordinator
 from previewgen.preview_server import PreviewFileServer
@@ -955,14 +956,16 @@ class DesktopApi:
             cfg = PreviewConfig.from_mapping(config_dict, mode="strict-export")
             out_dir.mkdir(parents=True, exist_ok=True)
 
-            dest_file = out_dir / f"{source_path.stem}.jpg"
+            dest_file = protect_source_destinations(
+                out_dir / f"{source_path.stem}.jpg", {source_path.resolve()}
+            )
             skipped = False
             if dest_file.exists():
                 if cfg.overwrite_policy == "skip":
                     skipped = True
                 elif cfg.overwrite_policy == "rename":
                     counter = 1
-                    while dest_file.exists():
+                    while dest_file.exists() or dest_file.resolve() == source_path.resolve():
                         dest_file = out_dir / f"{source_path.stem}_copy{counter}.jpg"
                         counter += 1
 
