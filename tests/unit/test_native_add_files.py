@@ -48,6 +48,7 @@ def test_native_picker_grants_individual_paths_only(tmp_path, monkeypatch):
         assert api.is_authorized_selected_file(source)
         assert not api.is_authorized_selected_file(neighbour)
         assert not api.is_authorized_path(source.parent)
+        assert not api.is_authorized_output_path(source.parent)
     finally:
         api.cleanup()
 
@@ -62,11 +63,13 @@ def test_injected_files_and_unauthorized_output_rejected(tmp_path, monkeypatch):
         picked, _ = _grant(api, monkeypatch, [source])
         assert picked["ok"]
         assert api.start_batch_files([str(intruder)], str(tmp_path), {})["error"] == "UNAUTHORIZED_OUTPUT_PATH"
-        api.add_authorized_folder(tmp_path / "out")
+        api.add_authorized_output_folder(tmp_path / "out")
         result = api.start_batch_files([str(intruder)], str(tmp_path / "out"), {})
         assert result["error"] == "UNAUTHORIZED_SELECTED_FILE"
+        api.add_authorized_folder(tmp_path)
         result = api.start_batch_files([str(source)], str(tmp_path), {})
-        # The grant to source must never authorize its parent as an output.
+        # Even explicitly selected SOURCE folders are not output grants for
+        # the exact-file multi-directory workflow.
         assert result["error"] == "UNAUTHORIZED_OUTPUT_PATH"
     finally:
         api.cleanup()
@@ -87,7 +90,7 @@ def test_selected_files_from_two_folders_are_batch_exported(tmp_path, monkeypatc
     try:
         picked, _ = _grant(api, monkeypatch, [a, b])
         assert picked["ok"], picked
-        api.add_authorized_folder(output)
+        api.add_authorized_output_folder(output)
         started = api.start_batch_files(
             [str(a), str(b)], str(output), {"overwritePolicy": "rename"}
         )
@@ -133,7 +136,7 @@ def test_duplicate_basename_sources_keep_independent_batch_outputs(tmp_path, mon
         sources = [folder / "same.png" for folder in dirs]
         selected, _ = _grant(api, monkeypatch, sources)
         assert len(selected["value"]["files"]) == 2
-        api.add_authorized_folder(output)
+        api.add_authorized_output_folder(output)
         started = api.start_batch_files([str(source) for source in sources], str(output), {})
         assert started["ok"], started
         worker = api.lifecycle.batch_thread
