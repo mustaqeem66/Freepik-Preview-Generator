@@ -213,4 +213,135 @@ describe("useScanner hook", () => {
     });
     expect(result.current.scanStatus).toBe("scan-cancelled");
   });
+  it("loads 320 scanned assets from bounded pages before replacing the library", async () => {
+    const all = Array.from({ length: 320 }, (_, i) => ({
+      name: `sample-${i}.png`, path: `/root/sample-${i}.png`, ext: "PNG", is_3d: false,
+    }));
+    const offsets: number[] = [];
+    const fakeApi = {
+      start_scan: async () => ({ ok: true, scanId: "paged-a" }),
+      get_scan_page: vi.fn(async (scanId: string, offset: number, limit: number) => {
+        expect(scanId).toBe("paged-a");
+        expect(limit).toBe(128);
+        offsets.push(offset);
+        const rows = all.slice(offset, offset + limit);
+        return { ok: true, error: null, value: {
+          scanId, offset, total: all.length,
+          files: rows, nextOffset: offset + rows.length,
+        } };
+      }),
+    };
+    // @ts-expect-error bridge test stub
+    window.pywebview = { api: fakeApi };
+    const { result } = renderHook(() => useScanner());
+    await act(async () => { await result.current.scanFolder("/root"); });
+    act(() => {
+      window.__onScanFinished?.("paged-a", {
+        files: [], total: 320, status: "completed", paged: { total: 320, pageSize: 128 },
+      });
+    });
+    expect(result.current.isScanning).toBe(true);
+    expect(result.current.fileList).toEqual([]);
+    await waitFor(() => expect(result.current.isScanning).toBe(false));
+    expect(result.current.scanStatus).toBe("completed");
+    expect(result.current.fileList).toEqual(all);
+    expect(offsets).toEqual([0, 128, 256]);
+  });
+
+  it("does not adopt an old paged scan after a new folder starts", async () => {
+    let resolvePage!: (response: unknown) => void;
+    const pending = new Promise<unknown>((resolve) => { resolvePage = resolve; });
+    let scanId = "old-paged";
+    const fakeApi = {
+      start_scan: async () => ({ ok: true, scanId }),
+      cancel_scan: vi.fn(async () => ({ ok: true, cancelled: true })),
+      get_scan_page: vi.fn(() => pending),
+    };
+    // @ts-expect-error bridge test stub
+    window.pywebview = { api: fakeApi };
+    const { result } = renderHook(() => useScanner());
+    await act(async () => { await result.current.scanFolder("/one"); });
+    act(() => {
+      window.__onScanFinished?.("old-paged", {
+        files: [], total: 200, status: "completed",
+        paged: { total: 200, pageSize: 128 },
+      });
+    });
+    await waitFor(() => expect(fakeApi.get_scan_page).toHaveBeenCalledTimes(1));
+    scanId = "new-scan";
+    await act(async () => { await result.current.scanFolder("/two"); });
+    act(() => {
+      window.__onScanFinished?.("new-scan", {
+        files: [{ name: "new.png", path: "/two/new.png", ext: "PNG", is_3d: false }],
+        total: 1, status: "completed",
+      });
+    });
+    await act(async () => {
+      resolvePage({ ok: true, error: null, value: {
+        scanId: "old-paged", offset: 0, total: 200, nextOffset: 1,
+        files: [{ name: "old.png", path: "/one/old.png", ext: "PNG", is_3d: false }],
+      } });
+      await Promise.resolve();
+    });
+    expect(result.current.fileList.map((file) => file.name)).toEqual(["new.png"]);
+    expect(result.current.scanStatus).toBe("completed");
+  });
+
+  it("fails visibly without adopting partial rows if page transfer breaks", async () => {
+    const fakeApi = {
+      start_scan: async () => ({ ok: true, scanId: "broken" }),
+      get_scan_page: vi.fn(async () => ({ ok: false, value: null, error: "SCAN_RESULT_EXPIRED" })),
+    };
+    // @ts-expect-error bridge test stub
+    window.pywebview = { api: fakeApi };
+    const { result } = renderHook(() => useScanner());
+    await act(async () => { await result.current.scanFolder("/broken"); });
+    act(() => {
+      window.__onScanFinished?.("broken", {
+        files: [], total: 300, status: "completed",
+        paged: { total: 300, pageSize: 128 },
+      });
+    });
+    await waitFor(() => expect(result.current.isScanning).toBe(false));
+    expect(result.current.fileList).toHaveLength(0);
+    expect(result.current.scanStatus).toBe("idle");
+    expect(result.current.scanError).toContain("SCAN_RESULT_EXPIRED");
+  });
+
+  it("accepts paged results that finish before start_scan resolves", async () => {
+    let startResolve!: (response: { ok: boolean; scanId: string }) => void;
+    const pending = new Promise<{ ok: boolean; scanId: string }>((resolve) => {
+      startResolve = resolve;
+    });
+    const rows = Array.from({ length: 130 }, (_, i) => ({
+      name: `f-${i}.png`, path: `/early/f-${i}.png`, ext: "PNG", is_3d: false,
+    }));
+    const fakeApi = {
+      start_scan: () => pending,
+      get_scan_page: vi.fn(async (scanId: string, offset: number, limit: number) => {
+        const slice = rows.slice(offset, offset + limit);
+        return { ok: true, error: null, value: {
+          scanId, offset, total: rows.length, nextOffset: offset + slice.length, files: slice,
+        } };
+      }),
+    };
+    // @ts-expect-error bridge test stub
+    window.pywebview = { api: fakeApi };
+    const { result } = renderHook(() => useScanner());
+    let request!: Promise<void>;
+    await act(async () => { request = result.current.scanFolder("/early"); });
+    act(() => {
+      window.__onScanFinished?.("early-scan", {
+        files: [], total: 130, status: "completed",
+        paged: { total: 130, pageSize: 128 },
+      });
+    });
+    await act(async () => {
+      startResolve({ ok: true, scanId: "early-scan" });
+      await request;
+    });
+    await waitFor(() => expect(result.current.fileList).toHaveLength(130));
+    expect(result.current.scanStatus).toBe("completed");
+  });
+
 });
