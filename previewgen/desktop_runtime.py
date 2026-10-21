@@ -87,16 +87,16 @@ def start_desktop_app() -> int:
     is_smoke = "--gui-smoke-test" in sys.argv
     if is_smoke:
         logging.info("GUI smoke test mode enabled")
-        # Smoke test fallback for Linux without system webview installed
         if sys.platform.startswith("linux"):
             has_gtk = bool(__import__("importlib.util").util.find_spec("gi"))
             has_qt = bool(__import__("importlib.util").util.find_spec("qtpy"))
             if not has_gtk and not has_qt:
-                logging.warning("Linux system GTK/QT python bindings not present. Fulfilling smoke test headlessly.")
-                ready_marker = os.environ.get("PREVIEWGEN_READY_MARKER")
-                if ready_marker:
-                    Path(ready_marker).write_text("READY\n", encoding="utf-8")
-                return 0
+                logging.error(
+                    "Linux smoke test cannot construct a WebView: neither the gi (GTK) "
+                    "nor qtpy bindings are importable. Reporting this as a pass would "
+                    "certify a GUI stack that was never exercised."
+                )
+                return 1
     target_url = html_dist.as_uri()
     logging.info("Loading frontend from: %s", target_url)
 

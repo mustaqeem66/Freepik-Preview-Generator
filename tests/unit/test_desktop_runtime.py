@@ -113,3 +113,27 @@ def test_normal_launch_does_not_arm_auto_close_watchdog(monkeypatch, tmp_path):
     assert fake_api.cleaned_up is True
     assert fake_webview.window.destroyed is False
     assert exit_calls == []
+
+
+def test_linux_smoke_without_webview_bindings_fails_closed(monkeypatch, tmp_path):
+    """A Linux smoke test with no `gi` must not report a pass.
+
+    The smoke mode exists to prove the native WebView stack works. Treating a
+    missing GTK binding as "fulfil it headlessly and return 0" let the release
+    gate certify a GUI that was never created, and wrote the readiness marker
+    the CI step asserts on.
+    """
+    runtime, fake_webview, _fake_api = _load_runtime(
+        monkeypatch, tmp_path, ["previewgen", "--gui-smoke-test"]
+    )
+    monkeypatch.setattr(runtime.sys, "platform", "linux")
+    monkeypatch.setattr(
+        importlib.util, "find_spec", lambda _name: None, raising=True
+    )
+
+    marker = tmp_path / "ready.marker"
+    monkeypatch.setenv("PREVIEWGEN_READY_MARKER", str(marker))
+
+    assert runtime.start_desktop_app() == 1
+    assert not marker.exists()
+    assert fake_webview.started is False
