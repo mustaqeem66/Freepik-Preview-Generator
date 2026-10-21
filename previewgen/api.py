@@ -330,6 +330,17 @@ class DesktopApi:
             logging.warning("Native multi-file picker failed: %s", exc)
             return {"ok": False, "value": None, "error": "Could not open the native file picker"}
 
+    def clear_selected_files(self) -> dict[str, Any]:
+        """Revoke all exact-file picker grants when the user clears the list.
+
+        In-flight batch workers own validated path snapshots and are stopped
+        separately via cancellation; clearing grants affects future requests.
+        """
+        with self._authorized_lock:
+            removed = len(self._authorized_files)
+            self._authorized_files.clear()
+        return {"ok": True, "value": removed, "error": None}
+
     def browse_input_folder(self) -> str:
         """Open native folder picker for input directory."""
         if not self.window:
