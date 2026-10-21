@@ -6,6 +6,7 @@ import "./index.css";
 import "./studioPolish.css";
 import "./studioPremium.css";
 
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary>

@@ -1,0 +1,38 @@
+/* Reversible canvas-first editing — not native fullscreen/window resizing. */
+.canvas-toolbar { gap: 10px; }
+.canvas-toolbar-actions { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.canvas-focus-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 33px;
+  white-space: nowrap;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.canvas-focus-button[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--focus-ring);
+  background: var(--selection);
+  box-shadow: none;
+}
+.studio-workspace-focused { grid-template-columns: minmax(0, 1fr); }
+.studio-workspace-focused .canvas-pane { min-width: 0; min-height: 0; }
+.studio-workspace-focused .canvas-stage { margin: 10px; }
+.studio-workspace-focused .preview-canvas { border-radius: 12px; }
+@media (max-width: 850px) {
+  /* Existing smaller-window flex/stacked layout remains authoritative. */
+  .studio-workspace-focused { display: flex; flex-direction: column; }
+  .studio-workspace-focused .canvas-pane { flex: 1; min-height: 580px; }
+}
+@media (max-width: 560px) {
+  .canvas-focus-button { padding: 7px 8px; }
+  .canvas-focus-button span { display: none; }
+  .studio-workspace-focused .canvas-pane { min-height: 520px; }
+}
+@media (prefers-contrast: more) {
+  .canvas-focus-button[aria-pressed="true"] { outline: 1px solid var(--focus-ring); }
+}
+@media (forced-colors: active) {
+  .canvas-focus-button[aria-pressed="true"] { border-color: Highlight; color: Highlight; }
+}
