@@ -55,6 +55,7 @@ class DesktopApi:
 
     def __init__(self) -> None:
         self.window: Any | None = None  # webview.Window when running
+        self._custom_chrome_enabled = False
         self.session_zip_dir: Path | None = None
         self.scanner = get_scanner()
         self.lifecycle = LifecycleManager()
@@ -96,10 +97,48 @@ class DesktopApi:
         )
         self.lifecycle.set_batch_finished_callback(self._on_batch_finished)
 
-    def set_window(self, win: Any) -> None:
-        """Set the pywebview window reference."""
+    def set_window(self, win: Any, *, custom_chrome: bool = False) -> None:
+        """Bind the only trusted native window and its titlebar mode."""
         self.window = win
-        # Wire lifecycle scanner (already set)
+        self._custom_chrome_enabled = custom_chrome
+
+    def get_window_chrome(self) -> dict[str, Any]:
+        """Advertise native titlebar support; disabled in browser/dev mode."""
+        platform = (
+            "macos" if sys.platform == "darwin"
+            else "windows" if sys.platform == "win32"
+            else "linux" if sys.platform.startswith("linux")
+            else "unknown"
+        )
+        return {
+            "ok": True,
+            "value": {"enabled": bool(self.window and self._custom_chrome_enabled), "platform": platform},
+            "error": None,
+        }
+
+    def window_action(self, action: str) -> dict[str, Any]:
+        """Window chrome actions only: no arbitrary method name or argument."""
+        if not self.window or not self._custom_chrome_enabled:
+            return {"ok": False, "error": "NATIVE_CHROME_UNAVAILABLE"}
+        methods = {
+            "minimize": "minimize",
+            "fullscreen": "toggle_fullscreen",
+            "close": "destroy",
+        }
+        if not isinstance(action, str) or action not in methods:
+            return {"ok": False, "error": "INVALID_WINDOW_ACTION"}
+        try:
+            method = getattr(self.window, methods[action])
+            if action == "close":
+                # The bridge reply must be able to return before the window
+                # and its WebView transport are destroyed.
+                threading.Timer(0.15, method).start()
+            else:
+                method()
+            return {"ok": True, "error": None}
+        except Exception as exc:
+            logging.warning("Native window %s action failed: %s", action, exc)
+            return {"ok": False, "error": "WINDOW_ACTION_FAILED"}
 
     def _register_default_authorized_paths(self) -> None:
         from previewgen.settings import get_log_directory, get_settings_directory

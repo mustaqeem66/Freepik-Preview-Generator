@@ -1,0 +1,70 @@
+/* Platform placement is deliberate: Windows/Linux actions on the left with
+   the close button on the right; on macOS, all three controls are on the right.
+   pywebview owns actual OS window operations, not these CSS buttons. */
+.desktop-titlebar {
+  height: 37px;
+  flex: 0 0 37px;
+  width: calc(100% + 36px);
+  margin-left: -18px;
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) 130px;
+  background: var(--toolbar-bg);
+  color: var(--text-sec);
+  border-bottom: 1px solid var(--card-border);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.titlebar-leading, .titlebar-trailing {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 100px;
+}
+.titlebar-leading { justify-content: flex-start; padding-left: 10px; }
+.titlebar-trailing { justify-content: flex-end; padding-right: 10px; grid-column: 3; }
+.titlebar-drag {
+  grid-column: 2;
+  align-self: stretch;
+  min-width: 90px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  letter-spacing: .018em;
+  font-size: 12px;
+  font-weight: 670;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.titlebar-leading + .titlebar-drag { grid-column: 2; }
+.titlebar-control {
+  width: 34px;
+  height: 31px;
+  min-width: 34px;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--text-sec);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+}
+.titlebar-control:hover:not(:disabled) {
+  background: var(--chip-bg);
+  color: var(--text);
+}
+.titlebar-close:hover:not(:disabled) { background: #c94142; color: white; }
+.titlebar-control:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.titlebar-control:disabled { opacity: .6; }
+@media (prefers-reduced-motion: reduce) {
+  .titlebar-control { transition: none !important; }
+}
+@media (forced-colors: active) {
+  .desktop-titlebar { border-bottom: 1px solid CanvasText; }
+  .titlebar-close:hover:not(:disabled) { color: HighlightText; background: Highlight; }
+}

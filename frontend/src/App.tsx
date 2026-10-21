@@ -19,6 +19,7 @@ import { PreviewCanvas } from "./components/PreviewCanvas";
 import { ExportSizePanel } from "./components/ExportSizePanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { CanvasExportDock } from "./components/CanvasExportDock";
+import { DesktopTitlebar } from "./components/DesktopTitlebar";
 import { FileList } from "./components/FileList";
 import { ErrorNotice, NoticeMessage } from "./components/ErrorNotice";
 import { mergeSelectedAssets } from "./selectedAssets";
@@ -354,6 +355,7 @@ export default function App() {
   ];
 
   return <div className="studio-shell">
+    <DesktopTitlebar />
     <header className="studio-toolbar">
       <div className="brand"><span className="brand-mark"><Layers size={21} strokeWidth={1.6} /></span>
         <div><h1>PreviewGen<span className="studio-badge">Studio</span></h1><p>Make every asset presentation-ready.</p></div></div>

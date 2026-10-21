@@ -170,6 +170,9 @@ export interface ScanFolderResult {
 
 export interface PyWebViewApi {
   frontend_ready: () => Promise<ApiResponse<string>>;
+  get_window_chrome?: () => Promise<ApiResponse<{ enabled: boolean; platform: "windows" | "linux" | "macos" | "unknown" }>>;
+  window_action?: (action: "minimize" | "fullscreen" | "close") =>
+    Promise<{ ok: boolean; error: string | null }>;
   get_initial_state: () => Promise<ApiResponse<Partial<PreviewState>>>;
   browse_input_folder: () => Promise<string>;
   browse_files?: () => Promise<ApiResponse<{ files: FileInfo[]; rejected: string[] } | null>>;
