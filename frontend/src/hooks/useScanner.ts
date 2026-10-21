@@ -173,7 +173,11 @@ export function useScanner() {
       const api = await ApiBridge.getApi(3000);
       if (request !== generation.current) return;
       if (!api) throw new Error("Backend unavailable. Reconnect before scanning.");
-      const response = await api.start_scan(selectedFolder);
+      // Never pass the extra argument to a pre-paging pywebview backend.
+      // A legacy desktop UI remains on the original inline scan protocol.
+      const response = api.get_scan_page
+        ? await api.start_scan(selectedFolder, true)
+        : await api.start_scan(selectedFolder);
       if (request !== generation.current) {
         // Superseded requests must only cancel their own ID, not a newer scan.
         if (response?.ok && response.scanId) {
