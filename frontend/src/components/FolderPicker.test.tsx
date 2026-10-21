@@ -37,4 +37,14 @@ describe("FolderPicker Component", () => {
     expect(screen.getByLabelText(/output folder path/i)).toHaveAttribute("readonly");
     expect(screen.getByText(/pick the destination with the button below/i)).toBeInTheDocument();
   });
+  it("requires a separate output folder when source files come from multiple directories", () => {
+    render(<FolderPicker inputFolder="/assets" outputFolder="/exports" sameFolder={false}
+      forceSeparateOutput onBrowseInput={() => {}} onBrowseOutput={() => {}}
+      onToggleSameFolder={() => {}} />);
+    const checkbox = screen.getByRole("checkbox", { name: "Same as input" });
+    expect(checkbox).toBeDisabled();
+    expect(checkbox).not.toBeChecked();
+    expect(screen.getByRole("button", { name: /choose output folder/i })).toBeEnabled();
+    expect(screen.getByText(/files may come from different folders/i)).toBeInTheDocument();
+  });
 });
