@@ -344,4 +344,23 @@ describe("useScanner hook", () => {
     expect(result.current.scanStatus).toBe("completed");
   });
 
+  it("opts into paging when supported but preserves legacy start_scan arguments", async () => {
+    const pagedStart = vi.fn(async () => ({ ok: true, scanId: "new" }));
+    const pagedApi = { start_scan: pagedStart, get_scan_page: vi.fn() };
+    // @ts-expect-error bridge stub
+    window.pywebview = { api: pagedApi };
+    const first = renderHook(() => useScanner());
+    await act(async () => { await first.result.current.scanFolder("/new"); });
+    expect(pagedStart).toHaveBeenCalledWith("/new", true);
+    first.unmount();
+
+    const legacyStart = vi.fn(async () => ({ ok: true, scanId: "legacy" }));
+    // @ts-expect-error bridge stub
+    window.pywebview = { api: { start_scan: legacyStart } };
+    const second = renderHook(() => useScanner());
+    await act(async () => { await second.result.current.scanFolder("/legacy"); });
+    expect(legacyStart).toHaveBeenCalledWith("/legacy");
+    second.unmount();
+  });
+
 });
