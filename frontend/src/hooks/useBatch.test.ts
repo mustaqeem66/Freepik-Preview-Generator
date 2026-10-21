@@ -224,4 +224,34 @@ describe("useBatch operation safety", () => {
     expect(result.current.batchStatus).toBe("completed");
     expect(result.current.isProcessing).toBe(false);
   });
+  it("routes only selected paths through the explicit-file batch bridge", async () => {
+    const selectedBatch = vi.fn().mockResolvedValue({ ok: true, operationId: "selected_1" });
+    const folderBatch = vi.fn();
+    vi.spyOn(ApiBridge, "getApi").mockResolvedValue({
+      start_batch: folderBatch, start_batch_files: selectedBatch,
+    } as never);
+    const { result } = renderHook(() => useBatch());
+    await act(async () => {
+      await result.current.startBatch("", "/exports", 2, { sameFolder: false } as never,
+        ["/folder-a/a.png", "/folder-b/b.png"]);
+    });
+    expect(selectedBatch).toHaveBeenCalledWith(
+      ["/folder-a/a.png", "/folder-b/b.png"], "/exports", { sameFolder: false }
+    );
+    expect(folderBatch).not.toHaveBeenCalled();
+    act(() => {
+      bridgeEvents.emit("batch.finished", complete(), { operationId: "selected_1", terminal: true });
+    });
+    expect(result.current.isProcessing).toBe(false);
+  });
+
+  it("reports an update requirement when the backend lacks selected-file export", async () => {
+    vi.spyOn(ApiBridge, "getApi").mockResolvedValue({ start_batch: vi.fn() } as never);
+    const { result } = renderHook(() => useBatch());
+    await act(async () => {
+      await result.current.startBatch("", "/exports", 1, {} as never, ["/a/a.png"]);
+    });
+    expect(result.current.batchStatus).toBe("failed");
+    expect(result.current.batchErrors[0]).toMatch(/desktop backend does not support Add Files/i);
+  });
 });
