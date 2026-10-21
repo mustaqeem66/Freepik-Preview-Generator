@@ -256,7 +256,7 @@ export default function App() {
       const api = await ApiBridge.getApi();
       if (!api?.open_diagnostics_folder) throw new Error("Diagnostics require the current desktop version.");
       const result = await api.open_diagnostics_folder();
-      if (!result.ok) throw new Error(result.error || "Unable to open diagnostics folder");
+      if (!result.ok) throw new Error(result.message || result.error || "Unable to open diagnostics folder");
     } catch (error) {
       showNotice({ id: "diagnostics-error", type: "warning", message: "Could not open diagnostics",
         details: error instanceof Error ? error.message : "Check the logs directory manually." });
