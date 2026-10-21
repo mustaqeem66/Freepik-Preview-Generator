@@ -1,9 +1,11 @@
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
 from previewgen.api import DesktopApi
+from previewgen.preview_coordinator import PreviewCoordinator
 
 pytestmark = pytest.mark.core
 
@@ -67,21 +69,64 @@ def test_p0_5_rapid_preview_requests_cancel_prior_backend_renders():
         assert len(completed) <= 3, f"Expected latest-wins to drop intermediate renders, got {len(completed)}"
     finally:
         api.cleanup()
-def test_rapid_100_updates_queue_bounded_and_control_calls_under_100ms():
-    """Verify 100 rapid preview updates return in <100ms each and queue stays bounded to 1."""
+def test_rapid_100_updates_queue_bounded_and_control_calls_never_join_render(monkeypatch):
+    """100 rapid updates: the bridge thread never waits on a render and the queue
+    never grows past one active plus one pending request.
+
+    The old assertion bounded each call at 100 ms wall-clock, which measured the
+    runner rather than the code -- it failed under CPU contention with the
+    implementation unchanged. The bound is now relative to a deliberately slow
+    render: 100 control-plane calls finishing inside a single render's duration
+    proves none of them joined the worker, with a margin no scheduler can eat.
+    """
+    render_seconds = 1.0
     api = DesktopApi()
     api.add_authorized_input_folder(SAMPLE_PNG.resolve().parent)
+    api.preview_coordinator.set_dispatch_fn(lambda *_args: None)
+
+    renders: list[str] = []
+    live = 0
+    peak_live = 0
+    tally = threading.Lock()
+
+    def slow_render(_self, op_id, _source, _config_dict, _max_dimension):
+        nonlocal live, peak_live
+        with tally:
+            live += 1
+            peak_live = max(peak_live, live)
+            renders.append(op_id)
+        time.sleep(render_seconds)
+        with tally:
+            live -= 1
+        return {"status": "error", "error": "stubbed render"}
+
+    monkeypatch.setattr(PreviewCoordinator, "_render_isolated", slow_render)
     try:
-        t_max = 0.0
+        started = time.perf_counter()
         for i in range(1, 101):
-            t0 = time.perf_counter()
             res = api.start_preview(str(SAMPLE_PNG), {"text": f"Quick {i}"}, request_id=i)
-            elapsed = time.perf_counter() - t0
-            t_max = max(t_max, elapsed)
             assert res["ok"] is True
             assert res["status"] == "queued"
+        control_plane_seconds = time.perf_counter() - started
 
-        assert t_max < 0.10, f"Control-plane start_preview call exceeded 100ms threshold: {t_max:.4f}s"
+        with api.preview_coordinator._lock:
+            outstanding = int(api.preview_coordinator._pending_task is not None) + int(
+                api.preview_coordinator._active_op_id is not None
+            )
+        assert outstanding <= 2, (
+            f"Queue is not bounded: 100 submitted updates left {outstanding} outstanding tasks."
+        )
+
+        assert control_plane_seconds < render_seconds, (
+            "100 start_preview calls took "
+            f"{control_plane_seconds:.3f}s, i.e. at least one render's worth of time -- "
+            "the control plane is waiting on worker output again."
+        )
+        assert peak_live <= 1, f"Expected at most one concurrent render, saw {peak_live}"
+        assert len(renders) <= 2, (
+            f"Latest-wins coalescing regressed: 100 updates reached {len(renders)} renders "
+            f"({renders}) instead of being collapsed into one active plus one pending."
+        )
     finally:
         api.cleanup()
 
