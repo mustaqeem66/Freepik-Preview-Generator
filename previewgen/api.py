@@ -273,6 +273,11 @@ class DesktopApi:
                     rejected.append(f"{target.name}: file not found")
                     continue
                 extension = target.suffix.lower()
+                if extension == ".zip":
+                    # Folder scanning exposes ZIP members via zip:// handles.
+                    # A raw ZIP is not a previewable asset in the file list.
+                    rejected.append(f"{target.name}: choose its folder to browse ZIP members")
+                    continue
                 if extension not in SUPPORTED_EXTENSIONS:
                     rejected.append(f"{target.name}: unsupported format")
                     continue
@@ -284,9 +289,9 @@ class DesktopApi:
                 files.append({
                     "name": target.name, "path": str(target),
                     "ext": extension.lstrip(".").upper(),
-                    "is_3d": extension in SUPPORTED_3D_EXTENSIONS or extension in (
-                        ".step", ".stp", ".iges", ".igs"
-                    ),
+                    "is_3d": (
+                        extension in SUPPORTED_3D_EXTENSIONS and extension != ".blend"
+                    ) or extension in (".step", ".stp", ".iges", ".igs"),
                 })
             return {"ok": True, "value": {"files": files, "rejected": rejected}, "error": None}
         except Exception as exc:
@@ -818,7 +823,8 @@ class DesktopApi:
                 source = Path(raw).resolve()
                 if not self.is_authorized_selected_file(source):
                     return {"ok": False, "error": "UNAUTHORIZED_SELECTED_FILE"}
-                if not source.is_file() or source.suffix.lower() not in SUPPORTED_EXTENSIONS:
+                if (not source.is_file() or source.suffix.lower() not in SUPPORTED_EXTENSIONS
+                    or source.suffix.lower() == ".zip"):
                     return {"ok": False, "error": f"INVALID_SELECTED_FILE: {source.name}"}
                 if source not in seen:
                     seen.add(source)
