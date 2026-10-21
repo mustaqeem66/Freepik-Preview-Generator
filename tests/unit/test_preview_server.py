@@ -85,6 +85,7 @@ def test_render_preview_returns_url_not_base64():
         pytest.skip("sample.jpg fixture missing")
 
     api = DesktopApi()
+    api.add_authorized_input_folder(fixture.parent)
     try:
         result = api.render_preview(str(fixture), {})
         assert result["ok"] is True, result
