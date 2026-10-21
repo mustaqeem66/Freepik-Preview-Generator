@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { FolderPicker } from "./FolderPicker";
 
@@ -47,4 +47,26 @@ describe("FolderPicker Component", () => {
     expect(screen.getByRole("button", { name: /choose output folder/i })).toBeEnabled();
     expect(screen.getByText(/files may come from different folders/i)).toBeInTheDocument();
   });
+  it("distinguishes the folder-only dialog from the visible file selector", () => {
+    const chooseFolder = vi.fn();
+    const browseFiles = vi.fn();
+    render(<FolderPicker inputFolder="" outputFolder="" sameFolder={false}
+      onBrowseInput={chooseFolder} onBrowseFiles={browseFiles}
+      onBrowseOutput={() => {}} onToggleSameFolder={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Choose Folder" }));
+    expect(chooseFolder).toHaveBeenCalledOnce();
+    expect(browseFiles).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Browse Files…" }));
+    expect(browseFiles).toHaveBeenCalledOnce();
+    expect(screen.getByText(/system may hide files in that dialog/i)).toBeInTheDocument();
+  });
+
+  it("disables both source selectors while a native picker is busy", () => {
+    render(<FolderPicker inputFolder="" outputFolder="" sameFolder={false} disabled
+      onBrowseInput={() => {}} onBrowseFiles={() => {}}
+      onBrowseOutput={() => {}} onToggleSameFolder={() => {}} />);
+    expect(screen.getByRole("button", { name: "Choose Folder" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Browse Files…" })).toBeDisabled();
+  });
+
 });
