@@ -3,6 +3,8 @@ import { CheckCircle2, AlertTriangle } from "lucide-react";
 
 interface BatchProgressProps {
   isProcessing: boolean;
+  canCancelBatch?: boolean;
+  isCancelling?: boolean;
   progress: { current: number; total: number; message: string };
   stats: { success: number; failed: number };
   batchErrors: string[];
@@ -15,7 +17,7 @@ interface BatchProgressProps {
 }
 
 export const BatchProgress: React.FC<BatchProgressProps> = ({
-  isProcessing, progress, stats, batchErrors, onStartBatch, onCancelBatch,
+  isProcessing, canCancelBatch = true, isCancelling = false, progress, stats, batchErrors, onStartBatch, onCancelBatch,
   canStart, truncated = false, truncationReasons = [], discovered = 0,
 }) => {
   const percent = progress.total > 0
@@ -26,7 +28,10 @@ export const BatchProgress: React.FC<BatchProgressProps> = ({
       <div className="bp-head">
         <span className="bp-title">Batch export</span>
         {isProcessing
-          ? <button type="button" className="button" onClick={onCancelBatch}>Cancel Batch</button>
+          ? <button type="button" className="button" onClick={onCancelBatch}
+              disabled={!canCancelBatch || isCancelling}>
+              {isCancelling ? "Cancelling…" : canCancelBatch ? "Cancel Batch" : "Starting…"}
+            </button>
           : <button type="button" className="button primary" onClick={onStartBatch} disabled={!canStart}>Generate Previews</button>}
       </div>
       {isProcessing && <div className="bp-body">

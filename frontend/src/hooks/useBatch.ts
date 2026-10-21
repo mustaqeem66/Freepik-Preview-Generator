@@ -28,6 +28,10 @@ function mapSummaryStatus(summary: BatchSummary): BatchStatus {
 
 export function useBatch() {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [canCancelBatch, setCanCancelBatch] = useState(false);
+  // A cancellation request is single-flight. Repeated clicks must never
+  // re-arm its terminal deadline or send multiple backend commands.
+  const cancellationPendingRef = useRef(false);
   const [batchStatus, setBatchStatus] = useState<BatchStatus>("idle");
   const [progress, setProgress] = useState<{ current: number; total: number; message: string }>({
     current: 0,
@@ -71,6 +75,8 @@ export function useBatch() {
         cancelDeadlineRef.current = null;
       }
       isTerminalRef.current = true;
+      cancellationPendingRef.current = false;
+      setCanCancelBatch(false);
       if (typeof meta?.sequence === "number") latestSeqRef.current = Math.max(latestSeqRef.current, meta.sequence);
       setIsProcessing(false);
       const { success, failed, skipped, errors, duration } = summary;
@@ -141,6 +147,8 @@ export function useBatch() {
     async (inputFolder: string, outputFolder: string, totalFiles: number, config: PreviewState) => {
       if (!inputFolder) return;
       setIsProcessing(true);
+      setCanCancelBatch(false);
+      cancellationPendingRef.current = false;
       setBatchStatus("generating");
       setStats({ success: 0, failed: 0 });
       setBatchErrors([]);
@@ -171,11 +179,13 @@ export function useBatch() {
         }
         activeOpIdRef.current = response.operationId;
         startPendingRef.current = false;
+        setCanCancelBatch(true);
         replayRef.current(response.operationId);
       } catch (err) {
         startPendingRef.current = false;
         bufferedEventsRef.current = [];
         setIsProcessing(false);
+        setCanCancelBatch(false);
         setBatchStatus("failed");
         setBatchErrors([err instanceof Error ? err.message : "Failed to start batch"]);
       }
@@ -184,15 +194,20 @@ export function useBatch() {
   );
 
   const cancelBatch = useCallback(async () => {
+    // Do not target an unknown operation while start_batch is unresolved.
+    // Also prevent duplicate cancellation requests from extending the deadline.
+    if (cancellationPendingRef.current || isTerminalRef.current || !activeOpIdRef.current) return;
+    cancellationPendingRef.current = true;
+    setCanCancelBatch(false);
     setBatchStatus("batch-cancelling");
     if (cancelDeadlineRef.current !== null) clearTimeout(cancelDeadlineRef.current);
-    // Even if the cancel request itself fails to reach the backend, the
-    // deadline keeps the UI honest: a late batch.finished still clears it.
     cancelDeadlineRef.current = setTimeout(() => {
       cancelDeadlineRef.current = null;
       if (isTerminalRef.current) return;
       isTerminalRef.current = true;
+      cancellationPendingRef.current = false;
       activeOpIdRef.current = null;
+      setCanCancelBatch(false);
       setIsProcessing(false);
       setBatchStatus("failed");
       setProgress((prev) => ({ ...prev, message: "Cancellation timed out — no completion event arrived from the backend." }));
@@ -200,12 +215,18 @@ export function useBatch() {
     try {
       const api = await ApiBridge.getApi(3000);
       if (!api) throw new Error("Backend unavailable. The batch cancellation was not delivered.");
-      await api.cancel_batch();
+      const response = await api.cancel_batch();
+      if (response && response.ok === false) throw new Error("The desktop backend rejected batch cancellation.");
     } catch (error) {
+      // A terminal event may arrive while the bridge promise is still pending.
+      // Never revert a completed/cancelled run to "generating" afterwards.
+      if (isTerminalRef.current || !cancellationPendingRef.current) return;
       if (cancelDeadlineRef.current !== null) {
         clearTimeout(cancelDeadlineRef.current);
         cancelDeadlineRef.current = null;
       }
+      cancellationPendingRef.current = false;
+      setCanCancelBatch(true);
       setBatchStatus("generating");
       setBatchErrors([error instanceof Error ? error.message : "Could not cancel the batch"]);
     }
@@ -213,6 +234,7 @@ export function useBatch() {
 
   return {
     isProcessing,
+    canCancelBatch,
     batchStatus,
     progress,
     stats,
