@@ -7,7 +7,9 @@ import time
 import pytest
 
 from previewgen.thumbnail_coordinator import (
-    MAX_RETAINED_THUMBNAILS, MAX_VISIBLE_THUMBNAILS, ThumbnailCoordinator,
+    MAX_RETAINED_THUMBNAILS,
+    MAX_VISIBLE_THUMBNAILS,
+    ThumbnailCoordinator,
 )
 
 pytestmark = pytest.mark.core
@@ -67,7 +69,7 @@ def test_cached_thumbnails_reused_with_bounded_server_retention() -> None:
         for i in range(MAX_RETAINED_THUMBNAILS + 4):
             path = f"/art/{i}.png"
             coordinator.request([path])
-            assert _wait_for(lambda: any(msg["path"] == path for msg in notifications))
+            assert _wait_for(lambda p=path: any(msg["path"] == p for msg in notifications))
         assert len(server.owned) <= MAX_RETAINED_THUMBNAILS
         assert server.released
         assert coordinator.request([f"/art/{MAX_RETAINED_THUMBNAILS + 3}.png"])
