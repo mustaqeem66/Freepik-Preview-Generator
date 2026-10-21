@@ -44,6 +44,7 @@ def _row(index: int, padding: int = 0) -> dict:
 def test_large_scan_completion_is_metadata_only_and_pages_stay_bounded() -> None:
     api = DesktopApi()
     api.scanner = ScannerService()
+    api._scan_paging_enabled = True
     window = FakeWindow()
     api.window = window
     files = [_row(i, padding=450) for i in range(5000)]
@@ -90,6 +91,7 @@ def test_large_scan_completion_is_metadata_only_and_pages_stay_bounded() -> None
 def test_small_scan_uses_legacy_terminal_envelope() -> None:
     api = DesktopApi()
     api.scanner = ScannerService()
+    api._scan_paging_enabled = True
     window = FakeWindow()
     api.window = window
     original = [_row(i) for i in range(SCAN_INLINE_RESULT_LIMIT)]
@@ -106,6 +108,7 @@ def test_small_scan_uses_legacy_terminal_envelope() -> None:
 def test_byte_heavy_small_result_pages_and_oversized_row_fails_safely() -> None:
     api = DesktopApi()
     api.scanner = ScannerService()
+    api._scan_paging_enabled = True
     api.window = FakeWindow()
     try:
         api._on_scan_finished("wide", {"files": [_row(1, padding=SCAN_PAGE_MAX_BYTES)], "total": 1})
@@ -120,6 +123,7 @@ def test_byte_heavy_small_result_pages_and_oversized_row_fails_safely() -> None:
 def test_scan_pages_are_sequential_and_revoked_when_new_scan_starts(monkeypatch) -> None:
     api = DesktopApi()
     api.scanner = ScannerService()
+    api._scan_paging_enabled = True
     api.window = FakeWindow()
     try:
         api._on_scan_finished("old", {
