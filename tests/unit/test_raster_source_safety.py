@@ -7,7 +7,7 @@ from PIL import Image
 
 from previewgen.api import DesktopApi
 from previewgen.batch.runner import process_folder
-from previewgen.config import PreviewConfig, SUPPORTED_EXTENSIONS
+from previewgen.config import SUPPORTED_EXTENSIONS, PreviewConfig
 from previewgen.destinations import protect_source_destinations
 
 pytestmark = pytest.mark.core
