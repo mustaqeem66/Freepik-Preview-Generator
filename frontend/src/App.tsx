@@ -4,12 +4,13 @@ import "./studioFocus.css";
 import "./fileSelection.css";
 import { PaneResizer } from "./components/PaneResizer";
 import { CommandPalette, type StudioCommand } from "./components/CommandPalette";
-import { Box, ChevronLeft, ChevronRight, FolderOpen, FilePlus2, Layers, Moon, RefreshCw, Sun, Activity, Maximize2, Minimize2, Command } from "lucide-react";
+import { Box, ChevronLeft, ChevronRight, FolderOpen, FilePlus2, Layers, Moon, RefreshCw, Sun, Activity, Maximize2, Minimize2, Command, Columns2 } from "lucide-react";
 import { ApiBridge } from "./api/bridge";
 import { useBackend } from "./hooks/useBackend";
 import { useSettings } from "./hooks/useSettings";
 import { useScanner } from "./hooks/useScanner";
 import { usePreview } from "./hooks/usePreview";
+import { useSourceComparison } from "./hooks/useSourceComparison";
 import { useAssetProbe } from "./hooks/useAssetProbe";
 import { useBatch } from "./hooks/useBatch";
 import { FolderPicker } from "./components/FolderPicker";
@@ -122,7 +123,15 @@ export default function App() {
     : !isScanning && (scanStatus === "completed" || scanStatus === "scan-truncated");
   const destinationReady = !usingFiles || Boolean(state.outputFolder.trim());
   const previewFile = capabilities.canPreview && scanReady ? activeFile : undefined;
-  const { previewUrl, previewMeta, isLoading, renderError } = usePreview(previewFile, state);
+  const { previewUrl, previewSourcePath, previewMeta, isLoading, renderError } = usePreview(previewFile, state);
+  const [compareRequested, setCompareRequested] = useState(false);
+  const sourceComparisonAllowed = Boolean(previewFile && !previewFile.is_3d && capabilities.canPreview);
+  const compareEnabled = compareRequested && sourceComparisonAllowed &&
+    previewSourcePath === previewFile?.path && !isLoading && !!previewUrl;
+  const { sourceUrl, isLoadingSource, sourceError } = useSourceComparison(
+    previewFile?.is_3d ? undefined : previewFile?.path,
+    compareRequested && sourceComparisonAllowed,
+  );
   const probeFile = capabilities.canProbe && scanReady ? activeFile : undefined;
   const { probe, isProbing } = useAssetProbe(probeFile);
   const [isExporting, setIsExporting] = useState(false);
@@ -329,6 +338,10 @@ export default function App() {
     { id: "output", title: "Open output folder", group: "Export", keywords: "finder explorer",
       disabled: busy || !(usingFiles ? state.outputFolder : state.inputFolder) || !capabilities.canOpenReport,
       action: () => { void openOutput(); } },
+    { id: "compare", title: compareRequested ? "Exit Before / After" : "Compare source and JPG",
+      group: "View", keywords: "split reveal original before after",
+      disabled: !sourceComparisonAllowed || !previewUrl || isLoading || busy,
+      action: () => setCompareRequested((open) => !open) },
     { id: "focus", title: isFocused ? "Exit Focus Canvas" : "Focus Canvas",
       group: "View", keywords: "panes distraction free", action: toggleFocus },
     { id: "theme", title: state.theme === "dark" ? "Switch to light theme" : "Switch to dark theme",
@@ -431,6 +444,14 @@ export default function App() {
             <button type="button" className="icon-button" aria-label="Next asset" disabled={busy || currentIdx >= fileList.length - 1}
               onClick={() => selectIndex(currentIdx + 1)}><ChevronRight size={16} /></button></div>
           <button type="button" className="button canvas-focus-button"
+            aria-label={compareRequested ? "Exit Before and After comparison" : "Compare source and JPG preview"}
+            aria-pressed={compareRequested}
+            title="Inspect unbranded source visualization against the current JPG preview"
+            disabled={busy || !sourceComparisonAllowed || !previewUrl || isLoading}
+            onClick={() => setCompareRequested((open) => !open)}>
+            <Columns2 size={15} aria-hidden="true"/><span>{compareRequested ? "Close compare" : "Compare"}</span>
+          </button>
+          <button type="button" className="button canvas-focus-button"
             aria-label={isFocused ? "Exit focus mode" : "Focus canvas"}
             aria-pressed={isFocused}
             aria-keyshortcuts="Alt+Shift+F"
@@ -440,6 +461,9 @@ export default function App() {
             <span>{isFocused ? "Exit focus" : "Focus"}</span>
           </button></div></div>
         <div className="canvas-stage"><PreviewCanvas previewUrl={previewUrl} isLoading={isLoading} renderError={renderError}
+          compareEnabled={compareEnabled} sourceUrl={sourceUrl}
+          sourceLoading={isLoadingSource} sourceError={sourceError}
+          onExitCompare={() => setCompareRequested(false)}
           name={previewFile?.name || ""} width={previewMeta.width} height={previewMeta.height} is3D={is3D && !busy}
           hasSourceFolder={Boolean(state.inputFolder) || usingFiles} canChooseFolder={!busy && capabilities.canBrowse && isLoaded}
           onChooseFolder={() => void browse("browse_input_folder")}
@@ -450,7 +474,7 @@ export default function App() {
             onExport={() => void handleExport()}
             canExport={capabilities.canGenerate && !busy && scanReady && destinationReady}
             isExporting={isExporting} disabled={!activeFile || !scanReady || !destinationReady} /></div>
-        <div className="canvas-footnote"><span>Diagonal split · Original proportions</span><span>JPG is opaque; checkerboard is printed.</span></div>
+        <div className="canvas-footnote"><span>{compareRequested ? "Source visualization · Flattened formats may differ from editable originals" : "Diagonal split · Original proportions"}</span><span>{compareRequested ? "Before uses checkerboard for transparency; After is the JPG preview." : "JPG is opaque; checkerboard is printed."}</span></div>
       </section>
       {!isFocused && isWideWorkspace && <PaneResizer label="Resize inspector" value={actualInspectorWidth}
         initial={300} min={260} max={380} reverse onChange={setInspectorWidth} />}

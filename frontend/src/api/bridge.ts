@@ -9,6 +9,8 @@ export type BridgeEventMap = {
   "preview.failed": { operationId: string; error: string; code?: string };
   "thumbnail.ready": { path: string; url: string };
   "thumbnail.failed": { path: string };
+  "comparison.ready": { path: string; url: string };
+  "comparison.failed": { path: string };
   "probe.completed": { operationId: string; probe: AssetProbe };
   "probe.failed": { operationId: string; error: string; code?: string };
 };

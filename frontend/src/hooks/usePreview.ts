@@ -14,6 +14,7 @@ type BufferedPreviewEvent =
 
 export function usePreview(activeFile: FileInfo | undefined, state: PreviewState) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewSourcePath, setPreviewSourcePath] = useState<string | null>(null);
   const [previewMeta, setPreviewMeta] = useState<{ width: number; height: number; name: string }>({
     width: 0,
     height: 0,
@@ -71,6 +72,7 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
       const previous = ownedHandleRef.current;
       ownedHandleRef.current = newHandle;
       setPreviewUrl(newHandle.url);
+      setPreviewSourcePath(activeFilePathRef.current ?? null);
       setPreviewMeta({
         width: payload.width,
         height: payload.height,
@@ -144,6 +146,7 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
       releaseHandle(ownedHandleRef.current);
       ownedHandleRef.current = null;
       setPreviewUrl(null);
+      setPreviewSourcePath(null);
       setPreviewMeta({ width: 0, height: 0, name: "" });
       setRenderError(null);
       setIsLoading(false);
@@ -155,6 +158,7 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
       releaseHandle(ownedHandleRef.current);
       ownedHandleRef.current = null;
       setPreviewUrl(null);
+      setPreviewSourcePath(null);
       setPreviewMeta({ width: 0, height: 0, name: "" });
     }
     setRenderError(null);
@@ -219,6 +223,7 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
             const previous = ownedHandleRef.current;
             ownedHandleRef.current = newHandle;
             setPreviewUrl(newHandle.url);
+            setPreviewSourcePath(activeFile.path);
             setPreviewMeta({
               width: value.width || 0,
               height: value.height || 0,
@@ -280,5 +285,5 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
     state.invertTriangles,
   ]);
 
-  return { previewUrl, previewMeta, isLoading, renderError };
+  return { previewUrl, previewSourcePath, previewMeta, isLoading, renderError };
 }
