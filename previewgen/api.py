@@ -253,7 +253,7 @@ class DesktopApi:
                 return {"ok": False, "value": None, "error": "SCAN_PAGE_OUT_OF_ORDER"}
 
             chunk: list[dict[str, Any]] = []
-            payload_bytes = 64
+            payload_bytes = 512
             for file in files[offset:offset + limit]:
                 encoded_size = len(json.dumps(file, ensure_ascii=False).encode("utf-8")) + 2
                 if payload_bytes + encoded_size > SCAN_PAGE_MAX_BYTES:
