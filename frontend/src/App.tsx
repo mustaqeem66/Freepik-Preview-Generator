@@ -393,10 +393,6 @@ export default function App() {
           onBrowseInput={() => void browse("browse_input_folder")}
           onBrowseFiles={() => void addFiles()}
           onBrowseOutput={() => void browse("browse_output_folder")}
-          onCommitInput={(inputFolder) => {
-            setSourceMode("folder");
-            setState((previous) => ({ ...previous, inputFolder }));
-          }}
           onToggleSameFolder={(sameFolder) => setState((previous) => ({ ...previous,
             sameFolder: usingFiles ? false : sameFolder }))} />
         <div className="library-heading"><h2>Assets<span className="count-badge">{fileList.length}</span></h2>

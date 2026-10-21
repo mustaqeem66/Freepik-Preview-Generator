@@ -185,7 +185,11 @@ export function useScanner() {
         }
         return;
       }
-      if (!response.ok || !response.scanId) throw new Error("The folder scan could not be started.");
+      if (!response.ok || !response.scanId) {
+        throw new Error(response.error === "UNAUTHORIZED_INPUT_PATH"
+          ? "Select this folder with Choose Folder before scanning."
+          : response.error || "The folder scan could not be started.");
+      }
       activeScanId.current = response.scanId;
       starting.current = false;
       const early = earlyResults.current.get(response.scanId);

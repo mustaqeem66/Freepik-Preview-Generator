@@ -9,13 +9,12 @@ interface FolderPickerProps {
   onBrowseFiles?: () => void;
   onBrowseOutput: () => void;
   onToggleSameFolder: (checked: boolean) => void;
-  onCommitInput?: (path: string) => void;
   disabled?: boolean;
   forceSeparateOutput?: boolean;
 }
 
 export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseInput,
-  onBrowseFiles, onBrowseOutput, onToggleSameFolder, onCommitInput, disabled = false,
+  onBrowseFiles, onBrowseOutput, onToggleSameFolder, disabled = false,
   forceSeparateOutput = false }: FolderPickerProps) {
   const [input, setInput] = useState(inputFolder);
   const [output, setOutput] = useState(outputFolder);
@@ -26,10 +25,8 @@ export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseIn
     <p className="muted">Your artwork stays on this computer.</p>
     <label className="sr-only" htmlFor="input-folder">Input folder path</label>
     <input id="input-folder" type="text" value={input} placeholder="Paste a folder path…"
-      disabled={disabled} readOnly={!onCommitInput} title={inputFolder}
-      onChange={(e) => setInput(e.target.value)}
-      onBlur={() => { if (input.trim() !== inputFolder) onCommitInput?.(input.trim()); }}
-      onKeyDown={(e) => { if (e.key === "Enter") onCommitInput?.(input.trim()); }} />
+      disabled={disabled} readOnly title="Use Choose Folder to authorize a source directory"
+      onChange={() => {}} />
     <div className="source-choice-actions" role="group" aria-label="Choose artwork source">
       <button type="button" className="button source-folder-button" disabled={disabled} onClick={onBrowseInput}>
         <FolderOpen size={15} aria-hidden="true" />Choose Folder
@@ -37,7 +34,7 @@ export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseIn
       {onBrowseFiles && <button type="button" className="button source-files-button" disabled={disabled}
         onClick={onBrowseFiles}>Browse Files…</button>}
     </div>
-    <p className="picker-hint"><Info size={14} aria-hidden="true" />Choose Folder selects a directory; the system may hide files in that dialog. To see and select PNG, PSD, SVG, 3D, CAD and other supported artwork files, use <strong>Browse Files…</strong>.</p>
+    <p className="picker-hint"><Info size={14} aria-hidden="true" />For privacy, select a directory through Choose Folder. The field above displays its authorized path, not a freeform scan target. Choose Folder may hide files; use <strong>Browse Files…</strong> to select individual artwork.</p>
     <div className="section-heading destination-heading"><FolderOutput size={16} /><h2>Destination</h2></div>
     <label className="check-row"><input type="checkbox" checked={sameFolder && !forceSeparateOutput}
       disabled={disabled || forceSeparateOutput}

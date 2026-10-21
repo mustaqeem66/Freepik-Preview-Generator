@@ -24,6 +24,9 @@ def test_desktop_api_overlapping_scan_race_prevention():
         Image.new("RGBA", (50, 50), (255, 0, 0, 255)).save(dir_a / "a.png")
         Image.new("RGBA", (50, 50), (0, 255, 0, 255)).save(dir_b / "b.png")
 
+        api.add_authorized_input_folder(dir_a)
+        api.add_authorized_input_folder(dir_b)
+
         # 1. Start Scan A
         res_a = api.start_scan(str(dir_a))
         scan_id_a = res_a["scanId"]
