@@ -128,11 +128,11 @@ export default function App() {
   const [isExporting, setIsExporting] = useState(false);
   const { isProcessing, canCancelBatch, batchStatus, progress, stats, batchErrors, truncationReasons, discovered,
     requiresTruncationAck, acknowledgeTruncation, startBatch, cancelBatch } = useBatch();
-  const busy = isProcessing || isExporting;
+  const busy = isProcessing || isExporting || pickerBusy;
   const is3D = activeFile?.is_3d === true;
   const lifecycle: LifecycleState = isProcessing ? (batchStatus === "batch-cancelling" ? batchStatus : "generating")
-    : isScanning ? (scanStatus === "scan-cancelling" ? scanStatus : "scanning")
-    : isLoading ? "previewing" : scanStatus === "scan-cancelled" || scanStatus === "scan-truncated" ? scanStatus
+    : !usingFiles && isScanning ? (scanStatus === "scan-cancelling" ? scanStatus : "scanning")
+    : isLoading ? "previewing" : !usingFiles && (scanStatus === "scan-cancelled" || scanStatus === "scan-truncated") ? scanStatus
     : batchStatus !== "idle" ? batchStatus : "idle";
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", state.theme); }, [state.theme]);
@@ -147,7 +147,7 @@ export default function App() {
   // A native folder dialog intentionally hides files. Explain genuinely empty scans,
   // but never show this warning for an incomplete, cancelled or failed scan.
   useEffect(() => {
-    if (scanStatus === "completed" && !isScanning && !scanError && state.inputFolder && fileList.length === 0) {
+    if (!usingFiles && scanStatus === "completed" && !isScanning && !scanError && state.inputFolder && fileList.length === 0) {
       showNotice({
         id: "no-assets",
         type: "info",
@@ -157,7 +157,7 @@ export default function App() {
     } else {
       setNotices((previous) => previous.filter((notice) => notice.id !== "no-assets"));
     }
-  }, [scanStatus, isScanning, scanError, state.inputFolder, fileList.length, showNotice]);
+  }, [usingFiles, scanStatus, isScanning, scanError, state.inputFolder, fileList.length, showNotice]);
 
   const selectIndex = useCallback((index: number) => {
     if (!busy && fileList[index]) setSelectedPath(fileList[index].path);
@@ -440,7 +440,7 @@ export default function App() {
           </button></div></div>
         <div className="canvas-stage"><PreviewCanvas previewUrl={previewUrl} isLoading={isLoading} renderError={renderError}
           name={previewFile?.name || ""} width={previewMeta.width} height={previewMeta.height} is3D={is3D && !busy}
-          hasSourceFolder={Boolean(state.inputFolder)} canChooseFolder={!busy && capabilities.canBrowse && isLoaded}
+          hasSourceFolder={Boolean(state.inputFolder) || usingFiles} canChooseFolder={!busy && capabilities.canBrowse && isLoaded}
           onChooseFolder={() => void browse("browse_input_folder")}
           yaw={state.yaw} pitch={state.pitch} onOrbit={(yaw, pitch) => setState((previous) => ({ ...previous, yaw, pitch }))} />
           <ExportSizePanel filePath={activeFile?.path} probe={probe} isProbing={isProbing} aspectWidth={previewMeta.width} aspectHeight={previewMeta.height}
