@@ -121,3 +121,27 @@ def test_failed_thumbnail_is_not_retried_on_every_render() -> None:
         assert rendered == ["unsupported"]
     finally:
         coordinator.close()
+
+
+def test_age_expiry_releases_old_handle_and_queues_fresh_thumbnail() -> None:
+    server = FakeServer()
+    completed: list[dict] = []
+    coordinator = ThumbnailCoordinator(
+        server,
+        lambda *_a, **_kw: {"status": "success", "jpeg_bytes": b"jpeg"},
+        lambda _event, payload, _op: completed.append(payload),
+    )
+    try:
+        coordinator.request(["/art/sample.png"])
+        assert _wait_for(lambda: len(completed) == 1)
+        first = completed[0]["url"]
+        assert coordinator.request(["/art/sample.png"])["/art/sample.png"] == first
+        with coordinator._lock:
+            old_url, cached_at = coordinator._cache["/art/sample.png"]
+            coordinator._cache["/art/sample.png"] = (old_url, cached_at - 300)
+        assert coordinator.request(["/art/sample.png"]) == {}
+        assert _wait_for(lambda: len(completed) == 2)
+        assert first in server.released
+        assert completed[1]["url"] != first
+    finally:
+        coordinator.close()
