@@ -19,13 +19,13 @@ export function preventPaneSmoothScroll(target: HTMLElement): boolean {
   ));
 }
 
-export function useLenisPane() {
+export function useLenisPane(active = true) {
   const paneRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const wrapper = paneRef.current;
     const content = wrapper?.firstElementChild;
-    if (!wrapper || !(content instanceof HTMLElement)) return;
+    if (!active || !wrapper || !(content instanceof HTMLElement)) return;
 
     const preference = window.matchMedia?.("(prefers-reduced-motion: reduce)");
     let instance: Lenis | null = null;
@@ -51,7 +51,7 @@ export function useLenisPane() {
       preference?.removeEventListener?.("change", configure);
       instance?.destroy();
     };
-  }, []);
+  }, [active]);
 
   return paneRef;
 }
