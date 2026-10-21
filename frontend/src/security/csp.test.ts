@@ -18,7 +18,7 @@ describe("production WebView Content Security Policy", () => {
   it("limits scripts, blocks remote frames and preserves session preview images", () => {
     const directives = new Map(PRODUCTION_CSP.split("; ").map((part) => {
       const [name, ...values] = part.split(" ");
-      return [name, values];
+      return [name, values] as const;
     }));
     expect(directives.get("default-src")).toEqual(["'none'"]);
     expect(directives.get("script-src")).toEqual(["'self'", "'unsafe-eval'"]);
