@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
-import type { RefObject } from "react";
 import { preventPaneSmoothScroll, shouldSmoothPaneMotion, useLenisPane } from "./useLenisPane";
 
-const createLenis = vi.hoisted(() => vi.fn(() => ({ destroy: vi.fn() })));
+const createLenis = vi.hoisted(() => vi.fn((_options?: Record<string, unknown>) => ({ destroy: vi.fn() })));
 vi.mock("lenis", () => ({ default: createLenis }));
 
 function Pane() {
@@ -13,6 +12,7 @@ function Pane() {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   createLenis.mockClear();
 });
 
