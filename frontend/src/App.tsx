@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { useStudioFocus } from "./hooks/useStudioFocus";
+import "./studioFocus.css";
 import { PaneResizer } from "./components/PaneResizer";
-import { Box, ChevronLeft, ChevronRight, FolderOpen, Layers, Moon, RefreshCw, Sun, Activity } from "lucide-react";
+import { Box, ChevronLeft, ChevronRight, FolderOpen, Layers, Moon, RefreshCw, Sun, Activity, Maximize2, Minimize2 } from "lucide-react";
 import { ApiBridge } from "./api/bridge";
 import { useBackend } from "./hooks/useBackend";
 import { useSettings } from "./hooks/useSettings";
@@ -34,6 +36,9 @@ const readPaneWidth = (key: string, fallback: number, min: number, max: number) 
 };
 
 export default function App() {
+  // Focus mode is intentionally session-only; launch in the discoverable
+  // three-pane workspace and let artists opt into distraction-free editing.
+  const { isFocused, toggleFocus } = useStudioFocus();
   const [libraryWidth, setLibraryWidth] = useState(() => readPaneWidth("previewgen.libraryWidth", 250, 200, 360));
   const [inspectorWidth, setInspectorWidth] = useState(() => readPaneWidth("previewgen.inspectorWidth", 300, 260, 380));
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
@@ -227,10 +232,12 @@ export default function App() {
     </div>}
     <ErrorNotice notices={notices} onDismiss={(id) => setNotices((previous) => previous.filter((item) => item.id !== id))} />
 
-    <main className="studio-workspace" style={isWideWorkspace ? {
+    <main className={`studio-workspace${isFocused ? " studio-workspace-focused" : ""}`} style={isFocused ? {
+      gridTemplateColumns: "minmax(0, 1fr)"
+    } : isWideWorkspace ? {
       gridTemplateColumns: `${actualLibraryWidth}px 6px minmax(280px, 1fr) 6px ${actualInspectorWidth}px`
     } : undefined}>
-      <aside className="library-pane" aria-label="Asset library">
+      {!isFocused && <aside className="library-pane" aria-label="Asset library">
         <FolderPicker inputFolder={state.inputFolder} outputFolder={state.outputFolder} sameFolder={state.sameFolder}
           disabled={busy || !isLoaded || !capabilities.canBrowse}
           onBrowseInput={() => void browse("browse_input_folder")} onBrowseOutput={() => void browse("browse_output_folder")}
@@ -255,17 +262,26 @@ export default function App() {
           : <div className="empty-library"><FolderOpen size={24} strokeWidth={1.3} /><p>{isScanning ? "Finding your artwork…" : state.inputFolder
             ? "No assets listed. Check the folder path or rescan." : "Choose a folder to build your asset library."}</p></div>}
         <div className="library-footnote"><span className="status-dot" />Local processing · No uploads</div>
-      </aside>
-      {isWideWorkspace && <PaneResizer label="Resize asset library" value={actualLibraryWidth}
+      </aside>}
+      {!isFocused && isWideWorkspace && <PaneResizer label="Resize asset library" value={actualLibraryWidth}
         initial={250} min={200} max={360} onChange={setLibraryWidth} />}
       <section className="canvas-pane" aria-label="Preview workspace">
         <div className="canvas-toolbar"><div className="asset-title">{is3D ? <Box size={16} /> : <Layers size={16} />}
           <span title={activeFile?.name}>{activeFile?.name || "Live preview"}</span>{activeFile && <span className="format-badge">{activeFile.ext}</span>}</div>
-          <div className="asset-navigation"><button type="button" className="icon-button" aria-label="Previous asset"
+          <div className="canvas-toolbar-actions"><div className="asset-navigation"><button type="button" className="icon-button" aria-label="Previous asset"
             disabled={busy || currentIdx <= 0 || !activeFile} onClick={() => selectIndex(currentIdx - 1)}><ChevronLeft size={16} /></button>
             <span className="tabular-nums">{fileList.length ? `${Math.max(1, currentIdx + 1)} / ${fileList.length}` : "0 assets"}</span>
             <button type="button" className="icon-button" aria-label="Next asset" disabled={busy || currentIdx >= fileList.length - 1}
-              onClick={() => selectIndex(currentIdx + 1)}><ChevronRight size={16} /></button></div></div>
+              onClick={() => selectIndex(currentIdx + 1)}><ChevronRight size={16} /></button></div>
+          <button type="button" className="button canvas-focus-button"
+            aria-label={isFocused ? "Exit focus mode" : "Focus canvas"}
+            aria-pressed={isFocused}
+            aria-keyshortcuts="Alt+Shift+F"
+            title={isFocused ? "Exit focus mode (Esc or Alt+Shift+F)" : "Focus canvas (Alt+Shift+F)"}
+            onClick={toggleFocus}>
+            {isFocused ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            <span>{isFocused ? "Exit focus" : "Focus"}</span>
+          </button></div></div>
         <div className="canvas-stage"><PreviewCanvas previewUrl={previewUrl} isLoading={isLoading} renderError={renderError}
           name={previewFile?.name || ""} width={previewMeta.width} height={previewMeta.height} is3D={is3D && !busy}
           hasSourceFolder={Boolean(state.inputFolder)} canChooseFolder={!busy && capabilities.canBrowse && isLoaded}
@@ -278,15 +294,15 @@ export default function App() {
             isExporting={isExporting} disabled={!activeFile || !scanReady} /></div>
         <div className="canvas-footnote"><span>Diagonal split · Original proportions</span><span>JPG is opaque; checkerboard is printed.</span></div>
       </section>
-      {isWideWorkspace && <PaneResizer label="Resize inspector" value={actualInspectorWidth}
+      {!isFocused && isWideWorkspace && <PaneResizer label="Resize inspector" value={actualInspectorWidth}
         initial={300} min={260} max={380} reverse onChange={setInspectorWidth} />}
-      <aside className="inspector-pane" aria-label="Preview inspector">
+      {!isFocused && <aside className="inspector-pane" aria-label="Preview inspector">
         <div className="inspector-heading"><h2>Inspector</h2><span className="muted">Live adjustments</span></div>
         <fieldset disabled={busy || !isLoaded}><legend className="sr-only">Preview settings</legend>
           <SettingsPanel state={state} onChange={(patch) => setState((previous) => ({ ...previous, ...patch }))}
             onBrowseLogo={() => void browse("browse_logo")} onBrowseFont={() => void browse("browse_font")} is3D={is3D} />
         </fieldset>
-      </aside>
+      </aside>}
     </main>
     <footer className="studio-footer"><BatchProgress isProcessing={isProcessing}
       canCancelBatch={canCancelBatch} isCancelling={batchStatus === "batch-cancelling"} progress={progress} stats={stats} batchErrors={batchErrors}
