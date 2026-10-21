@@ -1,4 +1,5 @@
 import { useRef, type KeyboardEvent, type PointerEvent } from "react";
+import "./paneResizer.css";
 
 interface PaneResizerProps {
   label: string;
