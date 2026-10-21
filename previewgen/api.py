@@ -258,12 +258,15 @@ class DesktopApi:
         # arbitrary path and then calling get_initial_state() to launder that
         # unselected path into an authorized output directory.
         output_folder = settings_dict.get("outputFolder")
-        if isinstance(output_folder, str) and output_folder.strip():
-            if not self.is_authorized_output_path(output_folder):
-                return {
-                    "ok": False, "value": False, "error": "UNAUTHORIZED_OUTPUT_PATH",
-                    "code": "UNAUTHORIZED_OUTPUT_PATH",
-                }
+        if (
+            isinstance(output_folder, str)
+            and output_folder.strip()
+            and not self.is_authorized_output_path(output_folder)
+        ):
+            return {
+                "ok": False, "value": False, "error": "UNAUTHORIZED_OUTPUT_PATH",
+                "code": "UNAUTHORIZED_OUTPUT_PATH",
+            }
         try:
             if save_settings(settings_dict):
                 return {"ok": True, "value": True, "error": None}
