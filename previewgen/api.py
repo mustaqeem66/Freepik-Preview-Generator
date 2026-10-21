@@ -502,8 +502,9 @@ class DesktopApi:
                     source = Path(raw).resolve()
                     if source.suffix.lower() not in SUPPORTED_EXTENSIONS or source.suffix.lower() == ".zip":
                         return {"ok": False, "value": None, "error": "INVALID_THUMBNAIL_SELECTION"}
-                if not source.is_file():
-                    return {"ok": False, "value": None, "error": "THUMBNAIL_SOURCE_MISSING"}
+                # Avoid up to sixteen synchronous file stats on a potentially
+                # offline network share. File existence/decoding is checked by
+                # the isolated thumbnail worker, never on the bridge thread.
                 if not (self.is_authorized_path(source) or self.is_authorized_selected_file(source)):
                     return {"ok": False, "value": None, "error": "UNAUTHORIZED_THUMBNAIL_SOURCE"}
                 validated.append(raw)
