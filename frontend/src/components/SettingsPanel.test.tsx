@@ -1,5 +1,5 @@
-import { beforeEach, describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { SettingsPanel } from "./SettingsPanel";
 import type { PreviewState } from "../types";
@@ -30,4 +30,36 @@ describe("SettingsPanel", () => {
     renderPanel(false);
     expect(screen.queryByText(/3d camera/i)).not.toBeInTheDocument();
   });
+  it("styles native range inputs with a bounded percentage and context hints", () => {
+    const onChange = vi.fn();
+    render(<SettingsPanel state={{ ...STATE, opacity: 73, fontScale: 100 }}
+      onChange={onChange} onBrowseLogo={() => {}} onBrowseFont={() => {}} is3D={false} />);
+    const opacity = screen.getByRole("slider", { name: "Text opacity" }) as HTMLInputElement;
+    expect(opacity.closest(".precision-slider")).toBeTruthy();
+    expect(opacity.style.getPropertyValue("--slider-progress")).toBe("73%");
+    expect(screen.getByText("Subtle")).toBeInTheDocument();
+    expect(screen.getByText("Balanced")).toBeInTheDocument();
+    const scale = screen.getByRole("slider", { name: "Font scale" }) as HTMLInputElement;
+    expect(parseFloat(scale.style.getPropertyValue("--slider-progress"))).toBeCloseTo(28.57, 1);
+    fireEvent.change(opacity, { target: { value: "45" } });
+    expect(onChange).toHaveBeenCalledWith({ opacity: 45 });
+  });
+
+  it("keeps the same accessible slider behavior in light and dark appearance", () => {
+    const onChange = vi.fn();
+    for (const theme of ["light", "dark"] as const) {
+      document.documentElement.setAttribute("data-theme", theme);
+      const ui = render(<SettingsPanel state={{ ...STATE, theme, opacity: 90 }}
+        onChange={onChange} onBrowseLogo={() => {}} onBrowseFont={() => {}} is3D={true} />);
+      const slider = screen.getByRole("slider", { name: "Text opacity" }) as HTMLInputElement;
+      expect(slider.getAttribute("min")).toBe("0");
+      expect(slider.getAttribute("max")).toBe("100");
+      expect(slider.value).toBe("90");
+      expect(slider.closest(".precision-slider-track")).toBeTruthy();
+      expect(screen.getByRole("slider", { name: "Pitch elevation" })).toBeInTheDocument();
+      ui.unmount();
+    }
+    document.documentElement.removeAttribute("data-theme");
+  });
+
 });
