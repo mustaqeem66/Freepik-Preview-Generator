@@ -92,7 +92,7 @@ def test_batch_start_returns_id_and_emits_typed_events(tmp_path):
     api = DesktopApi()
     # Simulate user-authorized source and output chooser roots.
     api.add_authorized_input_folder(source)
-    api.add_authorized_folder(tmp_path / "out")
+    api.add_authorized_output_folder(tmp_path / "out")
     window = FakeWindow()
     api.set_window(window)
     response = api.start_batch(str(source), str(tmp_path / "out"), {
@@ -226,7 +226,7 @@ def test_batch_allows_output_after_explicit_folder_authorization(tmp_path, monke
     destination.mkdir()
     api = DesktopApi()
     api.add_authorized_input_folder(source)
-    api.add_authorized_folder(destination)
+    api.add_authorized_output_folder(destination)
     response = api.start_batch(str(source), str(destination), {"overwritePolicy": "rename"})
     assert response["ok"] is True, response
     api.lifecycle.batch_thread.join(timeout=30)
