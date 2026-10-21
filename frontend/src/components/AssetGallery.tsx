@@ -164,7 +164,7 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
   };
 
   return <div ref={containerRef} className="asset-gallery" role="listbox"
-    aria-label="Asset gallery" aria-rowcount={rowsCount} aria-colcount={GALLERY_COLUMNS}
+    aria-label="Asset gallery"
     aria-activedescendant={activePosition >= 0 && activePosition < count && files[activeIndex]
       ? assetId(files[activeIndex]) : undefined}
     data-testid="asset-gallery" tabIndex={0} onKeyDown={onKeyDown} onScroll={onScroll}
