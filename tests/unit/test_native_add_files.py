@@ -155,3 +155,56 @@ def test_duplicate_basename_sources_keep_independent_batch_outputs(tmp_path, mon
         assert reported == {str(source) for source in sources}
     finally:
         api.cleanup()
+
+
+def test_settings_cannot_launder_a_new_output_grant(tmp_path, monkeypatch):
+    """Saving an arbitrary outputFolder must not turn into a trusted picker grant."""
+    api = DesktopApi()
+    output = tmp_path / "private"
+    output.mkdir()
+    saved = []
+    monkeypatch.setattr("previewgen.api.save_settings", lambda value: saved.append(value) or True)
+    try:
+        denied = api.save_settings({"outputFolder": str(output), "revision": 1})
+        assert not denied["ok"]
+        assert denied["error"] == "UNAUTHORIZED_OUTPUT_PATH"
+        assert saved == []
+        assert not api.is_authorized_output_path(output)
+
+        # Output selections are supported, but only after the native picker
+        # (or a separately reviewed restored preference) grants that path.
+        api.add_authorized_output_folder(output)
+        accepted = api.save_settings({"outputFolder": str(output), "revision": 2})
+        assert accepted["ok"]
+        assert saved == [{"outputFolder": str(output), "revision": 2}]
+    finally:
+        api.cleanup()
+
+
+def test_picked_asset_single_export_requires_explicit_output_grant(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    art = source / "art.png"
+    Image.new("RGB", (24, 24), "green").save(art)
+    output = tmp_path / "chosen-output"
+    output.mkdir()
+    api = DesktopApi()
+    try:
+        result, _ = _grant(api, monkeypatch, [art])
+        assert result["ok"]
+        # A source-folder grant from another operation is not a destination
+        # grant for an Add Files source, even when both refer to the same path.
+        api.add_authorized_folder(source)
+        denied = api.export_preview(str(art), {"outputFolder": str(source)})
+        assert not denied["ok"]
+        assert denied["error"] == "UNAUTHORIZED_OUTPUT_PATH"
+        assert not (source / "art.jpg").exists()
+
+        api.add_authorized_output_folder(output)
+        allowed = api.export_preview(str(art), {
+            "outputFolder": str(output), "overwritePolicy": "rename"
+        })
+        assert allowed["ok"], allowed
+        assert (output / "art.jpg").is_file()
+    finally:
+        api.cleanup()
