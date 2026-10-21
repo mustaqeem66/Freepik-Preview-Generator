@@ -32,7 +32,7 @@ export default function App() {
   const handleSaveError = useCallback((details: string) => {
     showNotice({ id: "save-error", type: "warning", message: "Settings could not be saved", details });
   }, [showNotice]);
-  const { state, setState, isLoaded, saveStatus, retrySave } = useSettings(handleSaveError, capabilities.canSaveSettings);
+  const { state, setState, isLoaded } = useSettings(handleSaveError, capabilities.canSaveSettings);
   const { fileList, isScanning, scanStatus, scanTruncationReasons, scanDiscovered,
     scannedCount, scanError, scanFolder, cancelScan } = useScanner();
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -177,11 +177,6 @@ export default function App() {
         <span className="lifecycle-badge" data-testid="lifecycle-state" data-state={lifecycle} role="status"
           title="Last frontend/backend state; a frozen Windows window may not update this label">
           <span className="status-dot" />{LIFECYCLE_LABELS[lifecycle]}</span>
-        <span className="settings-save-status" role="status" aria-live="polite" title="Settings are saved locally">
-          {saveStatus === "saved" ? "Settings saved" : saveStatus === "saving" ? "Saving…" :
-            saveStatus === "error" ? "Settings unsaved" : saveStatus === "unsaved" ? "Unsaved changes" : ""}
-        </span>
-        {saveStatus === "error" && <button type="button" className="button" onClick={retrySave}>Retry save</button>}
         <button type="button" className="button diagnostics-button" title="Open local diagnostic logs (no upload)"
           disabled={!capabilities.canBrowse}
           onClick={() => void openDiagnostics()}><Activity size={15} /> Diagnostics</button>
