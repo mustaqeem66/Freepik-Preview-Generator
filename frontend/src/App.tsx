@@ -268,7 +268,7 @@ export default function App() {
       <section className="canvas-pane" aria-label="Preview workspace">
         <div className="canvas-toolbar"><div className="asset-title">{is3D ? <Box size={16} /> : <Layers size={16} />}
           <span title={activeFile?.name}>{activeFile?.name || "Live preview"}</span>{activeFile && <span className="format-badge">{activeFile.ext}</span>}</div>
-          <div className="asset-navigation"><button type="button" className="icon-button" aria-label="Previous asset"
+          <div className="canvas-toolbar-actions"><div className="asset-navigation"><button type="button" className="icon-button" aria-label="Previous asset"
             disabled={busy || currentIdx <= 0 || !activeFile} onClick={() => selectIndex(currentIdx - 1)}><ChevronLeft size={16} /></button>
             <span className="tabular-nums">{fileList.length ? `${Math.max(1, currentIdx + 1)} / ${fileList.length}` : "0 assets"}</span>
             <button type="button" className="icon-button" aria-label="Next asset" disabled={busy || currentIdx >= fileList.length - 1}
@@ -281,7 +281,7 @@ export default function App() {
             onClick={toggleFocus}>
             {isFocused ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             <span>{isFocused ? "Exit focus" : "Focus"}</span>
-          </button></div>
+          </button></div></div>
         <div className="canvas-stage"><PreviewCanvas previewUrl={previewUrl} isLoading={isLoading} renderError={renderError}
           name={previewFile?.name || ""} width={previewMeta.width} height={previewMeta.height} is3D={is3D && !busy}
           hasSourceFolder={Boolean(state.inputFolder)} canChooseFolder={!busy && capabilities.canBrowse && isLoaded}
