@@ -28,6 +28,7 @@ from previewgen.renderers.capabilities import CAPABILITIES, validate_registry
 
 DEFAULT_MANIFEST = ROOT / "tests" / "fixtures" / "renderer-samples.json"
 DEFAULT_REPORT = ROOT / "renderer-matrix-local.json"
+MAX_ORACLE_MEAN_ERROR = 32.0
 
 
 def _sha256(path: Path) -> str:
@@ -62,8 +63,8 @@ def _validated_oracle(item: dict[str, Any], fixtures_dir: Path) -> dict[str, Any
     if (not isinstance(checksum, str) or len(checksum) != 64
             or any(char not in "0123456789abcdefABCDEF" for char in checksum)):
         raise ValueError("oracle.sha256 must be a full SHA-256 digest")
-    if not isinstance(maximum, (float, int)) or isinstance(maximum, bool) or not 0 <= maximum <= 255:
-        raise ValueError("oracle.maxMeanAbsoluteError must be between 0 and 255")
+    if not isinstance(maximum, (float, int)) or isinstance(maximum, bool) or not 0 <= maximum <= MAX_ORACLE_MEAN_ERROR:
+        raise ValueError("oracle.maxMeanAbsoluteError must be between 0 and 32")
     if not isinstance(reviewer, str) or not reviewer.strip() or len(reviewer) > 100:
         raise ValueError("oracle.reviewedBy must identify a human reviewer")
     if not isinstance(version, str) or not version.strip() or len(version) > 100:
@@ -182,7 +183,14 @@ def verify_samples(report: dict[str, Any], fixtures_dir: Path, timeout: float) -
         if not sample["present"]:
             continue
         path = (fixtures_dir / sample["file"]).resolve()
-        before = _sha256(path)
+        try:
+            before = _sha256(path)
+        except OSError as exc:
+            sample["status"] = "missing_fixture"
+            sample["present"] = False
+            sample["sourcePreserved"] = False
+            sample["failure"] = f"Source unavailable before rendering: {type(exc).__name__}"
+            continue
         sample["sourceSha256"] = before
         try:
             with tempfile.TemporaryDirectory(prefix="previewgen_matrix_") as temp:
@@ -264,7 +272,11 @@ def main(argv: list[str] | None = None) -> int:
         sample["fidelityVerified"] for sample in report["samples"]
     )
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print(f"Renderer coverage: {registry['formatsWithPresentFixtures']}/{registry['advertisedPreviewFormats']} previewable extensions with fixtures")
+    print(
+        "Renderer coverage: "
+        f"{registry['formatsWithPresentFixtures']}/{registry['advertisedPreviewFormats']} "
+        "previewable extensions with fixtures"
+    )
     print(f"Absent formats: {', '.join(registry['formatsWithoutFixtures']) or '(none)'}")
     print(f"Fixture failures: {', '.join(failures) or '(none)'}")
     print(f"Unverified image fidelity: {', '.join(uncertified) or '(none)'}")
@@ -275,7 +287,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if (args.verify_fixtures or args.strict or args.require_oracles) and failures:
         return 1
-    if (args.strict or args.require_oracles) and uncertified:
+    if (args.strict or args.require_oracles) and (
+        uncertified or not report["samples"] or registry["oracleVerifiedFixtures"] == 0
+    ):
         return 1
     return 0
 
