@@ -12,6 +12,7 @@ SAMPLE_PNG = Path("tests/fixtures/sample.png")
 def test_p0_3_start_preview_non_blocking_and_isolated():
     """P0-3: start_preview must return operationId in <10ms and execute in an isolated child process."""
     api = DesktopApi()
+    api.add_authorized_input_folder(SAMPLE_PNG.resolve().parent)
     try:
         t0 = time.perf_counter()
         res = api.start_preview(str(SAMPLE_PNG), {"text": "P0 Test"}, request_id=101)
@@ -27,6 +28,7 @@ def test_p0_3_start_preview_non_blocking_and_isolated():
 def test_p0_4_start_probe_non_blocking_and_event_driven():
     """P0-4: start_probe must return immediately with operationId, not block on inspection."""
     api = DesktopApi()
+    api.add_authorized_input_folder(SAMPLE_PNG.resolve().parent)
     try:
         t0 = time.perf_counter()
         res = api.start_probe(str(SAMPLE_PNG), request_id=202)
@@ -42,6 +44,7 @@ def test_p0_4_start_probe_non_blocking_and_event_driven():
 def test_p0_5_rapid_preview_requests_cancel_prior_backend_renders():
     """P0-5: Rapid slider changes (e.g. 50 updates) must abort in-flight workers, leaving only latest."""
     api = DesktopApi()
+    api.add_authorized_input_folder(SAMPLE_PNG.resolve().parent)
     events = []
 
     def mock_dispatch(event_name, payload, op_id=""):
@@ -67,6 +70,7 @@ def test_p0_5_rapid_preview_requests_cancel_prior_backend_renders():
 def test_rapid_100_updates_queue_bounded_and_control_calls_under_100ms():
     """Verify 100 rapid preview updates return in <100ms each and queue stays bounded to 1."""
     api = DesktopApi()
+    api.add_authorized_input_folder(SAMPLE_PNG.resolve().parent)
     try:
         t_max = 0.0
         for i in range(1, 101):
@@ -84,6 +88,7 @@ def test_rapid_100_updates_queue_bounded_and_control_calls_under_100ms():
 def test_cancel_preview_during_render_terminates_immediately():
     """Verify calling cancel_preview aborts active render without delay."""
     api = DesktopApi()
+    api.add_authorized_input_folder(SAMPLE_PNG.resolve().parent)
     try:
         res = api.start_preview(str(SAMPLE_PNG), {"text": "Cancel Test"}, request_id=999)
         assert res["ok"] is True

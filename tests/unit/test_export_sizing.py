@@ -132,7 +132,7 @@ def test_api_probe_and_export_round_trip():
         out_dir = tmp_path / "exports"
 
         api = DesktopApi()
-        api.add_authorized_folder(tmp_path)
+        api.add_authorized_input_folder(tmp_path)
         probe = api.probe_asset(str(src))
         assert probe["ok"] is True
         assert probe["value"]["nativeWidth"] == 1200
