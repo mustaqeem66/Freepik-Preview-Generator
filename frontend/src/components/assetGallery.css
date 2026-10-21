@@ -1,0 +1,28 @@
+/* Two-column gallery deliberately fits a 200px desktop asset library. */
+.asset-gallery { border: 1px solid var(--card-border); border-radius: 9px; }
+.gallery-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
+  box-sizing: border-box; padding: 4px 6px; }
+.gallery-tile { min-width: 0; height: 122px; display: flex; flex-direction: column;
+  align-items: center; text-align: center; gap: 2px; border: 1px solid var(--card-border);
+  border-radius: 8px; padding: 5px; cursor: pointer; background: var(--card-bg);
+  color: var(--text); box-shadow: none; }
+.gallery-tile:hover { border-color: var(--accent); }
+.gallery-tile[aria-selected="true"] { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--chip-bg); }
+.gallery-art { width: 100%; min-height: 75px; flex: 1; display: grid; place-items: center;
+  overflow: hidden; border-radius: 5px; background: var(--field-bg); color: var(--text-muted); }
+.gallery-art img { width: 100%; height: 100%; min-height: 0; object-fit: contain; }
+.gallery-asset-name { display: block; width: 100%; font-size: 10px; font-weight: 600;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 15px; }
+.gallery-asset-kind { font-size: 9px; color: var(--text-sec); line-height: 11px; }
+.gallery-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.asset-view-toggle { display: inline-flex; flex: none; gap: 2px; padding: 2px;
+  border: 1px solid var(--card-border); border-radius: 7px; background: var(--chip-bg); }
+.asset-view-toggle button { display: grid; place-items: center; border: 0; border-radius: 5px;
+  padding: 6px; background: transparent; color: var(--text-sec); }
+.asset-view-toggle button[aria-pressed="true"] { background: var(--card-bg); color: var(--accent);
+  box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.asset-view-toggle button:focus-visible { outline: 2px solid var(--accent); }
+@media (forced-colors: active) {
+  .asset-gallery, .gallery-tile, .asset-view-toggle { border: 1px solid CanvasText; }
+  .gallery-tile[aria-selected="true"] { outline-color: Highlight; }
+}
