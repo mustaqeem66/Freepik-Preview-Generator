@@ -58,7 +58,12 @@ describe("FolderPicker Component", () => {
     expect(browseFiles).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Browse Files…" }));
     expect(browseFiles).toHaveBeenCalledOnce();
-    expect(screen.getByText(/system may hide files in that dialog/i)).toBeInTheDocument();
+    // The hint is what tells the user the two buttons are not interchangeable.
+    // Matched on its stable subject rather than the exact sentence, which #56 reworded.
+    const hint = screen.getByText(/may hide files/i);
+    expect(hint).toHaveTextContent(/Choose Folder may hide files/);
+    expect(hint).toHaveTextContent(/Browse Files…/);
+    expect(hint).toHaveTextContent(/individual artwork/);
   });
 
   it("disables both source selectors while a native picker is busy", () => {
