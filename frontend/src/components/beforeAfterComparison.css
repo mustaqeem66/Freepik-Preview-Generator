@@ -25,3 +25,5 @@
 .compare-unavailable p { color: var(--text-sec); font-size: 12px; }
 @media (forced-colors: active) { .compare-images { border: 1px solid CanvasText; }
   .compare-divider, .compare-grip { border: 2px solid Highlight; } }
+
+.compare-images:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }

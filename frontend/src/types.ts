@@ -196,6 +196,7 @@ export interface PyWebViewApi {
   release_preview: (url: string) => Promise<ApiResponse<boolean>>;
   retain_preview?: (handle: string) => Promise<ApiResponse<boolean>>;
   request_thumbnails?: (paths: string[]) => Promise<ApiResponse<Record<string, string> | null>>;
+  request_source_comparison?: (path: string) => Promise<ApiResponse<Record<string, string> | null>>;
   start_probe?: (
     filePath: string,
     requestId?: number

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Image as ImageIcon, Loader2, Move3D, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import "./previewControls.css";
+import { BeforeAfterComparison } from "./BeforeAfterComparison";
 
 interface PreviewCanvasProps {
   previewUrl: string | null;
@@ -16,11 +17,18 @@ interface PreviewCanvasProps {
   onChooseFolder?: () => void;
   canChooseFolder?: boolean;
   hasSourceFolder?: boolean;
+  compareEnabled?: boolean;
+  sourceUrl?: string | null;
+  sourceLoading?: boolean;
+  sourceError?: string | null;
+  onExitCompare?: () => void;
 }
 
 export function PreviewCanvas({ previewUrl, isLoading, renderError, name, width, height,
   is3D = false, yaw = 45, pitch = 30, onOrbit, onChooseFolder,
-  canChooseFolder = false, hasSourceFolder = false }: PreviewCanvasProps) {
+  canChooseFolder = false, hasSourceFolder = false, compareEnabled = false,
+  sourceUrl = null, sourceLoading = false, sourceError = null,
+  onExitCompare }: PreviewCanvasProps) {
   const drag = useRef<
     | { kind: "orbit"; x: number; y: number; yaw: number; pitch: number }
     | { kind: "pan"; x: number; y: number; panX: number; panY: number }
@@ -39,7 +47,7 @@ export function PreviewCanvas({ previewUrl, isLoading, renderError, name, width,
   }, [zoom]);
   const orbit = (y: number, p: number) => onOrbit?.(((y % 360) + 360) % 360, Math.max(-85, Math.min(85, p)));
   const error = renderError || (imageError ? "The rendered image could not be loaded. Select the asset again to retry." : null);
-  return <div className={`preview-canvas${is3D ? " orbit-canvas" : zoom > 1 ? " zoom-pan-canvas" : ""}`} aria-busy={isLoading}
+  return <div className={`preview-canvas${is3D ? " orbit-canvas" : !compareEnabled && zoom > 1 ? " zoom-pan-canvas" : ""}`} aria-busy={isLoading}
     role="group" aria-label={is3D ? "3D preview. Drag to orbit; Shift and arrow keys adjust the camera." : "Live preview"}
     tabIndex={is3D ? 0 : undefined}
     onKeyDown={(e) => {
@@ -49,7 +57,7 @@ export function PreviewCanvas({ previewUrl, isLoading, renderError, name, width,
         pitch + (e.key === "ArrowUp" ? 5 : e.key === "ArrowDown" ? -5 : 0));
     }}
     onPointerDown={(e) => {
-      if (!previewUrl || e.button !== 0 || (e.target instanceof Element &&
+      if (compareEnabled || !previewUrl || e.button !== 0 || (e.target instanceof Element &&
           e.target.closest(".preview-zoom-controls"))) return;
       if (is3D) drag.current = { kind: "orbit", x: e.clientX, y: e.clientY, yaw, pitch };
       else if (zoom > 1) drag.current = { kind: "pan", x: e.clientX, y: e.clientY,
@@ -69,9 +77,18 @@ export function PreviewCanvas({ previewUrl, isLoading, renderError, name, width,
     onLostPointerCapture={() => { drag.current = null; }}>
     {isLoading && <div className="rendering-indicator" role="status"><Loader2 size={15} className="animate-spin" />Rendering preview…</div>}
     {error && <div className="preview-error" role="alert"><strong>Preview unavailable</strong><p>{error}</p></div>}
-    {!error && previewUrl && <img src={previewUrl} alt={name || "Preview"} draggable={false}
-      style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
-      onError={() => setImageError(true)} />}
+    {!error && previewUrl && compareEnabled && sourceUrl && onExitCompare
+      ? <BeforeAfterComparison sourceUrl={sourceUrl} previewUrl={previewUrl}
+          name={name} onClose={onExitCompare} />
+      : !error && previewUrl && <img src={previewUrl} alt={name || "Preview"} draggable={false}
+          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+          onError={() => setImageError(true)} />}
+    {compareEnabled && sourceLoading && !sourceUrl && <span className="comparison-status" role="status">
+      Preparing source visualization…
+    </span>}
+    {compareEnabled && sourceError && !sourceUrl && <span className="comparison-status comparison-failure" role="alert">
+      {sourceError}
+    </span>}
     {!error && !previewUrl && !isLoading && <div className="empty-canvas">
       <span className="empty-canvas-icon"><ImageIcon size={32} strokeWidth={1.25} /></span>
       <h2>{hasSourceFolder ? "No preview selected" : "Your artwork, ready to present"}</h2>
@@ -82,7 +99,7 @@ export function PreviewCanvas({ previewUrl, isLoading, renderError, name, width,
         <button className="button primary empty-canvas-action" type="button" onClick={onChooseFolder}>Choose Input Folder</button>}
       <span className="empty-formats">Raster · Vector · 3D · Creator files</span>
     </div>}
-    {!error && previewUrl && <div className="preview-zoom-controls" role="group"
+    {!error && previewUrl && !compareEnabled && <div className="preview-zoom-controls" role="group"
       aria-label="Preview magnification" onPointerDown={(event) => event.stopPropagation()}>
       <button type="button" aria-label="Zoom out" title="Zoom out"
         disabled={zoom <= 1} onClick={() => setZoom((value) => Math.max(1, value - 0.25))}><ZoomOut size={15} /></button>

@@ -18,19 +18,25 @@ export function useSourceComparison(path: string | undefined, enabled: boolean) 
     const token = ++generation.current;
     if (!current) {
       setPendingPath(null);
-      void ApiBridge.getApi(250).then((api) => api?.request_source_comparison?.("")
-        .catch(() => {})).catch(() => {});
+      void ApiBridge.getApi(250).then((api) => {
+        if (token !== generation.current) return;
+        const request = api?.request_source_comparison?.("");
+        return request?.catch(() => {});
+      }).catch(() => {});
       return;
     }
     setPendingPath(current);
     setFailure(null);
+    let completed = false;
     const onReady = bridgeEvents.subscribe("comparison.ready", ({ path: incoming, url }) => {
       if (token !== generation.current || incoming !== wanted.current) return;
+      completed = true;
       setImage({ path: incoming, url });
       setPendingPath(null);
     });
     const onFailed = bridgeEvents.subscribe("comparison.failed", ({ path: incoming }) => {
       if (token !== generation.current || incoming !== wanted.current) return;
+      completed = true;
       setFailure({ path: incoming, message: "Could not visualize the source file." });
       setPendingPath(null);
     });
@@ -39,6 +45,7 @@ export function useSourceComparison(path: string | undefined, enabled: boolean) 
         const api = await ApiBridge.getApi(500);
         if (token !== generation.current) return;
         if (!api?.request_source_comparison) {
+          completed = true;
           setFailure({ path: current, message: "Source comparison requires the updated desktop backend." });
           setPendingPath(null);
           return;
@@ -46,19 +53,41 @@ export function useSourceComparison(path: string | undefined, enabled: boolean) 
         const result = await api.request_source_comparison(current);
         if (token !== generation.current) return;
         if (!result.ok) {
+          completed = true;
           setFailure({ path: current, message: result.error || "Source comparison was rejected." });
           setPendingPath(null);
         } else if (result.value?.[current]) {
+          completed = true;
           setImage({ path: current, url: result.value[current] });
           setPendingPath(null);
         }
       } catch {
         if (token !== generation.current) return;
+        completed = true;
         setFailure({ path: current, message: "Desktop renderer is not available." });
         setPendingPath(null);
       }
     }, 100);
+    const watchdog = window.setTimeout(() => {
+      if (completed || token !== generation.current) return;
+      completed = true;
+      setPendingPath(null);
+      setFailure({ path: current, message: "Source comparison timed out. Try closing and reopening." });
+    }, 25_000);
+    // Session preview server expires aged image handles; proactively refresh
+    // this one visible source before its five-minute disk eviction budget.
+    const renew = window.setInterval(async () => {
+      try {
+        const api = await ApiBridge.getApi(250);
+        if (token !== generation.current || !api?.request_source_comparison) return;
+        const response = await api.request_source_comparison(current);
+        if (token !== generation.current || !response.ok || !response.value?.[current]) return;
+        setImage({ path: current, url: response.value[current] });
+      } catch { /* Keep the existing source visual or its fallback. */ }
+    }, 60_000);
     return () => {
+      window.clearInterval(renew);
+      window.clearTimeout(watchdog);
       window.clearTimeout(timer);
       onReady();
       onFailed();
