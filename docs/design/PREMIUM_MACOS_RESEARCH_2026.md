@@ -65,6 +65,14 @@ This document distinguishes **portfolio visual references** from **Apple product
 - [ ] Test light/dark, forced colors, reduced transparency/motion, 1100/850/560px window widths and 3D preview.
 - [ ] Capture and review real screenshots with the app running. This source-only implementation is **not** a native screenshot verification.
 
+## Remaining macOS experience gaps identified by the audit
+
+1. **Batch export placement:** Apple's macOS layout guidance advises against relying exclusively on critical controls at the bottom edge of a window. PreviewGen currently places Generate Previews in the footer. Preserve its existing behavior for now; a separate, testable follow-up should expose the same batch command in the main toolbar or menu without duplicating operational state.
+2. **Native application menus:** The current React toolbar is not a native macOS menu bar. A future platform-specific task should expose file/open/export/view/zoom actions using the pywebview host's supported native menu integration, with platform-appropriate shortcuts. Do not misrepresent HTML menus as native.
+3. **Inspector progressive disclosure:** Group dense watermark/logo/output controls into keyboard-accessible collapsible sections, preserving setting values and live preview behavior. Avoid using a visually fashionable but nonfunctional inspector.
+4. **Real pixel comparison:** The existing JPEG zoom represents a percentage of a fitted preview, not 1:1 source pixels or a true before/after comparison. Both require separately verified rendering and image-source logic.
+5. **Accessibility verification:** CSS alone cannot establish VoiceOver, UI Automation, macOS full keyboard access, high-contrast fidelity, or real 200% scaling quality. Test and record screenshots/observations on native targets.
+
 ## Next separate implementation
 
 Add reversible, keyboard-accessible **Focus Canvas** mode for editing at maximum size. Native multi-file import, lazy thumbnail generation and before/after comparison remain independent substantial features, not decorations to fake in CSS.
