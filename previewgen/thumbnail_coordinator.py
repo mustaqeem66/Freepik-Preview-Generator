@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Callable
 from typing import Any, Protocol
@@ -16,6 +17,7 @@ MAX_VISIBLE_THUMBNAILS = 16
 MAX_RETAINED_THUMBNAILS = 20
 THUMBNAIL_MAX_DIMENSION = 192
 THUMBNAIL_RENDER_TIMEOUT = 6.0
+THUMBNAIL_CACHE_TTL_SECONDS = 240.0
 
 
 class ThumbnailServer(Protocol):
@@ -38,7 +40,7 @@ class ThumbnailCoordinator:
         self._dispatch = dispatch
         self._lock = threading.Lock()
         self._wanted: tuple[str, ...] = ()
-        self._cache: OrderedDict[str, str] = OrderedDict()
+        self._cache: OrderedDict[str, tuple[str, float]] = OrderedDict()
         self._failed: set[str] = set()
         self._thread: threading.Thread | None = None
         self._closed = False
@@ -60,11 +62,16 @@ class ThumbnailCoordinator:
             self._wanted = tuple(paths)
             self._failed.intersection_update(paths)
             hits = {}
+            now = time.monotonic()
             for path in paths:
                 cached = self._cache.get(path)
+                if cached is not None and now - cached[1] >= THUMBNAIL_CACHE_TTL_SECONDS:
+                    self._cache.pop(path)
+                    self._server.release_jpeg(cached[0], force=True)
+                    cached = None
                 if cached is not None:
                     self._cache.move_to_end(path)
-                    hits[path] = cached
+                    hits[path] = cached[0]
             if paths and self._thread is None and any(
                 path not in self._cache and path not in self._failed for path in paths
             ):
@@ -103,11 +110,11 @@ class ThumbnailCoordinator:
                     if not self._server.retain_jpeg(url):
                         self._server.release_jpeg(url, force=True)
                         raise RuntimeError("Could not retain thumbnail")
-                    self._cache[path] = url
+                    self._cache[path] = (url, time.monotonic())
                     self._cache.move_to_end(path)
                     while len(self._cache) > MAX_RETAINED_THUMBNAILS:
                         _, old = self._cache.popitem(last=False)
-                        self._server.release_jpeg(old, force=True)
+                        self._server.release_jpeg(old[0], force=True)
                 self._dispatch("thumbnail.ready", {"path": path, "url": url}, "thumbnail")
             except Exception as exc:
                 logging.debug("Thumbnail unavailable for selected asset: %s", exc)
@@ -122,7 +129,7 @@ class ThumbnailCoordinator:
         with self._lock:
             self._closed = True
             self._wanted = ()
-            old_urls = list(self._cache.values())
+            old_urls = [entry[0] for entry in self._cache.values()]
             self._cache.clear()
             thread = self._thread
         if thread is not None and thread.is_alive():
