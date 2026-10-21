@@ -274,7 +274,7 @@ def process_folder(
         completed = failed
         # ``cancelled`` may already be set if discovery (or work-item assembly)
         # was interrupted; never reset it here.
-        for item_path, out_name in work_items:
+        for source_index, (item_path, out_name) in enumerate(work_items):
             if is_cancelled():
                 cancelled = True
                 break
@@ -293,15 +293,17 @@ def process_folder(
 
             file_start = time.time()
             file_rec: dict[str, Any] = {
-                # Exact-file collections can contain duplicate basenames from
-                # different directories. Keep provenance in the JSON report.
-                "source": str(item_path) if selected_files is not None else item_path.name,
+                "source": item_path.name,
                 "output": target_file.name,
                 "status": "pending",
                 "duration": 0.0,
                 "errorCode": None,
                 "error": None,
             }
+            if selected_files is not None:
+                # Distinguishes same-name selected files without leaking absolute
+                # home-folder / source paths into shareable JSON reports.
+                file_rec["sourceIndex"] = source_index
             try:
                 # Checkpoint right before generating file
                 if is_cancelled():
