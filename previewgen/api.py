@@ -35,6 +35,7 @@ from previewgen.renderer_process import render_file_isolated
 from previewgen.scanner import get_scanner
 from previewgen.settings import load_settings, save_settings
 from previewgen.tempfiles import safe_rmtree
+from previewgen.thumbnail_coordinator import MAX_VISIBLE_THUMBNAILS, ThumbnailCoordinator
 
 
 class DesktopApi:
@@ -52,6 +53,9 @@ class DesktopApi:
         self.preview_server = PreviewFileServer()
         self.preview_coordinator = PreviewCoordinator(self.preview_server)
         self.preview_coordinator.set_dispatch_fn(self._dispatch_envelope)
+        self.thumbnail_coordinator = ThumbnailCoordinator(
+            self.preview_server, self.preview_coordinator.render_sync, self._dispatch_envelope
+        )
         self.probe_coordinator = ProbeCoordinator()
         self.probe_coordinator.set_dispatch_fn(self._dispatch_envelope)
         self._preview_request_lock = threading.Lock()
@@ -139,7 +143,8 @@ class DesktopApi:
         try:
             if self.lifecycle.get_active_operations():
                 return True
-            if self.preview_coordinator.is_busy() or self.probe_coordinator.is_busy():
+            if (self.preview_coordinator.is_busy() or self.probe_coordinator.is_busy()
+                    or self.thumbnail_coordinator.is_busy()):
                 return True
             thread = self.scanner.active_scan_thread
             if thread is not None and thread.is_alive():
@@ -465,6 +470,44 @@ class DesktopApi:
         current desktop clients should always supply the returned scanId.
         """
         return {"ok": True, "cancelled": self.scanner.cancel_scan(scan_id)}
+
+    def request_thumbnails(self, sources: list[str]) -> dict[str, Any]:
+        """Queue ONLY currently visible, authorized assets; do not render on bridge thread.
+
+        The returned map contains session-cached loopback JPEG URLs. Newly
+        generated tiles arrive via thumbnail.ready / thumbnail.failed envelopes.
+        Frontend source paths never grant new filesystem capabilities.
+        """
+        if not isinstance(sources, list) or len(sources) > MAX_VISIBLE_THUMBNAILS:
+            return {"ok": False, "value": None, "error": "INVALID_THUMBNAIL_SELECTION"}
+        validated: list[str] = []
+        try:
+            import urllib.parse
+
+            for raw in sources:
+                if not isinstance(raw, str) or not raw.strip():
+                    return {"ok": False, "value": None, "error": "INVALID_THUMBNAIL_SELECTION"}
+                if raw.startswith("zip://"):
+                    parsed = urllib.parse.urlparse(raw)
+                    archive = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
+                    entry = urllib.parse.parse_qs(parsed.query).get("entry", [""])[0]
+                    if not entry or Path(entry).suffix.lower() not in SUPPORTED_EXTENSIONS:
+                        return {"ok": False, "value": None, "error": "INVALID_THUMBNAIL_SELECTION"}
+                    source = archive
+                else:
+                    source = Path(raw).resolve()
+                    if source.suffix.lower() not in SUPPORTED_EXTENSIONS or source.suffix.lower() == ".zip":
+                        return {"ok": False, "value": None, "error": "INVALID_THUMBNAIL_SELECTION"}
+                if not source.is_file():
+                    return {"ok": False, "value": None, "error": "THUMBNAIL_SOURCE_MISSING"}
+                if not (self.is_authorized_path(source) or self.is_authorized_selected_file(source)):
+                    return {"ok": False, "value": None, "error": "UNAUTHORIZED_THUMBNAIL_SOURCE"}
+                validated.append(raw)
+            urls = self.thumbnail_coordinator.request(validated)
+            return {"ok": True, "value": urls, "error": None}
+        except Exception as exc:
+            logging.debug("Thumbnail scheduling failed: %s", exc)
+            return {"ok": False, "value": None, "error": "THUMBNAIL_REQUEST_FAILED"}
 
     def start_preview(
         self, file_path: str, config_dict: dict[str, Any], request_id: int | None = None
@@ -912,6 +955,7 @@ class DesktopApi:
 
     def cleanup(self) -> None:
         """Orderly shutdown sequence."""
+        self.thumbnail_coordinator.close()
         self.preview_coordinator.shutdown()
         self.probe_coordinator.shutdown()
         self.lifecycle.cleanup()
