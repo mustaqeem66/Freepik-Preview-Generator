@@ -86,7 +86,7 @@ export default function App() {
   const probeFile = capabilities.canProbe && scanReady ? activeFile : undefined;
   const { probe, isProbing } = useAssetProbe(probeFile);
   const [isExporting, setIsExporting] = useState(false);
-  const { isProcessing, batchStatus, progress, stats, batchErrors, truncationReasons, discovered,
+  const { isProcessing, canCancelBatch, batchStatus, progress, stats, batchErrors, truncationReasons, discovered,
     requiresTruncationAck, acknowledgeTruncation, startBatch, cancelBatch } = useBatch();
   const busy = isProcessing || isExporting;
   const is3D = activeFile?.is_3d === true;
@@ -288,7 +288,8 @@ export default function App() {
         </fieldset>
       </aside>
     </main>
-    <footer className="studio-footer"><BatchProgress isProcessing={isProcessing} progress={progress} stats={stats} batchErrors={batchErrors}
+    <footer className="studio-footer"><BatchProgress isProcessing={isProcessing}
+      canCancelBatch={canCancelBatch} isCancelling={batchStatus === "batch-cancelling"} progress={progress} stats={stats} batchErrors={batchErrors}
       truncated={requiresTruncationAck} truncationReasons={truncationReasons} discovered={discovered}
       onStartBatch={() => { if (!busy && scanReady) void startBatch(state.inputFolder, state.outputFolder, fileList.length, state); }}
       onCancelBatch={() => void cancelBatch()} canStart={capabilities.canGenerate && !busy && scanReady && fileList.length > 0 && !requiresTruncationAck} />
