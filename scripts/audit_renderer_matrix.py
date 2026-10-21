@@ -38,6 +38,76 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+
+def _validated_oracle(item: dict[str, Any], fixtures_dir: Path) -> dict[str, Any] | None:
+    """Accept only explicit, independently reviewed local reference images.
+
+    No implicit oracle is generated from a renderer output: doing so would
+    certify the implementation against itself and conceal wrong geometry.
+    """
+    raw = item.get("oracle")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("oracle must be an object")
+    image = raw.get("image")
+    checksum = raw.get("sha256")
+    reviewer = raw.get("reviewedBy")
+    maximum = raw.get("maxMeanAbsoluteError")
+    version = item.get("sourceVersion")
+    if (not isinstance(image, str) or not image
+            or Path(image).name != image or "/" in image or "\\" in image
+            or image.startswith(".") or Path(image).suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp")):
+        raise ValueError("oracle.image must be a local image basename")
+    if (not isinstance(checksum, str) or len(checksum) != 64
+            or any(char not in "0123456789abcdefABCDEF" for char in checksum)):
+        raise ValueError("oracle.sha256 must be a full SHA-256 digest")
+    if not isinstance(maximum, (float, int)) or isinstance(maximum, bool) or not 0 <= maximum <= 255:
+        raise ValueError("oracle.maxMeanAbsoluteError must be between 0 and 255")
+    if not isinstance(reviewer, str) or not reviewer.strip() or len(reviewer) > 100:
+        raise ValueError("oracle.reviewedBy must identify a human reviewer")
+    if not isinstance(version, str) or not version.strip() or len(version) > 100:
+        raise ValueError("sourceVersion is required when an oracle is supplied")
+    target = (fixtures_dir / image).resolve()
+    if target.parent != fixtures_dir.resolve():
+        raise ValueError("Oracle image escaped the fixture directory")
+    return {
+        "image": image,
+        "sha256": checksum.lower(),
+        "reviewedBy": reviewer,
+        "maxMeanAbsoluteError": float(maximum),
+    }
+
+
+def _compare_to_oracle(output: Any, oracle: dict[str, Any], fixtures_dir: Path) -> float:
+    """Measure RGB mean absolute error against a trusted same-size reference."""
+    from PIL import Image, ImageChops, ImageStat
+
+    approved = fixtures_dir / oracle["image"]
+    if not approved.is_file():
+        raise ValueError("Approved oracle image is missing")
+    if _sha256(approved).lower() != oracle["sha256"]:
+        raise ValueError("Approved oracle SHA-256 does not match its manifest")
+    with Image.open(approved) as reference:
+        if reference.width * reference.height > 16_000_000:
+            raise ValueError("Oracle image exceeds the 16-million-pixel audit bound")
+        reference.load()
+        if reference.size != output.size:
+            raise ValueError(
+                f"Oracle size {reference.size} differs from rendered output {output.size}"
+            )
+        size = (96, 96)
+        actual = output.convert("RGB").resize(size, Image.Resampling.BILINEAR)
+        expected = reference.convert("RGB").resize(size, Image.Resampling.BILINEAR)
+        difference = ImageChops.difference(actual, expected)
+        mean_error = sum(ImageStat.Stat(difference).mean) / 3
+        if mean_error > oracle["maxMeanAbsoluteError"]:
+            raise ValueError(
+                f"Fidelity error {mean_error:.2f} exceeds approved limit "
+                f"{oracle['maxMeanAbsoluteError']:.2f}"
+            )
+        return round(mean_error, 3)
+
 def inspect_inventory(manifest: dict[str, Any], fixtures_dir: Path) -> dict[str, Any]:
     missing, unexpected = validate_registry()
     entries = manifest.get("samples")
@@ -66,12 +136,17 @@ def inspect_inventory(manifest: dict[str, Any], fixtures_dir: Path) -> dict[str,
         exists = path.is_file()
         if exists:
             covered.add(suffix)
+        oracle = _validated_oracle(item, fixtures_dir)
         samples.append({
             "file": name, "extension": suffix,
             "mode": CAPABILITIES[suffix].mode,
             "sourceApp": str(source_app)[:100],
+            "sourceVersion": str(item.get("sourceVersion") or "")[:100],
             "present": exists,
             "status": "not_run" if exists else "missing_fixture",
+            "oracle": oracle,
+            "oracleStatus": "not_run" if oracle is not None else "not_provided",
+            "fidelityVerified": False,
         })
 
     preview_extensions = set(CAPABILITIES) - {".zip"}
@@ -127,9 +202,18 @@ def verify_samples(report: dict[str, Any], fixtures_dir: Path, timeout: float) -
                         raise ValueError(f"Output has only {distinct} distinct colors")
                     sample["outputSize"] = list(image.size)
                     sample["distinctColors"] = distinct
+                    oracle = sample["oracle"]
+                    if oracle is not None:
+                        sample["oracleMeanAbsoluteError"] = _compare_to_oracle(
+                            image, oracle, fixtures_dir
+                        )
+                        sample["oracleStatus"] = "matched"
+                        sample["fidelityVerified"] = True
             sample["status"] = "passed"
         except Exception as exc:
             sample["status"] = "failed"
+            if sample["oracle"] is not None:
+                sample["oracleStatus"] = "failed"
             sample["failure"] = type(exc).__name__ + ": " + str(exc)[:220]
         finally:
             # A renderer may delete/truncate a file before failing. Preserve
@@ -152,7 +236,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--verify-fixtures", action="store_true")
     parser.add_argument("--strict", action="store_true",
-                        help="Require real successful isolated renders and a fixture for every previewable extension")
+                        help="Require all formats, successful isolated renders and reviewed matching visual oracles")
+    parser.add_argument("--require-oracles", action="store_true",
+                        help="Require approved matching visual oracle for every present fixture")
     parser.add_argument("--timeout", type=float, default=60.0)
     args = parser.parse_args(argv)
 
@@ -166,23 +252,30 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(exc))
     # "Strict" must be a true evidence gate, never a fixture-count-only
     # shortcut that passes without running any renderer.
-    if args.verify_fixtures or args.strict:
+    if args.verify_fixtures or args.strict or args.require_oracles:
         verify_samples(report, fixtures_dir, timeout=args.timeout)
 
     report_path = args.report.resolve()
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     registry = report["registry"]
     failures = [s["file"] for s in report["samples"] if s["status"] in ("failed", "source_modified", "missing_fixture")]
+    uncertified = [s["file"] for s in report["samples"] if s["present"] and not s["fidelityVerified"]]
+    report["registry"]["oracleVerifiedFixtures"] = sum(
+        sample["fidelityVerified"] for sample in report["samples"]
+    )
+    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"Renderer coverage: {registry['formatsWithPresentFixtures']}/{registry['advertisedPreviewFormats']} previewable extensions with fixtures")
     print(f"Absent formats: {', '.join(registry['formatsWithoutFixtures']) or '(none)'}")
     print(f"Fixture failures: {', '.join(failures) or '(none)'}")
+    print(f"Unverified image fidelity: {', '.join(uncertified) or '(none)'}")
     print(f"Audit report: {report_path}")
     if registry["advertisedWithoutCapability"] or registry["catalogWithoutAdvertisedExtension"]:
         return 1
     if args.strict and not registry["coverageComplete"]:
         return 1
-    if (args.verify_fixtures or args.strict) and failures:
+    if (args.verify_fixtures or args.strict or args.require_oracles) and failures:
+        return 1
+    if (args.strict or args.require_oracles) and uncertified:
         return 1
     return 0
 
