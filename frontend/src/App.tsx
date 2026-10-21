@@ -32,7 +32,7 @@ export default function App() {
   const handleSaveError = useCallback((details: string) => {
     showNotice({ id: "save-error", type: "warning", message: "Settings could not be saved", details });
   }, [showNotice]);
-  const { state, setState, isLoaded } = useSettings(handleSaveError, capabilities.canSaveSettings);
+  const { state, setState, isLoaded, saveStatus, retrySave } = useSettings(handleSaveError, capabilities.canSaveSettings);
   const { fileList, isScanning, scanStatus, scanTruncationReasons, scanDiscovered,
     scannedCount, scanError, scanFolder, cancelScan } = useScanner();
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -56,7 +56,7 @@ export default function App() {
   const probeFile = capabilities.canProbe && scanReady ? activeFile : undefined;
   const { probe, isProbing } = useAssetProbe(probeFile);
   const [isExporting, setIsExporting] = useState(false);
-  const { isProcessing, batchStatus, progress, stats, batchErrors, truncationReasons, discovered,
+  const { isProcessing, canCancelBatch, batchStatus, progress, stats, batchErrors, truncationReasons, discovered,
     requiresTruncationAck, acknowledgeTruncation, startBatch, cancelBatch } = useBatch();
   const busy = isProcessing || isExporting;
   const is3D = activeFile?.is_3d === true;
@@ -177,6 +177,11 @@ export default function App() {
         <span className="lifecycle-badge" data-testid="lifecycle-state" data-state={lifecycle} role="status"
           title="Last frontend/backend state; a frozen Windows window may not update this label">
           <span className="status-dot" />{LIFECYCLE_LABELS[lifecycle]}</span>
+        <span className="settings-save-status" role="status" aria-live="polite" title="Settings are saved locally">
+          {saveStatus === "saved" ? "Settings saved" : saveStatus === "saving" ? "Saving…" :
+            saveStatus === "error" ? "Settings unsaved" : saveStatus === "unsaved" ? "Unsaved changes" : ""}
+        </span>
+        {saveStatus === "error" && <button type="button" className="button" onClick={retrySave}>Retry save</button>}
         <button type="button" className="button diagnostics-button" title="Open local diagnostic logs (no upload)"
           disabled={!capabilities.canBrowse}
           onClick={() => void openDiagnostics()}><Activity size={15} /> Diagnostics</button>
@@ -242,7 +247,8 @@ export default function App() {
         </fieldset>
       </aside>
     </main>
-    <footer className="studio-footer"><BatchProgress isProcessing={isProcessing} progress={progress} stats={stats} batchErrors={batchErrors}
+    <footer className="studio-footer"><BatchProgress isProcessing={isProcessing}
+      canCancelBatch={canCancelBatch} isCancelling={batchStatus === "batch-cancelling"} progress={progress} stats={stats} batchErrors={batchErrors}
       truncated={requiresTruncationAck} truncationReasons={truncationReasons} discovered={discovered}
       onStartBatch={() => { if (!busy && scanReady) void startBatch(state.inputFolder, state.outputFolder, fileList.length, state); }}
       onCancelBatch={() => void cancelBatch()} canStart={capabilities.canGenerate && !busy && scanReady && fileList.length > 0 && !requiresTruncationAck} />
