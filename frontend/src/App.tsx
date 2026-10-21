@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useStudioFocus } from "./hooks/useStudioFocus";
 import "./studioFocus.css";
 import "./fileSelection.css";
@@ -88,6 +88,18 @@ export default function App() {
   const { fileList: scannedFiles, isScanning, scanStatus, scanTruncationReasons, scanDiscovered,
     scannedCount, scanError, scanFolder, cancelScan } = useScanner();
   const [pickedFiles, setPickedFiles] = useState<FileInfo[]>([]);
+  const pickerBusyRef = useRef(false);
+  const [pickerBusy, setPickerBusy] = useState(false);
+  const takePickerLock = () => {
+    if (pickerBusyRef.current) return false;
+    pickerBusyRef.current = true;
+    setPickerBusy(true);
+    return true;
+  };
+  const releasePickerLock = () => {
+    pickerBusyRef.current = false;
+    setPickerBusy(false);
+  };
   const [sourceMode, setSourceMode] = useState<"folder" | "files">("folder");
   const usingFiles = sourceMode === "files";
   const fileList = usingFiles ? pickedFiles : scannedFiles;
@@ -165,7 +177,7 @@ export default function App() {
   }, [busy, currentIdx, fileList.length, selectIndex]);
 
   const browse = async (method: "browse_input_folder" | "browse_output_folder" | "browse_logo" | "browse_font") => {
-    if (!capabilities.canBrowse || busy) return;
+    if (!capabilities.canBrowse || busy || !takePickerLock()) return;
     try {
       const api = await ApiBridge.getApi();
       if (!api) throw new Error("Backend unavailable. Reconnect to choose files.");
@@ -178,11 +190,13 @@ export default function App() {
     } catch (error) {
       showNotice({ id: "browse-error", type: "error", message: "Could not open the file picker",
         details: error instanceof Error ? error.message : "Please paste the folder path instead." });
+    } finally {
+      releasePickerLock();
     }
   };
 
   const addFiles = async () => {
-    if (busy || !isLoaded || !capabilities.canBrowse) return;
+    if (busy || !isLoaded || !capabilities.canBrowse || !takePickerLock()) return;
     try {
       const api = await ApiBridge.getApi();
       if (!api?.browse_files) throw new Error("Add Files requires the updated desktop backend.");
@@ -207,6 +221,25 @@ export default function App() {
     } catch (error) {
       showNotice({ id: "picked-errors", type: "error", message: "Add Files failed",
         details: error instanceof Error ? error.message : "Native file picker unavailable" });
+    } finally {
+      releasePickerLock();
+    }
+  };
+
+  const clearPickedFiles = async () => {
+    if (busy || !takePickerLock()) return;
+    try {
+      const api = await ApiBridge.getApi();
+      if (!api?.clear_selected_files) throw new Error("This desktop backend cannot revoke file grants.");
+      const response = await api.clear_selected_files();
+      if (!response.ok) throw new Error(response.error || "Could not clear selected files");
+      setPickedFiles([]);
+      setSourceMode("folder");
+    } catch (error) {
+      showNotice({ id: "picked-clear-error", type: "warning", message: "Unable to clear file selection",
+        details: error instanceof Error ? error.message : "Try again after reconnecting." });
+    } finally {
+      releasePickerLock();
     }
   };
 
@@ -269,13 +302,13 @@ export default function App() {
   // bypass bridge authorization, batch truncation acknowledgement or readiness.
   const commands: StudioCommand[] = [
     { id: "source", title: "Choose source folder", group: "Library", keywords: "browse input",
-      disabled: busy || !isLoaded || !capabilities.canBrowse,
+      disabled: busy || pickerBusy || !isLoaded || !capabilities.canBrowse,
       action: () => { void browse("browse_input_folder"); } },
     { id: "destination", title: "Choose output folder", group: "Library", keywords: "destination save",
-      disabled: busy || !isLoaded || !capabilities.canBrowse || state.sameFolder,
+      disabled: busy || pickerBusy || !isLoaded || !capabilities.canBrowse || state.sameFolder,
       action: () => { void browse("browse_output_folder"); } },
     { id: "add-files", title: "Add individual files", group: "Library", keywords: "multi-select picker",
-      disabled: busy || !isLoaded || !capabilities.canBrowse,
+      disabled: busy || pickerBusy || !isLoaded || !capabilities.canBrowse,
       action: () => { void addFiles(); } },
     { id: "rescan", title: "Rescan assets", group: "Library", keywords: "refresh",
       disabled: usingFiles || busy || isScanning || !state.inputFolder || !capabilities.canScan,
@@ -346,7 +379,7 @@ export default function App() {
       {!isFocused && <aside className="library-pane" aria-label="Asset library">
         <FolderPicker inputFolder={state.inputFolder} outputFolder={state.outputFolder} sameFolder={state.sameFolder}
           forceSeparateOutput={usingFiles}
-          disabled={busy || !isLoaded || !capabilities.canBrowse}
+          disabled={busy || pickerBusy || !isLoaded || !capabilities.canBrowse}
           onBrowseInput={() => void browse("browse_input_folder")} onBrowseOutput={() => void browse("browse_output_folder")}
           onCommitInput={(inputFolder) => {
             setSourceMode("folder");
@@ -356,18 +389,18 @@ export default function App() {
             sameFolder: usingFiles ? false : sameFolder }))} />
         <div className="library-heading"><h2>Assets<span className="count-badge">{fileList.length}</span></h2>
           <div className="library-heading-actions">
-            <button type="button" className="button add-files-button" disabled={busy || !isLoaded || !capabilities.canBrowse}
+            <button type="button" className="button add-files-button" disabled={busy || pickerBusy || !isLoaded || !capabilities.canBrowse}
               aria-label="Add individual artwork files" onClick={() => void addFiles()}><FilePlus2 size={14}/>Add Files</button>
             {usingFiles && <button type="button" className="button"
-              aria-label="Return to scanned folder assets" onClick={() => setSourceMode("folder")}>Folder</button>}
+              aria-label="Return to scanned folder assets" disabled={pickerBusy} onClick={() => setSourceMode("folder")}>Folder</button>}
             <button type="button" className="icon-button" aria-label="Rescan source folder"
               disabled={usingFiles || !state.inputFolder || busy || isScanning || !capabilities.canScan}
               onClick={() => void scanFolder(state.inputFolder)}><RefreshCw size={14}/></button>
           </div></div>
         {usingFiles && <div className="selected-file-hint" role="status">
           <span>{pickedFiles.length} individual assets. Choose an output folder to export.</span>
-          <button className="text-button" type="button" disabled={busy}
-            onClick={() => { setPickedFiles([]); setSourceMode("folder"); }}>Clear files</button>
+          <button className="text-button" type="button" disabled={busy || pickerBusy}
+            onClick={() => void clearPickedFiles()}>Clear files</button>
         </div>}
         {!usingFiles && isScanning && <div className="scan-notice" role="status"><span>{scanStatus === "scan-cancelling"
           ? "Cancelling scan… awaiting worker confirmation" : `Scanning… ${scannedCount || ""}`}</span>
