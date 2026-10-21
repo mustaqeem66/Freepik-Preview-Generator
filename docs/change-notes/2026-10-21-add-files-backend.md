@@ -25,5 +25,13 @@ The existing folder-based batch runner uses `discover_files(input_folder)` and `
 - The source-folder chooser is **not** an output authorization for selected-file batches. `add_authorized_output_folder()`, invoked by the output picker or restored output preference, provides a distinct destination grant.
 - Across repeated selections, a maximum of 5000 exact file grants are retained for this desktop session. No parent directory is authorized by Add Files.
 - A raw `.zip` is not a previewable row; the picker rejects it with instructions to select its containing folder, whose scan exposes `zip://` member assets. Folder ZIP processing remains supported.
-- For selected regular files, durable JSON file records include canonical source paths, distinguishing identical filenames selected from different folders. Existing CSV retains filename-only output for compatibility.
+- For selected regular files, JSON file records include a per-run `sourceIndex` plus the filename, distinguishing identically named inputs **without exposing absolute source directories**. CSV continues to store filenames for compatibility.
 - Expanded regression checks cover duplicate basenames, rejected ZIP files, source-vs-destination permissions and separate folders.
+
+## 2026-10-21 security and lifecycle review
+- `DesktopApi.save_settings` now rejects an unapproved nonempty `outputFolder`. Otherwise a bridge caller could persist an unselected destination and invoke `get_initial_state` to turn that preference into an output grant. Preferences previously saved through the native chooser can still be restored on restart.
+- `DesktopApi.export_preview` requires an **explicit output chooser grant** when the source is an individual picker-selected file; a source-folder scan cannot silently act as the destination grant.
+- `DesktopApi.clear_selected_files` revokes session-scoped exact-file read grants when the user clears their selection. A running batch uses the already-validated snapshot and must be cancelled separately.
+- A selected-file report records `sourceIndex` only; do not serialize absolute input paths into reports intended for sharing. Report consumers should tolerate this optional extra JSON field.
+- New tests cover settings-grant escalation, selected JPG destination enforcement, grant revocation, replay rejection, and path redaction.
+- Local native verification remains mandatory. `[skip ci]` is a billing constraint, **not** a passing test.
