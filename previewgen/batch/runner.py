@@ -293,7 +293,9 @@ def process_folder(
 
             file_start = time.time()
             file_rec: dict[str, Any] = {
-                "source": item_path.name,
+                # Exact-file collections can contain duplicate basenames from
+                # different directories. Keep provenance in the JSON report.
+                "source": str(item_path) if selected_files is not None else item_path.name,
                 "output": target_file.name,
                 "status": "pending",
                 "duration": 0.0,
