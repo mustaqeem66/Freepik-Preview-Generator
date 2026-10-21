@@ -171,6 +171,7 @@ export interface PyWebViewApi {
   frontend_ready: () => Promise<ApiResponse<string>>;
   get_initial_state: () => Promise<ApiResponse<Partial<PreviewState>>>;
   browse_input_folder: () => Promise<string>;
+  browse_files?: () => Promise<ApiResponse<{ files: FileInfo[]; rejected: string[] } | null>>;
   browse_output_folder: () => Promise<string>;
   browse_logo: () => Promise<string>;
   browse_font: () => Promise<string>;
@@ -213,6 +214,8 @@ export interface PyWebViewApi {
     outputFolder: string,
     config: PreviewState
   ) => Promise<{ ok: boolean; operationId?: string; error?: string }>;
+  start_batch_files?: (files: string[], outputFolder: string, config: PreviewState) =>
+    Promise<{ ok: boolean; operationId?: string; error?: string }>;
   cancel_batch: () => Promise<{ ok: boolean }>;
   save_settings: (settings: PreviewState & { revision?: number }) => Promise<ApiResponse<boolean>>;
 }

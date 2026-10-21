@@ -144,8 +144,8 @@ export function useBatch() {
   }, []);
 
   const startBatch = useCallback(
-    async (inputFolder: string, outputFolder: string, totalFiles: number, config: PreviewState) => {
-      if (!inputFolder) return;
+    async (inputFolder: string, outputFolder: string, totalFiles: number, config: PreviewState, selectedFiles?: string[]) => {
+      if (!inputFolder && !selectedFiles?.length) return;
       setIsProcessing(true);
       setCanCancelBatch(false);
       cancellationPendingRef.current = false;
@@ -168,13 +168,21 @@ export function useBatch() {
       try {
         const api = await ApiBridge.getApi(3000);
         if (!api) throw new Error("Backend unavailable. Reconnect before generating previews.");
-        const response = await api.start_batch(inputFolder, config.sameFolder ? inputFolder : outputFolder || inputFolder, config);
+        const response = selectedFiles
+          ? api.start_batch_files
+            ? await api.start_batch_files(selectedFiles, outputFolder, config)
+            : { ok: false, error: "The desktop backend does not support Add Files; update PreviewGen." }
+          : await api.start_batch(inputFolder, config.sameFolder ? inputFolder : outputFolder || inputFolder, config);
         if (!response?.ok || !response.operationId) {
           const reason = response?.error === "UNAUTHORIZED_OUTPUT_PATH"
             ? "Select the output folder with Choose Output Folder before exporting."
             : response?.error === "UNAUTHORIZED_INPUT_PATH"
               ? "Select a source folder and scan it before exporting."
-              : response?.error || "Unable to start batch";
+              : response?.error === "UNAUTHORIZED_SELECTED_FILE"
+                ? "Selected file authorization expired. Choose the files again."
+                : response?.error === "OUTPUT_FOLDER_REQUIRED"
+                  ? "Select a separate output folder for Add Files."
+                  : response?.error || "Unable to start batch";
           throw new Error(reason);
         }
         activeOpIdRef.current = response.operationId;
