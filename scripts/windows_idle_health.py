@@ -139,7 +139,7 @@ def run_monitor(args: argparse.Namespace) -> int:
         writer = csv.writer(csvfile)
         writer.writerow(["utc_timestamp", "pid", "result", "matching_windows"])
         while True:
-            observed_at = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+            observed_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
             try:
                 responding, windows = probe_window_pid(args.pid, args.timeout_ms)
             except (OSError, RuntimeError, AttributeError, ValueError) as exc:
