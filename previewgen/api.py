@@ -38,7 +38,6 @@ from previewgen.settings import load_settings, save_settings
 from previewgen.tempfiles import safe_rmtree
 from previewgen.thumbnail_coordinator import MAX_VISIBLE_THUMBNAILS, ThumbnailCoordinator
 
-
 # Large scans used to send all 5000 assets in one evaluate_js call. The
 # terminal event is now metadata-only above this threshold; React pulls
 # small bounded pages over the existing asynchronous desktop bridge.
