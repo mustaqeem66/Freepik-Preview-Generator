@@ -115,7 +115,9 @@ def run_checks(
                 code = 127
             duration = round(time.monotonic() - started_clock, 2)
             results.append({
-                "name": check.name, "argv": list(check.argv),
+                # A virtualenv/npm executable may live under C:\\Users\\name or
+                # /home/name. Keep local usernames out of sharable QA reports.
+                "name": check.name, "argv": [Path(check.argv[0]).name, *check.argv[1:]],
                 "status": "pass" if code == 0 else "fail",
                 "exitCode": code, "durationSeconds": duration,
             })
