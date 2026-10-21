@@ -102,3 +102,6 @@ project.tar.gz.b64.txt
 
 # Local-only QA evidence (never publish machine metadata by accident)
 local-check-report.json
+
+# Local CI sandbox created for WSL release-gate runs (not part of the project)
+.venv-ci/
