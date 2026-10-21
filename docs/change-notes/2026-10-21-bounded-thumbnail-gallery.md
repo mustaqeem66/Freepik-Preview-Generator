@@ -18,7 +18,7 @@ Creative desktop references in `docs/design/2026-10-21-macos-premium-ux-research
 - No third-party UI components, no external image hosts, no CSS imitation of macOS titlebar controls, and no new runtime dependency.
 
 ## Compatibility and risks
-1. The cache is session-scoped and the preview server also has an age-based eviction policy; a gallery left open for a very long time may show a missing image until the visible set is re-requested. Re-evaluate server/cache expiry consistency before declaring long-idle native QA complete.
+1. The cache is session-scoped and expires cached image handles after 240 seconds (before the preview server's 300-second age limit). The open gallery re-requests currently visible tiles once a minute. Still validate prolonged-idle rendering and expiry under native Windows and macOS WebViews.
 2. The sync isolated renderer may spend up to six seconds on an expensive unsupported format; only one gallery render is in flight but native Windows idle responsiveness must still be checked.
 3. Existing Add Files implementation (#34, including merged-in #35) is the **base branch**. This PR must be rebased/retargeted after #34 merges; no independent release until combined workflow tests.
 4. Native Cocoa/WebView2/WebKit differences, path permissions and CSS rendering need platform verification.
