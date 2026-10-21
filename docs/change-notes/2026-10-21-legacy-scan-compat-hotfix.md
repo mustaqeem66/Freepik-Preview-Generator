@@ -15,3 +15,6 @@ This is **compatibility containment**, not a proven Windows hang fix. The legacy
 - Then merge/test PR #42 and verify opt-in paged behavior with 5,000 files.
 
 No GitHub Actions are needed; use local checks. Test code committed, **not executed here**.
+
+## Atomic bridge capability handshake
+The same PR adds a matching frontend opt-in: if `get_scan_page` exists, React calls `start_scan(folder, true)`. On old pywebview bridges without the page API, it calls `start_scan(folder)` with one argument to avoid Python argument mismatch. Merge the backend flag and frontend call together as a single compatibility release.
