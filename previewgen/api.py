@@ -224,8 +224,12 @@ class DesktopApi:
             metadata["files"] = []
             metadata["paged"] = {"total": len(files), "pageSize": SCAN_PAGE_MAX_ITEMS}
         else:
-            with self._scan_page_lock:
-                self._scan_page_state = None
+            with self.scanner.scan_lock:
+                ctx = self.scanner.active_scan_context
+                if ctx is not None and ctx.scan_id != scan_id:
+                    return
+                with self._scan_page_lock:
+                    self._scan_page_state = None
             metadata = result
         self._dispatch_envelope(
             "scan.finished", {"scanId": scan_id, "result": metadata},
