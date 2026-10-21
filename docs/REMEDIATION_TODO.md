@@ -78,3 +78,12 @@ are gated by the `build` job on tag pushes.
 | `*.spec` was ignored under an "internal docs" rationale while PyInstaller emits one | rule moved under build artifacts with the reason recorded | `.gitignore` |
 
 **Release policy:** No merged PR should be described as production-ready solely because unit tests pass. Require Windows startup, file-dialog, installer, export, and renderer smoke tests on a clean machine.
+
+## 2026-10-21 — Settings persistence recovery (proposed PR)
+
+- [x] Save attempts now have visible `loading/unsaved/saving/saved/error` states; a skipped or failed bridge call is never presented as saved.
+- [x] Transient persistence failures retry with bounded backoff (0.5, 1, 2 seconds), with a manual retry action.
+- [x] Stale saves are guarded by a per-snapshot monotonic revision and effect cancellation; reconnection restarts the save effect.
+- [x] Add frontend regression coverage for failed saves, transient recovery and revision monotonicity.
+- [ ] Verify with `cd frontend && npm ci && npm run typecheck && npm test && npm run build` (not executed in this GitHub-connected session).
+- [ ] Validate manual disconnect/reconnect and OS shutdown persistence with a real desktop build. A sudden process kill may still lose in-memory changes.
