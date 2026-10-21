@@ -1,5 +1,6 @@
 import { beforeEach, describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
 import { SettingsPanel } from "./SettingsPanel";
 import type { PreviewState } from "../types";
 
