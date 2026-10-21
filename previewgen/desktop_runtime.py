@@ -108,6 +108,9 @@ def start_desktop_app() -> int:
         gui_type = "edgechromium"
 
     is_headless = is_smoke
+    # Set PREVIEWGEN_NATIVE_TITLEBAR=1 to fall back to OS decorations on
+    # systems where frameless windows are not draggable/resizable.
+    custom_chrome = os.environ.get("PREVIEWGEN_NATIVE_TITLEBAR") != "1"
     window = webview.create_window(
         "PreviewGen",
         target_url,
@@ -116,15 +119,15 @@ def start_desktop_app() -> int:
         min_size=(1100, 700),
         resizable=True,
         text_select=False,
-        frameless=False,
-        easy_drag=True,
+        frameless=custom_chrome,
+        easy_drag=False,
         on_top=False,
         background_color="#0F172A",
         js_api=api,
         hidden=is_headless,
     )
     # Bind api to window
-    api.set_window(window)
+    api.set_window(window, custom_chrome=custom_chrome)
 
     # Navigation lockdown - block external navigation
     def on_navigating(url: str) -> bool:

@@ -8,6 +8,7 @@ import "./studioPremium.css";
 import "./studioControls.css";
 import "lenis/dist/lenis.css";
 import "./studioMotion.css";
+import "./desktopTitlebar.css";
 
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
