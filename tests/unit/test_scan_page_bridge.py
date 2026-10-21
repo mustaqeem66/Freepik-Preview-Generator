@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import json
 
-from previewgen.scanner import ScannerService
-
 import pytest
 
 from previewgen.api import (
@@ -13,6 +11,7 @@ from previewgen.api import (
     SCAN_PAGE_MAX_ITEMS,
     DesktopApi,
 )
+from previewgen.scanner import ScannerService
 
 pytestmark = pytest.mark.core
 
