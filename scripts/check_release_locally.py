@@ -83,13 +83,14 @@ def run_checks(
     """Print subprocess output live and write a minimal machine-readable record."""
     report.parent.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
-    started = dt.datetime.now(dt.timezone.utc).isoformat()
+    started = dt.datetime.now(dt.UTC).isoformat()
 
-    if any(check.name.startswith("frontend-") for check in checks):
-        if not (root / "frontend" / "node_modules").is_dir() and not any(
-            check.name == "frontend-install" for check in checks
-        ):
-            print(
+    if (
+        any(check.name.startswith("frontend-") for check in checks)
+        and not (root / "frontend" / "node_modules").is_dir()
+        and not any(check.name == "frontend-install" for check in checks)
+    ):
+        print(
                 "NOTICE: frontend/node_modules missing. Run 'cd frontend && npm ci' "
                 "or add --npm-ci to permit local dependency installation.",
                 flush=True,
@@ -128,7 +129,7 @@ def run_checks(
         succeeded = sum(item["status"] == "pass" for item in results)
         payload: dict[str, Any] = {
             "schemaVersion": 1, "startedAtUtc": started,
-            "completedAtUtc": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "completedAtUtc": dt.datetime.now(dt.UTC).isoformat(),
             "host": {"system": platform.system(), "python": platform.python_version()},
             "summary": {"passed": succeeded, "failed": len(results) - succeeded,
                         "planned": len(checks), "completed": len(results)},
