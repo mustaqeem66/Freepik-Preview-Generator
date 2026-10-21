@@ -32,10 +32,18 @@ from previewgen.preview_server import PreviewFileServer
 from previewgen.probe_coordinator import ProbeCoordinator
 from previewgen.probe_process import probe_asset_isolated
 from previewgen.renderer_process import render_file_isolated
-from previewgen.scanner import get_scanner
+from previewgen.scanner import MAX_SCAN_ITEMS, get_scanner
 from previewgen.settings import load_settings, save_settings
 from previewgen.tempfiles import safe_rmtree
 from previewgen.thumbnail_coordinator import MAX_VISIBLE_THUMBNAILS, ThumbnailCoordinator
+
+
+# Large scans used to send all 5000 assets in one evaluate_js call. The
+# terminal event is now metadata-only above this threshold; React pulls
+# small bounded pages over the existing asynchronous desktop bridge.
+SCAN_INLINE_RESULT_LIMIT = 128
+SCAN_PAGE_MAX_ITEMS = 128
+SCAN_PAGE_MAX_BYTES = 32 * 1024
 
 
 class DesktopApi:
@@ -74,6 +82,8 @@ class DesktopApi:
         self._authorized_files: set[Path] = set()
         self._authorized_output_folders: set[Path] = set()
         self._authorized_lock = threading.Lock()
+        self._scan_page_lock = threading.Lock()
+        self._scan_page_state: tuple[str, list[dict[str, Any]], int] | None = None
         self._last_heartbeat_time = time.time()
         self._register_default_authorized_paths()
 
@@ -196,9 +206,71 @@ class DesktopApi:
         self._dispatch_envelope("scan.progress", {"scanId": scan_id, "count": count}, operation_id=scan_id)
 
     def _on_scan_finished(self, scan_id: str, result: dict[str, Any]) -> None:
+        """Keep large scan rows off the synchronous evaluate_js event path."""
+        files = result.get("files")
+        if isinstance(files, list) and len(files) > SCAN_INLINE_RESULT_LIMIT:
+            # Scanner callbacks can race a newer scan start just after their
+            # own is-current check. Never replace the new scan's page cache.
+            with self.scanner.scan_lock:
+                ctx = self.scanner.active_scan_context
+                if ctx is not None and ctx.scan_id != scan_id:
+                    return
+                with self._scan_page_lock:
+                    self._scan_page_state = (scan_id, files, 0)
+            metadata = dict(result)
+            metadata["files"] = []
+            metadata["paged"] = {"total": len(files), "pageSize": SCAN_PAGE_MAX_ITEMS}
+        else:
+            with self._scan_page_lock:
+                self._scan_page_state = None
+            metadata = result
         self._dispatch_envelope(
-            "scan.finished", {"scanId": scan_id, "result": result}, operation_id=scan_id, terminal=True
+            "scan.finished", {"scanId": scan_id, "result": metadata},
+            operation_id=scan_id, terminal=True,
         )
+
+    def get_scan_page(self, scan_id: str, offset: int, limit: int = SCAN_PAGE_MAX_ITEMS) -> dict[str, Any]:
+        """Return one sequential, byte-limited page of the last completed scan.
+
+        This contains exactly the same source metadata the selected user scan
+        would have sent in scan.finished; it does not grant filesystem access.
+        Pages are consumed in order, with no second unbounded JS injection.
+        """
+        if (not isinstance(scan_id, str) or not scan_id
+                or isinstance(offset, bool) or not isinstance(offset, int)
+                or isinstance(limit, bool) or not isinstance(limit, int)
+                or not 1 <= limit <= SCAN_PAGE_MAX_ITEMS or offset < 0):
+            return {"ok": False, "value": None, "error": "INVALID_SCAN_PAGE"}
+        with self._scan_page_lock:
+            stored = self._scan_page_state
+            if not stored or scan_id != stored[0]:
+                return {"ok": False, "value": None, "error": "SCAN_RESULT_EXPIRED"}
+            _, files, expected = stored
+            if offset != expected or offset >= len(files):
+                return {"ok": False, "value": None, "error": "SCAN_PAGE_OUT_OF_ORDER"}
+
+            chunk: list[dict[str, Any]] = []
+            payload_bytes = 64
+            for file in files[offset:offset + limit]:
+                encoded_size = len(json.dumps(file, ensure_ascii=False).encode("utf-8")) + 2
+                if payload_bytes + encoded_size > SCAN_PAGE_MAX_BYTES:
+                    if not chunk:
+                        return {"ok": False, "value": None, "error": "SCAN_ROW_TOO_LARGE"}
+                    break
+                chunk.append(file)
+                payload_bytes += encoded_size
+            next_offset = offset + len(chunk)
+            if next_offset >= len(files):
+                self._scan_page_state = None
+            else:
+                self._scan_page_state = (scan_id, files, next_offset)
+            return {
+                "ok": True, "error": None,
+                "value": {
+                    "scanId": scan_id, "offset": offset, "total": len(files),
+                    "nextOffset": next_offset, "files": chunk,
+                },
+            }
 
     def _on_batch_finished(
         self, summary: dict[str, Any], operation_id: str = "", notify_enabled: bool = False
@@ -470,6 +542,9 @@ class DesktopApi:
 
     def start_scan(self, folder_path: str) -> dict[str, Any]:
         """Start background asynchronous folder scan."""
+        # A new scan revokes any remaining page access from an older result.
+        with self._scan_page_lock:
+            self._scan_page_state = None
         if folder_path and Path(folder_path).is_dir():
             self.add_authorized_folder(folder_path)
         return self.scanner.start_scan(folder_path)
@@ -1007,6 +1082,8 @@ class DesktopApi:
 
     def cleanup(self) -> None:
         """Orderly shutdown sequence."""
+        with self._scan_page_lock:
+            self._scan_page_state = None
         self.comparison_coordinator.close()
         self.thumbnail_coordinator.close()
         self.preview_coordinator.shutdown()
