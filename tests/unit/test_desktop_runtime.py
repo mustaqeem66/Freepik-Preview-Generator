@@ -56,8 +56,10 @@ class _FakeWebview(types.ModuleType):
         super().__init__("webview")
         self.window = _FakeWindow()
         self.started = False
+        self.window_options = {}
 
-    def create_window(self, *_args, **_kwargs) -> _FakeWindow:
+    def create_window(self, *_args, **kwargs) -> _FakeWindow:
+        self.window_options = kwargs
         return self.window
 
     def start(self, **_kwargs) -> None:
@@ -70,8 +72,9 @@ class _FakeApi:
         self.window = None
         self.cleaned_up = False
 
-    def set_window(self, window) -> None:
+    def set_window(self, window, *, custom_chrome=False) -> None:
         self.window = window
+        self.custom_chrome = custom_chrome
 
     def cleanup(self) -> None:
         self.cleaned_up = True
@@ -110,6 +113,9 @@ def test_normal_launch_does_not_arm_auto_close_watchdog(monkeypatch, tmp_path):
     time.sleep(1.3)
 
     assert fake_webview.started is True
+    assert fake_webview.window_options["frameless"] is True
+    assert fake_webview.window_options["easy_drag"] is False
+    assert fake_api.custom_chrome is True
     assert fake_api.cleaned_up is True
     assert fake_webview.window.destroyed is False
     assert exit_calls == []
@@ -137,3 +143,13 @@ def test_linux_smoke_without_webview_bindings_fails_closed(monkeypatch, tmp_path
     assert runtime.start_desktop_app() == 1
     assert not marker.exists()
     assert fake_webview.started is False
+
+
+def test_native_titlebar_env_fallback_disables_frameless(monkeypatch, tmp_path):
+    runtime, fake_webview, fake_api = _load_runtime(
+        monkeypatch, tmp_path, ["previewgen"]
+    )
+    monkeypatch.setenv("PREVIEWGEN_NATIVE_TITLEBAR", "1")
+    assert runtime.start_desktop_app() == 0
+    assert fake_webview.window_options["frameless"] is False
+    assert fake_api.custom_chrome is False
