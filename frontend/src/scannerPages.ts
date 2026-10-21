@@ -1,7 +1,8 @@
 import type { FileInfo, PyWebViewApi } from "./types";
 
 export const SCAN_PAGE_MAX_ITEMS = 128;
-export const SCAN_PAGE_MAX_TOTAL = 5000;
+// The scanner may emit a final ZIP member while marking the 5000-item cap.
+export const SCAN_PAGE_MAX_TOTAL = 5001;
 export const SCAN_PAGE_TIMEOUT_MS = 8000;
 
 export class ScanTransferSuperseded extends Error {
