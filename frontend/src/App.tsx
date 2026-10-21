@@ -340,7 +340,7 @@ export default function App() {
       action: () => { void openOutput(); } },
     { id: "compare", title: compareRequested ? "Exit Before / After" : "Compare source and JPG",
       group: "View", keywords: "split reveal original before after",
-      disabled: !sourceComparisonAllowed || !previewUrl || isLoading || busy,
+      disabled: !compareRequested && (!sourceComparisonAllowed || !previewUrl || isLoading || busy),
       action: () => setCompareRequested((open) => !open) },
     { id: "focus", title: isFocused ? "Exit Focus Canvas" : "Focus Canvas",
       group: "View", keywords: "panes distraction free", action: toggleFocus },
