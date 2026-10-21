@@ -209,7 +209,9 @@ export default function App() {
         {isScanning && fileList.length > 0 && <p className="muted" role="status">
           Previous results from this folder are shown during the rescan. Export is disabled.
         </p>}
-        {scanStatus === "scan-cancelled" && <p className="scan-notice" data-testid="scan-cancelled">Scan cancelled. Previous results are shown; rescan to export.</p>}
+        {scanStatus === "scan-cancelled" && <p className="scan-notice" data-testid="scan-cancelled">
+          {fileList.length > 0 ? "Scan cancelled. Previous results are shown; rescan to export."
+            : "Scan cancelled. No completed results are available; choose a folder or rescan."}</p>}
         {scanStatus === "scan-truncated" && <p className="scan-notice" data-testid="scan-truncated">
           Partial list: {fileList.length} of {scanDiscovered} discovered. {scanTruncationReasons.join(", ")}. Batch export scans the source again.</p>}
         {fileList.length > 0 ? <FileList files={fileList} activeIndex={currentIdx} onSelect={selectIndex} height={260} />
