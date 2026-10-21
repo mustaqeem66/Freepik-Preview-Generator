@@ -88,3 +88,46 @@ def test_repository_manifest_has_real_known_baselines_and_no_fake_full_coverage(
     assert len(report["samples"]) >= 9
     assert report["registry"]["coverageComplete"] is False
     assert report["registry"]["advertisedWithoutCapability"] == []
+
+def test_audit_reports_source_deleted_by_renderer_instead_of_crashing(tmp_path, monkeypatch):
+    from previewgen import renderer_process
+
+    source = tmp_path / "sample.png"
+    Image.new("RGB", (32, 32), "green").save(source)
+    report = inspect_inventory({"samples": [{"file": "sample.png"}]}, tmp_path)
+
+    def destructive_render(src, _dest, _config, timeout_seconds):
+        src.unlink()
+        raise RuntimeError("failed after deleting source")
+
+    monkeypatch.setattr(renderer_process, "render_file_isolated", destructive_render)
+    verify_samples(report, tmp_path, timeout=1.0)
+    entry = report["samples"][0]
+    assert entry["status"] == "source_modified"
+    assert entry["sourcePreserved"] is False
+    assert entry["sourceIntegrityError"] == "FileNotFoundError"
+
+
+def test_strict_flag_always_runs_renderer_even_with_present_fixture(tmp_path, monkeypatch):
+    from scripts import audit_renderer_matrix
+
+    file = tmp_path / "sample.png"
+    Image.new("RGB", (32, 32), "blue").save(file)
+    manifest = tmp_path / "samples.json"
+    manifest.write_text(json.dumps({"samples": [{"file": "sample.png"}]}), encoding="utf-8")
+    report_file = tmp_path / "result.json"
+    recorded = []
+
+    def fake_verify(report, directory, timeout):
+        recorded.append((directory, timeout))
+        report["runMode"] = "isolated_render"
+        report["samples"][0]["status"] = "failed"
+
+    monkeypatch.setattr(audit_renderer_matrix, "verify_samples", fake_verify)
+    assert audit_renderer_matrix.main([
+        "--manifest", str(manifest), "--report", str(report_file), "--strict"
+    ]) == 1
+    assert len(recorded) == 1
+    saved = json.loads(report_file.read_text(encoding="utf-8"))
+    assert saved["runMode"] == "isolated_render"
+    assert saved["samples"][0]["status"] == "failed"

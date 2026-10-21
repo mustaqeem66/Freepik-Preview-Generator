@@ -132,8 +132,15 @@ def verify_samples(report: dict[str, Any], fixtures_dir: Path, timeout: float) -
             sample["status"] = "failed"
             sample["failure"] = type(exc).__name__ + ": " + str(exc)[:220]
         finally:
-            after = _sha256(path)
-            sample["sourcePreserved"] = before == after
+            # A renderer may delete/truncate a file before failing. Preserve
+            # the evidence instead of crashing the entire audit report.
+            try:
+                after = _sha256(path)
+            except OSError as exc:
+                sample["sourcePreserved"] = False
+                sample["sourceIntegrityError"] = type(exc).__name__
+            else:
+                sample["sourcePreserved"] = before == after
             if not sample["sourcePreserved"]:
                 sample["status"] = "source_modified"
 
@@ -145,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--verify-fixtures", action="store_true")
     parser.add_argument("--strict", action="store_true",
-                        help="Require a fixture for every advertised previewable extension")
+                        help="Require real successful isolated renders and a fixture for every previewable extension")
     parser.add_argument("--timeout", type=float, default=60.0)
     args = parser.parse_args(argv)
 
@@ -157,7 +164,9 @@ def main(argv: list[str] | None = None) -> int:
         report = inspect_inventory(manifest, fixtures_dir)
     except ValueError as exc:
         parser.error(str(exc))
-    if args.verify_fixtures:
+    # "Strict" must be a true evidence gate, never a fixture-count-only
+    # shortcut that passes without running any renderer.
+    if args.verify_fixtures or args.strict:
         verify_samples(report, fixtures_dir, timeout=args.timeout)
 
     report_path = args.report.resolve()
@@ -173,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.strict and not registry["coverageComplete"]:
         return 1
-    if args.verify_fixtures and failures:
+    if (args.verify_fixtures or args.strict) and failures:
         return 1
     return 0
 
