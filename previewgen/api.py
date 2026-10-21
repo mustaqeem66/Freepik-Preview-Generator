@@ -277,6 +277,9 @@ class DesktopApi:
                     rejected.append(f"{target.name}: unsupported format")
                     continue
                 with self._authorized_lock:
+                    if target not in self._authorized_files and len(self._authorized_files) >= 5000:
+                        rejected.append(f"{target.name}: session selection limit (5000 files) reached")
+                        continue
                     self._authorized_files.add(target)
                 files.append({
                     "name": target.name, "path": str(target),
