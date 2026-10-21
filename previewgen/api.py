@@ -32,7 +32,7 @@ from previewgen.preview_server import PreviewFileServer
 from previewgen.probe_coordinator import ProbeCoordinator
 from previewgen.probe_process import probe_asset_isolated
 from previewgen.renderer_process import render_file_isolated
-from previewgen.scanner import MAX_SCAN_ITEMS, get_scanner
+from previewgen.scanner import get_scanner
 from previewgen.settings import load_settings, save_settings
 from previewgen.tempfiles import safe_rmtree
 from previewgen.thumbnail_coordinator import MAX_VISIBLE_THUMBNAILS, ThumbnailCoordinator
