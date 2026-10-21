@@ -93,3 +93,42 @@ def test_open_folder_rejects_empty_path(launched):
     assert api.open_folder("")["ok"] is False
     assert api.open_folder("   ")["ok"] is False
     assert launched == []
+
+
+def test_linux_open_folder_falls_back_to_gio_when_xdg_open_missing(monkeypatch, launched, tmp_path):
+    monkeypatch.setattr("previewgen.api.sys.platform", "linux")
+    monkeypatch.setattr("previewgen.api.shutil.which", lambda cmd: "/usr/bin/gio" if cmd == "gio" else None)
+    api = DesktopApi()
+    try:
+        api.add_authorized_folder(tmp_path)
+        response = api.open_folder(str(tmp_path))
+        assert response["ok"] is True
+        assert launched == [["/usr/bin/gio", "open", str(tmp_path.resolve())]]
+    finally:
+        api.cleanup()
+
+
+def test_linux_open_folder_reports_missing_system_opener_without_launch(monkeypatch, launched, tmp_path):
+    monkeypatch.setattr("previewgen.api.sys.platform", "linux")
+    monkeypatch.setattr("previewgen.api.shutil.which", lambda _cmd: None)
+    api = DesktopApi()
+    try:
+        api.add_authorized_folder(tmp_path)
+        response = api.open_folder(str(tmp_path))
+        assert response["ok"] is False
+        assert response["error"] == "NO_FOLDER_OPENER"
+        assert launched == []
+    finally:
+        api.cleanup()
+
+
+def test_missing_linux_opener_does_not_bypass_authorization(monkeypatch, launched, tmp_path):
+    monkeypatch.setattr("previewgen.api.sys.platform", "linux")
+    monkeypatch.setattr("previewgen.api.shutil.which", lambda _cmd: None)
+    api = DesktopApi()
+    try:
+        response = api.open_folder(str(tmp_path))
+        assert response["error"] == "UNAUTHORIZED_PATH"
+        assert launched == []
+    finally:
+        api.cleanup()
