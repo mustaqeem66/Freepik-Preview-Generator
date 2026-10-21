@@ -78,13 +78,3 @@ are gated by the `build` job on tag pushes.
 | `*.spec` was ignored under an "internal docs" rationale while PyInstaller emits one | rule moved under build artifacts with the reason recorded | `.gitignore` |
 
 **Release policy:** No merged PR should be described as production-ready solely because unit tests pass. Require Windows startup, file-dialog, installer, export, and renderer smoke tests on a clean machine.
-
-## 2026-10-21 — Batch destination permission gate (proposed PR)
-
-- [x] Stop `start_batch()` from silently granting its requested output directory as an authorized root.
-- [x] Reject unauthorized batch destinations before the renderer starts or creates directories.
-- [x] Restore user-selected source/destination roots from validated on-disk settings through `get_initial_state()` so ordinary saved-folder sessions continue working.
-- [x] Give users an actionable picker hint for authorization errors.
-- [x] Add denial and positive authorization tests.
-- [ ] Run `python -m pytest tests/unit/test_batch_api_regressions.py -q` and all Python tests; verify folder choice, same-folder and restart flows in the desktop GUI.
-- [ ] Follow-up: current input scanning still authorizes manually typed paths; this PR does NOT implement a full native-picker-only filesystem capability model or sandbox against compromised local settings.
