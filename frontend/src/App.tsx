@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useStudioFocus } from "./hooks/useStudioFocus";
 import "./studioFocus.css";
 import { PaneResizer } from "./components/PaneResizer";
-import { Box, ChevronLeft, ChevronRight, FolderOpen, Layers, Moon, RefreshCw, Sun, Activity, Maximize2, Minimize2 } from "lucide-react";
+import { CommandPalette, type StudioCommand } from "./components/CommandPalette";
+import { Box, ChevronLeft, ChevronRight, FolderOpen, Layers, Moon, RefreshCw, Sun, Activity, Maximize2, Minimize2, Command } from "lucide-react";
 import { ApiBridge } from "./api/bridge";
 import { useBackend } from "./hooks/useBackend";
 import { useSettings } from "./hooks/useSettings";
@@ -36,6 +37,20 @@ const readPaneWidth = (key: string, fallback: number, min: number, max: number) 
 };
 
 export default function App() {
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.isComposing ||
+          event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey) ||
+          event.key.toLowerCase() !== "k") return;
+      event.preventDefault();
+      setPaletteOpen((previous) => !previous);
+    };
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, []);
+  const paletteShortcut = /Macintosh|Mac OS/i.test(navigator.userAgent) ? "⌘ K" : "Ctrl K";
+
   // Focus mode is intentionally session-only; launch in the discoverable
   // three-pane workspace and let artists opt into distraction-free editing.
   const { isFocused, toggleFocus } = useStudioFocus();
@@ -204,11 +219,52 @@ export default function App() {
     }
   };
 
+
+  // Reuse the same guarded handlers as the visible UI; the palette cannot
+  // bypass bridge authorization, batch truncation acknowledgement or readiness.
+  const commands: StudioCommand[] = [
+    { id: "source", title: "Choose source folder", group: "Library", keywords: "browse input",
+      disabled: busy || !isLoaded || !capabilities.canBrowse,
+      action: () => { void browse("browse_input_folder"); } },
+    { id: "destination", title: "Choose output folder", group: "Library", keywords: "destination save",
+      disabled: busy || !isLoaded || !capabilities.canBrowse || state.sameFolder,
+      action: () => { void browse("browse_output_folder"); } },
+    { id: "rescan", title: "Rescan assets", group: "Library", keywords: "refresh",
+      disabled: busy || isScanning || !state.inputFolder || !capabilities.canScan,
+      action: () => { void scanFolder(state.inputFolder); } },
+    { id: "previous", title: "Previous asset", group: "Preview", keywords: "navigate left",
+      disabled: busy || currentIdx <= 0, action: () => selectIndex(currentIdx - 1) },
+    { id: "next", title: "Next asset", group: "Preview", keywords: "navigate right",
+      disabled: busy || currentIdx < 0 || currentIdx >= fileList.length - 1,
+      action: () => selectIndex(currentIdx + 1) },
+    { id: "export", title: "Export selected JPG", group: "Export", keywords: "save",
+      disabled: busy || !activeFile || !scanReady || !capabilities.canGenerate,
+      action: () => { void handleExport(); } },
+    { id: "batch", title: "Generate all previews", group: "Export", keywords: "batch",
+      disabled: busy || !fileList.length || !scanReady || !capabilities.canGenerate || requiresTruncationAck,
+      action: () => { void startBatch(state.inputFolder, state.outputFolder, fileList.length, state); } },
+    { id: "output", title: "Open output folder", group: "Export", keywords: "finder explorer",
+      disabled: busy || !state.inputFolder || !capabilities.canOpenReport,
+      action: () => { void openOutput(); } },
+    { id: "focus", title: isFocused ? "Exit Focus Canvas" : "Focus Canvas",
+      group: "View", keywords: "panes distraction free", action: toggleFocus },
+    { id: "theme", title: state.theme === "dark" ? "Switch to light theme" : "Switch to dark theme",
+      group: "View", keywords: "appearance mode",
+      action: () => setState((previous) => ({ ...previous, theme: previous.theme === "dark" ? "light" : "dark" })) },
+    { id: "diagnostics", title: "Open local diagnostic logs", group: "Help", keywords: "support",
+      disabled: !capabilities.canBrowse, action: () => { void openDiagnostics(); } },
+  ];
+
   return <div className="studio-shell">
     <header className="studio-toolbar">
       <div className="brand"><span className="brand-mark"><Layers size={21} strokeWidth={1.6} /></span>
         <div><h1>PreviewGen<span className="studio-badge">Studio</span></h1><p>Make every asset presentation-ready.</p></div></div>
       <div className="toolbar-actions">
+        <button type="button" className="button studio-command-trigger"
+          aria-label="Open quick actions" aria-haspopup="dialog" aria-expanded={paletteOpen}
+          onClick={() => setPaletteOpen(true)}>
+          <Command size={15} aria-hidden="true"/><span>Commands</span><kbd>{paletteShortcut}</kbd>
+        </button>
         <span className="lifecycle-badge" data-testid="lifecycle-state" data-state={lifecycle} role="status"
           title="Last frontend/backend state; a frozen Windows window may not update this label">
           <span className="status-dot" />{LIFECYCLE_LABELS[lifecycle]}</span>
@@ -304,6 +360,7 @@ export default function App() {
         </fieldset>
       </aside>}
     </main>
+    <CommandPalette open={paletteOpen} actions={commands} onClose={() => setPaletteOpen(false)} />
     <footer className="studio-footer"><BatchProgress isProcessing={isProcessing}
       canCancelBatch={canCancelBatch} isCancelling={batchStatus === "batch-cancelling"} progress={progress} stats={stats} batchErrors={batchErrors}
       truncated={requiresTruncationAck} truncationReasons={truncationReasons} discovered={discovered}
