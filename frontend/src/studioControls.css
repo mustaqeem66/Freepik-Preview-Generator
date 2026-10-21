@@ -1,0 +1,197 @@
+/*
+ * Precision controls: the batch action belongs to the active artwork pane,
+ * not to a second full-window footer. The three-pane grid remains unchanged.
+ * Native window chrome, theme tokens, and the real HTML range input remain.
+ */
+.canvas-export-dock {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 15px 12px;
+  border-top: 1px solid var(--card-border);
+  background: var(--toolbar-bg);
+  min-width: 0;
+}
+.canvas-export-dock .batch-progress {
+  flex: 1 1 340px;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.canvas-export-dock .bp-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.canvas-export-dock .bp-summary {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.canvas-export-dock .bp-title {
+  font-size: 12px;
+  font-weight: 670;
+  color: var(--text);
+  line-height: 1.25;
+}
+.canvas-export-dock .batch-result {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text-sec);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.canvas-export-dock .bp-main > .button {
+  min-height: 36px;
+  flex-shrink: 0;
+  padding-inline: 14px;
+}
+.canvas-export-dock .dock-open-output {
+  min-height: 36px;
+  flex: 0 0 auto;
+  border-color: var(--card-border);
+}
+.canvas-export-dock .bp-body,
+.canvas-export-dock .bp-stats,
+.canvas-export-dock .bp-truncation,
+.canvas-export-dock .bp-errors { width: 100%; }
+.canvas-export-dock .bp-errors { max-height: 80px; overflow: auto; }
+
+/* Adapt to central-pane width without changing grid geometry. */
+@media (max-width: 1130px) {
+  .canvas-export-dock { flex-wrap: wrap; gap: 8px 12px; }
+  .canvas-export-dock .batch-progress { flex-basis: 100%; }
+  .canvas-export-dock .dock-open-output { margin-left: auto; }
+}
+@media (max-width: 680px) {
+  .canvas-export-dock { padding: 10px 12px; }
+  .canvas-export-dock .bp-main { flex-wrap: wrap; }
+  .canvas-export-dock .bp-main > .button { margin-left: auto; }
+}
+
+/* The reference calls for a soft inset rail and concentric dark dial.
+   Both WebKit (WebView2/Cocoa) and Firefox have explicit thumb rules. */
+:root {
+  --precision-rail: #e9ebf0;
+  --precision-fill: #353b46;
+  --precision-rail-border: #d7dce4;
+  --precision-knob: #1d222a;
+  --precision-rim: #fff;
+  --precision-dot: #f7f9fc;
+  --precision-thumb-shadow: 0 2px 7px rgba(24, 32, 48, .23), 0 0 0 1px rgba(23, 28, 40, .12);
+}
+[data-theme="dark"] {
+  --precision-rail: #404b5a;
+  --precision-fill: #cbd4e0;
+  --precision-rail-border: #566273;
+  --precision-knob: #181d25;
+  --precision-rim: #e9edf4;
+  --precision-dot: #f7f9fc;
+  --precision-thumb-shadow: 0 2px 11px rgba(0,0,0,.44), 0 0 0 1px rgba(255,255,255,.2);
+}
+.precision-slider {
+  min-width: 0;
+  gap: 5px;
+}
+.precision-slider-heading { min-width: 0; }
+.precision-slider-heading > span { font-weight: 520; }
+.precision-slider output {
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.precision-slider-track {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 4px;
+  border-radius: 12px;
+}
+.precision-slider-track:focus-within {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.precision-slider input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 7px;
+  margin: 0;
+  border: 1px solid var(--precision-rail-border);
+  border-radius: 999px;
+  background: linear-gradient(to right,
+    var(--precision-fill) 0%, var(--precision-fill) var(--slider-progress),
+    var(--precision-rail) var(--slider-progress), var(--precision-rail) 100%);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.08);
+  cursor: pointer;
+}
+.precision-slider input[type="range"]:focus-visible { outline: none; }
+.precision-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px; height: 24px; border-radius: 50%;
+  border: 4px solid var(--precision-rim);
+  background: radial-gradient(circle, var(--precision-dot) 0 3px,
+    var(--precision-knob) 3.5px);
+  box-shadow: var(--precision-thumb-shadow);
+  cursor: grab;
+}
+.precision-slider input[type="range"]::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 4px solid var(--precision-rim);
+  background: radial-gradient(circle, var(--precision-dot) 0 3px,
+    var(--precision-knob) 3.5px);
+  box-shadow: var(--precision-thumb-shadow);
+  cursor: grab;
+}
+.precision-slider input[type="range"]:active::-webkit-slider-thumb { cursor: grabbing; }
+.precision-slider input[type="range"]:active::-moz-range-thumb { cursor: grabbing; }
+.precision-slider-hints {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  font-size: 9px;
+  letter-spacing: .005em;
+  line-height: 1.2;
+  color: var(--text-muted);
+}
+.precision-slider-hints span:first-child { text-align: left; }
+.precision-slider-hints span:nth-child(2) { text-align: center; }
+.precision-slider-hints span:last-child { text-align: right; }
+.paired-fields .precision-slider-hints { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .precision-slider input[type="range"],
+  .precision-slider input[type="range"]::-webkit-slider-thumb { transition: none; }
+}
+@media (forced-colors: active) {
+  .precision-slider input[type="range"] {
+    background: Canvas;
+    border-color: CanvasText;
+    forced-color-adjust: auto;
+  }
+  .precision-slider input[type="range"]::-webkit-slider-thumb {
+    background: ButtonText; border-color: ButtonFace;
+    box-shadow: 0 0 0 1px ButtonText;
+  }
+  .precision-slider input[type="range"]::-moz-range-thumb {
+    background: ButtonText; border-color: ButtonFace;
+    box-shadow: 0 0 0 1px ButtonText;
+  }
+  .canvas-export-dock { border-color: CanvasText; }
+}
