@@ -84,6 +84,7 @@ class DesktopApi:
         self._authorized_lock = threading.Lock()
         self._scan_page_lock = threading.Lock()
         self._scan_page_state: tuple[str, list[dict[str, Any]], int] | None = None
+        self._scan_paging_enabled = False
         self._last_heartbeat_time = time.time()
         self._register_default_authorized_paths()
 
@@ -208,7 +209,7 @@ class DesktopApi:
     def _on_scan_finished(self, scan_id: str, result: dict[str, Any]) -> None:
         """Keep large scan rows off the synchronous evaluate_js event path."""
         files = result.get("files")
-        if (isinstance(files, list) and (
+        if (self._scan_paging_enabled and isinstance(files, list) and (
             len(files) > SCAN_INLINE_RESULT_LIMIT
             or len(json.dumps(files, ensure_ascii=False).encode("utf-8")) > SCAN_PAGE_MAX_BYTES
         )):
@@ -547,11 +548,13 @@ class DesktopApi:
             self.add_authorized_folder(folder_path)
         return self.scanner.scan_folder(folder_path)
 
-    def start_scan(self, folder_path: str) -> dict[str, Any]:
-        """Start background asynchronous folder scan."""
-        # A new scan revokes any remaining page access from an older result.
+    def start_scan(self, folder_path: str, paged: bool = False) -> dict[str, Any]:
+        """Start scan, requiring a new UI to explicitly opt into paged rows."""
+        # A legacy UI calls start_scan(folder) and expects a complete inline
+        # scan.finished event; never hand it metadata it cannot consume.
         with self._scan_page_lock:
             self._scan_page_state = None
+            self._scan_paging_enabled = paged is True
         if folder_path and Path(folder_path).is_dir():
             self.add_authorized_folder(folder_path)
         return self.scanner.start_scan(folder_path)
