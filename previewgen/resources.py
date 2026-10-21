@@ -19,11 +19,17 @@ def get_resource_dir() -> Path:
 
 def get_html_dist() -> Path:
     """Find the built frontend HTML bundle."""
-    candidates = [
-        get_resource_dir() / "frontend" / "dist" / "index.html",
-        Path(__file__).parent / "frontend" / "dist" / "index.html",
-        Path(__file__).parent.parent / "frontend" / "dist" / "index.html",
-    ]
+    if getattr(sys, "frozen", False):
+        # A frozen executable must only use assets inside its own bundled
+        # resource root. Never silently substitute a developer checkout.
+        candidates = [get_resource_dir() / "frontend" / "dist" / "index.html"]
+    else:
+        # A source checkout's canonical Vite output wins over older, copied
+        # previewgen/frontend/dist assets left behind by packaging scripts.
+        candidates = [
+            Path(__file__).parent.parent / "frontend" / "dist" / "index.html",
+            Path(__file__).parent / "frontend" / "dist" / "index.html",
+        ]
     for c in candidates:
         if c.is_file():
             return c

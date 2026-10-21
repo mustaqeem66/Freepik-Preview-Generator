@@ -6,6 +6,7 @@ import "./index.css";
 import "./studioPolish.css";
 import "./studioPremium.css";
 import "./studioControls.css";
+import "./studioMotion.css";
 
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
