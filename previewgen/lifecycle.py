@@ -102,6 +102,7 @@ class LifecycleManager:
         *,
         operation_id: str = "batch_worker",
         finished_callback: Callable[[dict[str, Any], str], None] | None = None,
+        selected_files: tuple[Path, ...] | None = None,
     ) -> None:
         """Queue a batch without blocking the GUI bridge on an earlier batch.
 
@@ -136,10 +137,17 @@ class LifecycleManager:
                         if current:
                             progress_callback(cur, tot, msg)
 
-                    summary = process_folder(
-                        input_folder, output_folder, config, progress,
-                        lambda: op.cancel_event.is_set() or is_cancelled(),
-                    )
+                    if selected_files is None:
+                        summary = process_folder(
+                            input_folder, output_folder, config, progress,
+                            lambda: op.cancel_event.is_set() or is_cancelled(),
+                        )
+                    else:
+                        summary = process_folder(
+                            input_folder, output_folder, config, progress,
+                            lambda: op.cancel_event.is_set() or is_cancelled(),
+                            selected_files=selected_files,
+                        )
             except Exception as exc:
                 logging.exception("Batch execution failed")
                 code, message = classify_exception(exc)

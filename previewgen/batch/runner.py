@@ -108,6 +108,8 @@ def process_folder(
     config: PreviewConfig,
     progress: Callable[[int, int, str], None],
     is_cancelled: Callable[[], bool],
+    *,
+    selected_files: tuple[Path, ...] | None = None,
 ) -> dict[str, Any]:
     input_folder = input_folder.resolve()
     output_folder = output_folder.resolve()
@@ -128,18 +130,36 @@ def process_folder(
         # "N / 0" would be misleading.
         _report_progress(stats.files, -1, f"Discovering previews\u2026 ({stats.files} found)")
 
-    raw_files = list(
-        discover_files(
-            input_folder,
-            is_cancelled=is_cancelled,
-            excluded_roots={output_folder} if output_folder != input_folder else set(),
-            limits=limits,
-            supported_extensions=SUPPORTED_EXTENSIONS,
-            stats=discovery_stats,
-            on_progress=_on_discovery_progress,
+    if selected_files is None:
+        raw_files = list(
+            discover_files(
+                input_folder,
+                is_cancelled=is_cancelled,
+                excluded_roots={output_folder} if output_folder != input_folder else set(),
+                limits=limits,
+                supported_extensions=SUPPORTED_EXTENSIONS,
+                stats=discovery_stats,
+                on_progress=_on_discovery_progress,
+            )
         )
-    )
-    cancelled = discovery_stats.cancelled
+        cancelled = discovery_stats.cancelled
+    else:
+        # No os.walk for selected files: the picker provided exact source paths.
+        # The bridge revalidates each file's grant before entering this worker.
+        if len(selected_files) > limits.maximum_files:
+            raise ValueError("Selected file count exceeds batch discovery limit")
+        allowed = {ext.lower() for ext in SUPPORTED_EXTENSIONS}
+        raw_files = []
+        for item in selected_files:
+            if is_cancelled():
+                discovery_stats.cancelled = True
+                break
+            path = Path(item).resolve()
+            if not path.is_file() or path.suffix.lower() not in allowed:
+                raise ValueError(f"Selected asset missing or unsupported: {path.name}")
+            raw_files.append(path)
+        discovery_stats.files = len(raw_files)
+        cancelled = discovery_stats.cancelled
 
     if not raw_files and not cancelled:
         if discovery_stats.truncated:
@@ -233,8 +253,13 @@ def process_folder(
                     failed += 1
                     errors.append(f"{src.name}: {clean_msg}")
             else:
-                rel_parts = src.relative_to(input_folder).parent.parts
-                prefix = f"{'_'.join(rel_parts)}_" if rel_parts else ""
+                if selected_files is None:
+                    rel_parts = src.relative_to(input_folder).parent.parts
+                    prefix = f"{'_'.join(rel_parts)}_" if rel_parts else ""
+                else:
+                    # Source files may come from unrelated directories; keep
+                    # output names stable and use the same collision allocator.
+                    prefix = ""
                 candidate_stem = f"{prefix}{src.stem}"
                 out_name = f"{candidate_stem}.jpg"
                 counter = 1

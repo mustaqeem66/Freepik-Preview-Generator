@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 from previewgen import limits
 from previewgen.assets import calculate_export_dimensions as _calc_export_dimensions
-from previewgen.config import PreviewConfig
+from previewgen.config import DISCOVERY_MAX_FILES, SUPPORTED_3D_EXTENSIONS, SUPPORTED_EXTENSIONS, PreviewConfig
 from previewgen.lifecycle import ActiveOperation, LifecycleManager
 from previewgen.preview_coordinator import DEFAULT_PREVIEW_TIMEOUT_SECONDS, PreviewCoordinator
 from previewgen.preview_server import PreviewFileServer
@@ -60,6 +60,7 @@ class DesktopApi:
         self._batch_operation_id = ""
         self._sequence_counter = itertools.count(1)
         self._authorized_folders: set[Path] = set()
+        self._authorized_files: set[Path] = set()
         self._authorized_lock = threading.Lock()
         self._last_heartbeat_time = time.time()
         self._register_default_authorized_paths()
@@ -98,6 +99,15 @@ class DesktopApi:
                     continue
             return False
         except Exception:
+            return False
+
+    def is_authorized_selected_file(self, path: Path | str) -> bool:
+        """File-picker grants are exact source paths, never parent directories."""
+        try:
+            candidate = Path(path).resolve()
+            with self._authorized_lock:
+                return candidate in self._authorized_files
+        except (OSError, ValueError, TypeError):
             return False
 
     def has_outstanding_work(self) -> bool:
@@ -231,6 +241,54 @@ class DesktopApi:
         except Exception as exc:
             logging.warning("Atomic settings write failed: %s", exc)
             return {"ok": False, "value": False, "error": str(exc)}
+
+    def browse_files(self) -> dict[str, Any]:
+        """Native multi-file selection; grant exact read capability for each supported file.
+
+        No directory is added to _authorized_folders. Unsupported/missing files
+        are reported to the user instead of quietly appearing as exportable.
+        """
+        if not self.window:
+            return {"ok": False, "value": None, "error": "Native file picker is unavailable"}
+        try:
+            res = self.window.create_file_dialog(
+                int(__import__("webview").OPEN_DIALOG), allow_multiple=True,
+            )
+            if not res:
+                return {"ok": True, "value": {"files": [], "rejected": []}, "error": None}
+            files: list[dict[str, Any]] = []
+            rejected: list[str] = []
+            seen: set[Path] = set()
+            if len(res) > 5000:
+                return {"ok": False, "value": None, "error": "Select at most 5000 files at once"}
+            for raw in res:
+                if not isinstance(raw, (str, os.PathLike)):
+                    rejected.append("Invalid picker result")
+                    continue
+                target = Path(raw).resolve()
+                if target in seen:
+                    continue
+                seen.add(target)
+                if not target.is_file():
+                    rejected.append(f"{target.name}: file not found")
+                    continue
+                extension = target.suffix.lower()
+                if extension not in SUPPORTED_EXTENSIONS:
+                    rejected.append(f"{target.name}: unsupported format")
+                    continue
+                with self._authorized_lock:
+                    self._authorized_files.add(target)
+                files.append({
+                    "name": target.name, "path": str(target),
+                    "ext": extension.lstrip(".").upper(),
+                    "is_3d": extension in SUPPORTED_3D_EXTENSIONS or extension in (
+                        ".step", ".stp", ".iges", ".igs"
+                    ),
+                })
+            return {"ok": True, "value": {"files": files, "rejected": rejected}, "error": None}
+        except Exception as exc:
+            logging.warning("Native multi-file picker failed: %s", exc)
+            return {"ok": False, "value": None, "error": "Could not open the native file picker"}
 
     def browse_input_folder(self) -> str:
         """Open native folder picker for input directory."""
@@ -727,6 +785,64 @@ class DesktopApi:
             return {"ok": True, "operationId": op_id}
         except Exception as exc:
             logging.warning("Unable to start batch: %s", exc)
+            return {"ok": False, "error": str(exc)}
+
+    def start_batch_files(
+        self, file_paths: list[str], output_folder: str, config_dict: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Process only files explicitly granted by the native multi-file picker.
+
+        Input file grants are read-only and exact-match. A separate selected or
+        restored output folder remains mandatory; source parents never gain
+        implicit write access.
+        """
+        try:
+            if not isinstance(file_paths, list) or not 0 < len(file_paths) <= 5000:
+                return {"ok": False, "error": "INVALID_FILE_SELECTION"}
+            if not isinstance(output_folder, str) or not output_folder.strip():
+                return {"ok": False, "error": "OUTPUT_FOLDER_REQUIRED"}
+            output = Path(output_folder).resolve()
+            if not self.is_authorized_path(output):
+                return {"ok": False, "error": "UNAUTHORIZED_OUTPUT_PATH"}
+            if not output.parent.is_dir():
+                return {"ok": False, "error": "Output folder parent does not exist"}
+
+            selected: list[Path] = []
+            seen: set[Path] = set()
+            for raw in file_paths:
+                if not isinstance(raw, str) or not raw.strip():
+                    return {"ok": False, "error": "INVALID_FILE_SELECTION"}
+                source = Path(raw).resolve()
+                if not self.is_authorized_selected_file(source):
+                    return {"ok": False, "error": "UNAUTHORIZED_SELECTED_FILE"}
+                if not source.is_file() or source.suffix.lower() not in SUPPORTED_EXTENSIONS:
+                    return {"ok": False, "error": f"INVALID_SELECTED_FILE: {source.name}"}
+                if source not in seen:
+                    seen.add(source)
+                    selected.append(source)
+            if len(selected) > DISCOVERY_MAX_FILES:
+                return {"ok": False, "error": "Selected file limit exceeded"}
+            cfg = PreviewConfig.from_mapping(config_dict, mode="strict-export")
+            cfg.position = "custom"
+            op_id = f"batch_{uuid.uuid4().hex[:12]}"
+            with self._batch_start_lock:
+                self._batch_operation_id = op_id
+                self.lifecycle.start_batch(
+                    output, output, cfg,
+                    progress_callback=lambda cur, tot, msg: self._dispatch_envelope(
+                        "batch.progress", {"current": cur, "total": tot, "message": msg},
+                        operation_id=op_id,
+                    ),
+                    is_cancelled=lambda: False,
+                    operation_id=op_id,
+                    selected_files=tuple(selected),
+                    finished_callback=lambda summary, finished_id: self._on_batch_finished(
+                        summary, finished_id, notify_enabled=config_dict.get("desktopNotifications") is True
+                    ),
+                )
+            return {"ok": True, "operationId": op_id}
+        except Exception as exc:
+            logging.warning("Could not start selected-file batch: %s", exc)
             return {"ok": False, "error": str(exc)}
 
     def cancel_batch(self) -> dict[str, Any]:
