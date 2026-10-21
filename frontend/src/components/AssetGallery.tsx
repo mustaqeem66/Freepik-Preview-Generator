@@ -103,12 +103,13 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
       try {
         const result = await api.request_thumbnails(wanted);
         if (!result.ok || !result.value) return;
+        const returned = result.value;
         setImages((old) => {
           const current = wantedRef.current;
           const visible = Object.fromEntries(
             [...current].flatMap((p) => old[p] ? [[p, old[p]]] : [])
           );
-          for (const [path, url] of Object.entries(result.value)) {
+          for (const [path, url] of Object.entries(returned)) {
             if (current.has(path)) visible[path] = url;
           }
           return visible;
