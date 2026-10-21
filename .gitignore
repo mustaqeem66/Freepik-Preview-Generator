@@ -109,3 +109,6 @@ local-check-report.json
 
 # Readiness marker the GUI smoke test writes into the working directory
 gui_ready.txt
+
+# Local-only renderer fidelity and fixture coverage evidence
+renderer-matrix-local.json

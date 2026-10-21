@@ -30,6 +30,7 @@ def test_full_release_plan_includes_capability_gate_and_all_tests(tmp_path: Path
     names = [check.name for check in checks]
     assert "backend-all-tests" in names
     assert "renderer-capabilities" in names
+    assert "renderer-format-inventory" in names
     assert "backend-core-tests" not in names
 
 
