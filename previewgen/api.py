@@ -56,6 +56,13 @@ class DesktopApi:
         self.thumbnail_coordinator = ThumbnailCoordinator(
             self.preview_server, self.preview_coordinator.render_sync, self._dispatch_envelope
         )
+        # A separate one-item cache ensures source comparison does not evict
+        # the active gallery images. Both share the bounded sync worker slot.
+        self.comparison_coordinator = ThumbnailCoordinator(
+            self.preview_server, self.preview_coordinator.render_sync, self._dispatch_envelope,
+            max_visible=1, max_retained=1, max_dimension=850, timeout=10.0,
+            event_prefix="comparison", source_only=True,
+        )
         self.probe_coordinator = ProbeCoordinator()
         self.probe_coordinator.set_dispatch_fn(self._dispatch_envelope)
         self._preview_request_lock = threading.Lock()
@@ -144,7 +151,8 @@ class DesktopApi:
             if self.lifecycle.get_active_operations():
                 return True
             if (self.preview_coordinator.is_busy() or self.probe_coordinator.is_busy()
-                    or self.thumbnail_coordinator.is_busy()):
+                    or self.thumbnail_coordinator.is_busy()
+                    or self.comparison_coordinator.is_busy()):
                 return True
             thread = self.scanner.active_scan_thread
             if thread is not None and thread.is_alive():
@@ -513,6 +521,45 @@ class DesktopApi:
         except Exception as exc:
             logging.debug("Thumbnail scheduling failed: %s", exc)
             return {"ok": False, "value": None, "error": "THUMBNAIL_REQUEST_FAILED"}
+
+    def request_source_comparison(self, source: str) -> dict[str, Any]:
+        """Read-only, session-limited source visualization for the Before view.
+
+        Work is queued in the already isolated rendering worker. No arbitrary
+        bridge-supplied filesystem path is accepted without an existing grant.
+        """
+        if source == "":
+            try:
+                self.comparison_coordinator.request([])
+                return {"ok": True, "value": {}, "error": None}
+            except Exception:
+                return {"ok": False, "value": None, "error": "COMPARISON_UNAVAILABLE"}
+        if not isinstance(source, str) or not source.strip():
+            return {"ok": False, "value": None, "error": "INVALID_SOURCE"}
+        try:
+            import urllib.parse
+
+            if source.startswith("zip://"):
+                parsed = urllib.parse.urlparse(source)
+                target = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
+                entry = urllib.parse.parse_qs(parsed.query).get("entry", [""])[0]
+                extension = Path(entry).suffix.lower()
+                if not entry or target.suffix.lower() != ".zip":
+                    return {"ok": False, "value": None, "error": "INVALID_SOURCE"}
+            else:
+                target = Path(source).resolve()
+                extension = target.suffix.lower()
+            if (extension not in SUPPORTED_EXTENSIONS
+                    or extension == ".zip"
+                    or extension in SUPPORTED_3D_EXTENSIONS
+                    or extension in {".step", ".stp", ".iges", ".igs"}):
+                return {"ok": False, "value": None, "error": "UNSUPPORTED_SOURCE_COMPARISON"}
+            if not (self.is_authorized_path(target) or self.is_authorized_selected_file(target)):
+                return {"ok": False, "value": None, "error": "UNAUTHORIZED_SOURCE"}
+            urls = self.comparison_coordinator.request([source])
+            return {"ok": True, "value": urls, "error": None}
+        except Exception:
+            return {"ok": False, "value": None, "error": "COMPARISON_UNAVAILABLE"}
 
     def start_preview(
         self, file_path: str, config_dict: dict[str, Any], request_id: int | None = None
@@ -960,6 +1007,7 @@ class DesktopApi:
 
     def cleanup(self) -> None:
         """Orderly shutdown sequence."""
+        self.comparison_coordinator.close()
         self.thumbnail_coordinator.close()
         self.preview_coordinator.shutdown()
         self.probe_coordinator.shutdown()

@@ -34,7 +34,20 @@ class ThumbnailCoordinator:
         server: ThumbnailServer,
         render: Callable[..., dict[str, Any]],
         dispatch: Callable[[str, dict[str, Any], str], None],
+        *,
+        max_visible: int = MAX_VISIBLE_THUMBNAILS,
+        max_retained: int = MAX_RETAINED_THUMBNAILS,
+        max_dimension: int = THUMBNAIL_MAX_DIMENSION,
+        timeout: float = THUMBNAIL_RENDER_TIMEOUT,
+        event_prefix: str = "thumbnail",
+        source_only: bool = False,
     ) -> None:
+        self._max_visible = max_visible
+        self._max_retained = max_retained
+        self._max_dimension = max_dimension
+        self._timeout = timeout
+        self._event_prefix = event_prefix
+        self._source_only = source_only
         self._server = server
         self._render = render
         self._dispatch = dispatch
@@ -51,8 +64,8 @@ class ThumbnailCoordinator:
 
     def request(self, paths: list[str]) -> dict[str, str]:
         """Return cached URLs; queue only missing visible assets."""
-        if len(paths) > MAX_VISIBLE_THUMBNAILS:
-            raise ValueError(f"Too many visible thumbnails (limit {MAX_VISIBLE_THUMBNAILS})")
+        if len(paths) > self._max_visible:
+            raise ValueError(f"Too many visible previews (limit {self._max_visible})")
         if any(not isinstance(path, str) or not path for path in paths):
             raise ValueError("Invalid thumbnail source path")
         paths = list(dict.fromkeys(paths))
@@ -96,10 +109,12 @@ class ThumbnailCoordinator:
             try:
                 # Deliberately omit user overlays and expensive per-asset
                 # inspector changes from gallery navigation thumbnails.
+                options = {"source_only": True} if self._source_only else {}
                 result = self._render(
                     path, {"text": "", "opacity": 0, "logoPath": ""},
-                    max_dimension=THUMBNAIL_MAX_DIMENSION,
-                    timeout_seconds=THUMBNAIL_RENDER_TIMEOUT,
+                    max_dimension=self._max_dimension,
+                    timeout_seconds=self._timeout,
+                    **options,
                 )
                 if result.get("status") != "success":
                     raise RuntimeError(str(result.get("error") or "Thumbnail unavailable"))
@@ -115,10 +130,10 @@ class ThumbnailCoordinator:
                         raise RuntimeError("Could not retain thumbnail")
                     self._cache[path] = (url, time.monotonic())
                     self._cache.move_to_end(path)
-                    while len(self._cache) > MAX_RETAINED_THUMBNAILS:
+                    while len(self._cache) > self._max_retained:
                         _, old = self._cache.popitem(last=False)
                         self._server.release_jpeg(old[0], force=True)
-                self._dispatch("thumbnail.ready", {"path": path, "url": url}, "thumbnail")
+                self._dispatch(f"{self._event_prefix}.ready", {"path": path, "url": url}, self._event_prefix)
             except Exception as exc:
                 logging.debug("Thumbnail unavailable for selected asset: %s", exc)
                 with self._lock:
@@ -126,7 +141,7 @@ class ThumbnailCoordinator:
                         self._thread = None
                         return
                     self._failed.add(path)
-                self._dispatch("thumbnail.failed", {"path": path}, "thumbnail")
+                self._dispatch(f"{self._event_prefix}.failed", {"path": path}, self._event_prefix)
 
     def close(self) -> None:
         with self._lock:

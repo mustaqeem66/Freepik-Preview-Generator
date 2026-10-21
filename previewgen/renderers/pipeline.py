@@ -116,3 +116,43 @@ def preview_jpeg_bytes(
     # P1 root cause 11: fast preview JPEG encoding without expensive optimization passes
     preview.save(buffer, format="JPEG", quality=80, optimize=False)
     return buffer.getvalue(), orig_w, orig_h
+
+
+
+def source_preview_jpeg_bytes(
+    source_path: Path | str,
+    max_dimension: int = 850,
+) -> tuple[bytes, int, int]:
+    """Preview unbranded source content, not the branded diagonal JPG layout.
+
+    This is a *view of decoded source artwork*, not a lossless source dump.
+    Transparent pixels are displayed over a neutral checkerboard, and the
+    resulting bounded RGB image is encoded to JPEG for the private loopback
+    preview server. Runs only in a renderer child process.
+    """
+    if not 1 <= max_dimension <= 850:
+        raise ValueError("Source preview size must be between 1 and 850")
+    source = load_source_image(
+        Path(source_path), PreviewConfig(text="", opacity=0.0),
+        max_dimension=max_dimension,
+    ).convert("RGBA")
+    original_width, original_height = source.size
+    if max(source.size) > max_dimension:
+        source.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+    from PIL import ImageDraw
+
+    checker = Image.new("RGBA", source.size, (242, 244, 247, 255))
+    draw = ImageDraw.Draw(checker)
+    tile = 16
+    for y in range(0, source.height, tile):
+        for x in range(0, source.width, tile):
+            if (x // tile + y // tile) % 2:
+                draw.rectangle(
+                    (x, y, min(source.width - 1, x + tile - 1),
+                     min(source.height - 1, y + tile - 1)),
+                    fill=(216, 220, 227, 255),
+                )
+    flattened = Image.alpha_composite(checker, source).convert("RGB")
+    buffer = BytesIO()
+    flattened.save(buffer, format="JPEG", quality=85, optimize=False)
+    return buffer.getvalue(), original_width, original_height

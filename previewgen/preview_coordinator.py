@@ -59,7 +59,7 @@ def _preview_worker(job_queue: Any, result_queue: Any) -> None:  # pragma: no co
     proc_module.apply_memory_limit(proc_limit)
 
     from previewgen.config import PreviewConfig
-    from previewgen.renderers.pipeline import preview_jpeg_bytes
+    from previewgen.renderers.pipeline import preview_jpeg_bytes, source_preview_jpeg_bytes
 
     while True:
         job = job_queue.get()
@@ -89,9 +89,14 @@ def _preview_worker(job_queue: Any, result_queue: Any) -> None:  # pragma: no co
             cfg = PreviewConfig.from_mapping(payload["config_dict"], mode="preview")
             cfg.position = "custom"
 
-            jpeg_bytes, orig_w, orig_h = preview_jpeg_bytes(
-                source_path, cfg, max_dimension=payload["max_dimension"]
-            )
+            if payload.get("source_only") is True:
+                jpeg_bytes, orig_w, orig_h = source_preview_jpeg_bytes(
+                    source_path, max_dimension=payload["max_dimension"]
+                )
+            else:
+                jpeg_bytes, orig_w, orig_h = preview_jpeg_bytes(
+                    source_path, cfg, max_dimension=payload["max_dimension"]
+                )
             result_queue.put({
                 "job_id": job_id,
                 "status": "success",
@@ -362,6 +367,8 @@ class PreviewCoordinator:
         config_dict: dict[str, Any],
         max_dimension: int = 850,
         timeout_seconds: float = DEFAULT_PREVIEW_TIMEOUT_SECONDS,
+        *,
+        source_only: bool = False,
     ) -> dict[str, Any]:
         """Bounded synchronous preview render for legacy/CLI callers.
 
@@ -378,6 +385,7 @@ class PreviewCoordinator:
                     "source": str(source),
                     "config_dict": config_dict,
                     "max_dimension": max_dimension,
+                    "source_only": source_only,
                 })
                 start_t = time.time()
                 while True:
