@@ -72,7 +72,15 @@ exactly two additions, `pycairo` and `pygobject`, both Linux-markered.
 - Every apt name was checked against the jammy `main`/`universe` Packages index, but the
   build was not run on an actual ubuntu-22.04 runner; PyGObject compiled against this
   machine's girepository headers.
-- Actions minutes are exhausted, so neither workflow executes on push. `[skip ci]` in the
-  commit message is therefore informational, not a bypass.
-- Bundling the GTK/WebKit stack grows the Linux bundle to roughly 400 MB. Nothing asserts a
-  size ceiling; if that matters it needs an explicit check rather than a review comment.
+- This is the first time the real `gi` path has executed, and pywebview now logs four
+  `Error while processing window.native.<x>: unable to get the value` lines while it
+  introspects `DesktopApi`. Cosmetic — the exit code and marker are correct — but it is new
+  noise that deserves its own follow-up.
+- Bundling the GTK/WebKit stack grows the measured Linux build directory to **574 MB**
+  (`du -sh dist/PreviewGen`). Nothing asserts a size ceiling; if that matters it needs an
+  explicit check rather than a review comment.
+- `pr-checks.yml` and `build.yml` have not executed on this repository since 11:09Z today;
+  every run after that is CodeQL, which passes on this branch. None of the evidence above was
+  produced by CI, so the first real runner execution can still surface jammy-specific
+  problems. If it does, the failure will now be loud: the gate reports the missing binding
+  instead of writing its own readiness marker.
