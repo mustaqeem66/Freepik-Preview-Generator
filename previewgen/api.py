@@ -208,7 +208,10 @@ class DesktopApi:
     def _on_scan_finished(self, scan_id: str, result: dict[str, Any]) -> None:
         """Keep large scan rows off the synchronous evaluate_js event path."""
         files = result.get("files")
-        if isinstance(files, list) and len(files) > SCAN_INLINE_RESULT_LIMIT:
+        if (isinstance(files, list) and (
+            len(files) > SCAN_INLINE_RESULT_LIMIT
+            or len(json.dumps(files, ensure_ascii=False).encode("utf-8")) > SCAN_PAGE_MAX_BYTES
+        )):
             # Scanner callbacks can race a newer scan start just after their
             # own is-current check. Never replace the new scan's page cache.
             with self.scanner.scan_lock:
