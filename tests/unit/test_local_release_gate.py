@@ -59,6 +59,8 @@ def test_bundle_csp_check_requires_production_bundle_environment(tmp_path: Path,
     assert data["summary"]["passed"] == 4
     assert data["summary"]["failed"] == 0
     assert all(entry["status"] == "pass" for entry in data["results"])
+    assert all("/" not in entry["argv"][0] and "\\" not in entry["argv"][0]
+               for entry in data["results"])
     assert "No real native WebView" in data["note"]
 
 
