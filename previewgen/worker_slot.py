@@ -126,6 +126,9 @@ class WorkerSlot:
     def _spawn_unlocked(self) -> None:
         self._job_queue = mp.Queue()
         self._result_queue = mp.Queue()
+        # Create the Job Object before starting the child so the window in which
+        # the worker can spawn an unmanaged descendant is only the assign() call.
+        job_handle = proc.WindowsJob(self._memory_limit_bytes) if sys.platform == "win32" else None
         process = mp.Process(
             target=self._target,
             args=(self._job_queue, self._result_queue),
@@ -133,11 +136,11 @@ class WorkerSlot:
             name=f"previewgen-{self._name}",
         )
         process.start()
-        job_handle = None
-        if sys.platform == "win32" and process.pid is not None:
-            job_handle = proc.WindowsJob(self._memory_limit_bytes)
-            if job_handle.active:
-                job_handle.assign(process.pid)
+        if job_handle is not None:
+            if not job_handle.active:
+                logging.warning("%s worker has no Job Object; containment is degraded", self._name)
+            elif process.pid is None or not job_handle.assign(process.pid):
+                logging.warning("Could not assign %s worker to its Job Object", self._name)
         self._process = process
         self._job_handle = job_handle
         self._spawn_count += 1

@@ -97,7 +97,9 @@ def extract_f3d_thumbnail(path: Path) -> Image.Image | None:
             for name in zf.namelist():
                 if "thumbnail" in name.lower() and name.lower().endswith((".png", ".jpg", ".jpeg")):
                     if zf.getinfo(name).file_size > previewgen_config.MAX_EMBEDDED_THUMBNAIL_BYTES:
-                        return None
+                        # Keep looking: Fusion archives often carry a second,
+                        # smaller preview alongside an oversized one.
+                        continue
                     data = zf.read(name)
                     return limits.bounded_image_from_bytes(data, "Fusion 360 thumbnail")
         return None

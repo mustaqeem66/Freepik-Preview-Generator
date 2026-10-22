@@ -198,6 +198,11 @@ class RendererProcessPool:
         self._cancelled.clear()
 
         try:
+            # Create the Job Object before the child exists so the window in which
+            # it can spawn an unmanaged descendant is only the assign() call.
+            if sys.platform == "win32":
+                self._job = proc.WindowsJob(previewgen_config.MAX_RENDERER_MEMORY_BYTES)
+
             self._process = mp.Process(
                 target=_render_worker,
                 args=(str(source_path), str(temp_output), config_dict, self._result_queue),
@@ -206,11 +211,14 @@ class RendererProcessPool:
             self._process.start()
 
             # Windows: bind the child to a Job Object so every descendant it
-            # spawns is killed when the job handle is closed.
+            # spawns is killed when the job handle is closed. A failed assign
+            # leaves only the coarser taskkill fallback, so make it visible.
             if sys.platform == "win32":
-                self._job = proc.WindowsJob(previewgen_config.MAX_RENDERER_MEMORY_BYTES)
-                if self._job.active and self._process.pid is not None:
-                    self._job.assign(self._process.pid)
+                pid = self._process.pid
+                if self._job is None or not self._job.active:
+                    logging.warning("Windows Job Object unavailable; renderer containment is degraded")
+                elif pid is None or not self._job.assign(pid):
+                    logging.warning("Could not assign renderer pid %s to the Job Object", pid)
 
             start_time = time.monotonic()
 

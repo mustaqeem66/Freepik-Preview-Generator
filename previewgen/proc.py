@@ -279,8 +279,14 @@ def apply_memory_limit(limit_bytes: int) -> bool:
     """
     if limit_bytes <= 0:
         return False
-    if _IS_WINDOWS or sys.platform == "darwin":
-        # macOS Darwin kernels do not enforce RLIMIT_AS on memory allocations
+    if _IS_WINDOWS:
+        # The parent-owned Job Object is the Windows ceiling.
+        return False
+    if sys.platform == "darwin":
+        # Darwin kernels do not enforce RLIMIT_AS on memory allocations and no
+        # Job Object equivalent exists, so an isolated child is uncapped. This
+        # is a documented platform limitation, not a per-render anomaly: logging
+        # it above debug would warn the user on every single preview.
         return False
     try:
         import resource
@@ -292,6 +298,7 @@ def apply_memory_limit(limit_bytes: int) -> bool:
         resource.setrlimit(resource.RLIMIT_AS, (new_soft, hard))
         return True
     except Exception as exc:
+        # Called once per isolated render, so a persistent failure would flood the log.
         logging.debug("Could not apply RLIMIT_AS memory limit: %s", exc)
         return False
 
