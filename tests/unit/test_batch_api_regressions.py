@@ -35,7 +35,7 @@ def test_single_export_skip_corrupt_target(tmp_path):
     Image.new("RGB", (32, 32), "red").save(source)
     output.write_bytes(b"not a valid jpeg")
     api = DesktopApi()
-    api.add_authorized_input_folder(tmp_path)  # Simulates the user-selected root from the folder picker
+    api._add_authorized_input_folder(tmp_path)  # Simulates the user-selected root from the folder picker
     result = api.export_preview(str(source), {
         "outputFolder": str(tmp_path), "overwritePolicy": "skip"
     })
@@ -51,7 +51,7 @@ def test_single_export_rename_does_not_overwrite(tmp_path):
     Image.new("RGB", (32, 32), "red").save(source)
     output.write_bytes(b"existing output")
     api = DesktopApi()
-    api.add_authorized_input_folder(tmp_path)
+    api._add_authorized_input_folder(tmp_path)
     result = api.export_preview(str(source), {
         "outputFolder": str(tmp_path), "overwritePolicy": "rename"
     })
@@ -65,7 +65,7 @@ def test_single_export_rejects_unauthorized_output(tmp_path):
     Image.new("RGB", (32, 32), "red").save(source)
     outside = tmp_path.parent / f"unauthorized_out_{tmp_path.name}"
     api = DesktopApi()
-    api.add_authorized_input_folder(tmp_path)
+    api._add_authorized_input_folder(tmp_path)
     result = api.export_preview(str(source), {"outputFolder": str(outside)})
     assert result["ok"] is False
     assert result["error"] == "UNAUTHORIZED_PATH"
@@ -79,7 +79,7 @@ def test_single_export_same_folder_requires_authorized_source_root(tmp_path):
     result = api.export_preview(str(source), {})
     assert result["ok"] is False
     assert result["error"] == "UNAUTHORIZED_SOURCE"
-    api.add_authorized_input_folder(tmp_path)
+    api._add_authorized_input_folder(tmp_path)
     result = api.export_preview(str(source), {})
     assert result["ok"] is True, result
     assert (tmp_path / "asset.jpg").is_file()
@@ -91,10 +91,10 @@ def test_batch_start_returns_id_and_emits_typed_events(tmp_path):
     Image.new("RGB", (32, 32), "red").save(source / "test.png")
     api = DesktopApi()
     # Simulate user-authorized source and output chooser roots.
-    api.add_authorized_input_folder(source)
-    api.add_authorized_output_folder(tmp_path / "out")
+    api._add_authorized_input_folder(source)
+    api._add_authorized_output_folder(tmp_path / "out")
     window = FakeWindow()
-    api.set_window(window)
+    api._set_window(window)
     response = api.start_batch(str(source), str(tmp_path / "out"), {
         "overwritePolicy": "rename"
     })
@@ -171,7 +171,7 @@ def test_single_export_zip_member_defaults_to_archive_folder(tmp_path):
 
     uri = f"zip://{urllib.parse.quote(archive.as_posix(), safe='/:')}?entry=asset.png"
     api = DesktopApi()
-    api.add_authorized_input_folder(tmp_path)
+    api._add_authorized_input_folder(tmp_path)
     result = api.export_preview(uri, {})
     assert result["ok"] is True, result
     assert Path(result["value"]["path"]).parent == tmp_path
@@ -190,7 +190,7 @@ def test_single_export_is_visible_as_outstanding_work(tmp_path, monkeypatch):
     Image.new("RGB", (32, 32), "red").save(source)
 
     api = DesktopApi()
-    api.add_authorized_input_folder(tmp_path)
+    api._add_authorized_input_folder(tmp_path)
     assert api.has_outstanding_work() is False
     result = api.export_preview(str(source), {})
     assert result["ok"] is True, result
@@ -207,13 +207,13 @@ def test_batch_rejects_destination_not_selected_by_user(tmp_path):
     source.mkdir()
     destination.parent.mkdir()
     api = DesktopApi()
-    api.add_authorized_input_folder(source)
+    api._add_authorized_input_folder(source)
     try:
         response = api.start_batch(str(source), str(destination), {"overwritePolicy": "rename"})
         assert response["ok"] is False
         assert response["error"] == "UNAUTHORIZED_OUTPUT_PATH"
         assert not destination.exists()
-        assert not api.is_authorized_path(destination)
+        assert not api._is_authorized_path(destination)
     finally:
         api.cleanup()
 
@@ -225,8 +225,8 @@ def test_batch_allows_output_after_explicit_folder_authorization(tmp_path, monke
     source.mkdir()
     destination.mkdir()
     api = DesktopApi()
-    api.add_authorized_input_folder(source)
-    api.add_authorized_output_folder(destination)
+    api._add_authorized_input_folder(source)
+    api._add_authorized_output_folder(destination)
     response = api.start_batch(str(source), str(destination), {"overwritePolicy": "rename"})
     assert response["ok"] is True, response
     api.lifecycle.batch_thread.join(timeout=30)

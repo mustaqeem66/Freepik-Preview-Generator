@@ -35,7 +35,7 @@ def test_bridge_reads_require_picker_grants_and_output_grant_is_not_read_grant(
         api.probe_coordinator, "submit_probe",
         lambda **kwargs: calls.append(("probe", kwargs)),
     )
-    api.add_authorized_output_folder(tmp_path)
+    api._add_authorized_output_folder(tmp_path)
     assert api._source_read_error(str(art)) == "UNAUTHORIZED_SOURCE"
 
     denied = [
@@ -51,7 +51,7 @@ def test_bridge_reads_require_picker_grants_and_output_grant_is_not_read_grant(
     assert calls == []
     assert not list(tmp_path.glob("*.jpg"))
 
-    api.add_authorized_input_folder(tmp_path)
+    api._add_authorized_input_folder(tmp_path)
     assert api._source_read_error(str(art)) is None
     assert api.start_preview(str(art), {})["ok"] is True
     assert api.start_probe(str(art))["ok"] is True
@@ -83,7 +83,7 @@ def test_granted_folder_symlink_must_not_escape_source_root(api, tmp_path):
         linked.symlink_to(private)
     except (OSError, NotImplementedError):
         pytest.skip("symlinks unavailable")
-    api.add_authorized_input_folder(root)
+    api._add_authorized_input_folder(root)
     assert api._source_read_error(str(linked)) == "UNAUTHORIZED_SOURCE"
 
 
@@ -101,7 +101,7 @@ def test_zip_member_needs_authorized_archive_and_safe_entry(api, tmp_path, monke
     )
     assert api.start_preview(source, {})["error"] == "UNAUTHORIZED_SOURCE"
     assert attempted == []
-    api.add_authorized_input_folder(tmp_path)
+    api._add_authorized_input_folder(tmp_path)
     assert api.start_preview(source, {})["ok"] is True
     assert len(attempted) == 1
 
@@ -120,7 +120,7 @@ def test_arbitrary_scan_path_never_grants_itself(api, tmp_path, monkeypatch):
     assert api.scan_folder(folder)["error"] == "UNAUTHORIZED_INPUT_PATH"
     assert api.save_settings({"inputFolder": folder})["error"] == "UNAUTHORIZED_INPUT_PATH"
     assert calls == []
-    api.add_authorized_input_folder(folder)
+    api._add_authorized_input_folder(folder)
     assert api.start_scan(folder)["ok"] is True
     assert calls == [folder]
 

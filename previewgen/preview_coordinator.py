@@ -152,6 +152,8 @@ class PreviewCoordinator:
     Supervises live preview requests with latest-wins semantics.
     Ensures at most one active preview job and one pending latest request.
     """
+    _serializable = False  # never reachable from window.pywebview.api
+
 
     def __init__(self, preview_server: PreviewFileServer) -> None:
         self.preview_server = preview_server

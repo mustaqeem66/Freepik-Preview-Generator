@@ -43,6 +43,8 @@ class ScannerService:
     Background folder scanning service with cancellation, quotas, and progress events.
     Completely GUI-independent - no webview imports.
     """
+    _serializable = False  # never reachable from window.pywebview.api
+
 
     def __init__(self) -> None:
         self.active_scan_context: ScanContext | None = None

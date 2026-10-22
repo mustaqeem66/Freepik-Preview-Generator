@@ -20,15 +20,15 @@ class Window:
 
 def test_rejects_unauthorized_window_actions():
     api = DesktopApi.__new__(DesktopApi)
-    api.window = Window()
+    api._window = Window()
     api._custom_chrome_enabled = False
     assert api.window_action("close")["error"] == "NATIVE_CHROME_UNAVAILABLE"
-    assert api.window.actions == []
+    assert api._window.actions == []
 
 
 def test_only_explicit_minimize_fullscreen_and_close_allowed(monkeypatch):
     api = DesktopApi.__new__(DesktopApi)
-    api.window = Window()
+    api._window = Window()
     api._custom_chrome_enabled = True
     assert api.window_action("__class__")["error"] == "INVALID_WINDOW_ACTION"
     assert api.window_action("minimize")["ok"] is True
@@ -44,12 +44,12 @@ def test_only_explicit_minimize_fullscreen_and_close_allowed(monkeypatch):
 
     monkeypatch.setattr("previewgen.api.threading.Timer", Timer)
     assert api.window_action("close")["ok"] is True
-    assert api.window.actions == ["minimize", "fullscreen", "close"]
+    assert api._window.actions == ["minimize", "fullscreen", "close"]
 
 
 def test_platform_metadata_tracks_native_fallback(monkeypatch):
     api = DesktopApi.__new__(DesktopApi)
-    api.window = Window()
+    api._window = Window()
     api._custom_chrome_enabled = True
     monkeypatch.setattr("previewgen.api.sys.platform", "darwin")
     assert api.get_window_chrome()["value"] == {"enabled": True, "platform": "macos"}

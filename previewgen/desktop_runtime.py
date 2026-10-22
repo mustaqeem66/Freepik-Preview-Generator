@@ -127,7 +127,7 @@ def start_desktop_app() -> int:
         hidden=is_headless,
     )
     # Bind api to window
-    api.set_window(window, custom_chrome=custom_chrome)
+    api._set_window(window, custom_chrome=custom_chrome)
 
     # Navigation lockdown - block external navigation
     def on_navigating(url: str) -> bool:

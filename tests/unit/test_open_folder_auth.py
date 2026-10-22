@@ -54,7 +54,7 @@ def test_open_folder_opens_registered_path(launched):
     api = DesktopApi()
     with tempfile.TemporaryDirectory() as tmp:
         target = Path(tmp).resolve()
-        api.add_authorized_folder(target)
+        api._add_authorized_folder(target)
         result = api.open_folder(str(target))
 
     assert result["ok"] is True
@@ -67,7 +67,7 @@ def test_open_folder_allows_subdirectory_of_registered_root(launched):
         root = Path(tmp).resolve()
         child = root / "nested" / "child"
         child.mkdir(parents=True)
-        api.add_authorized_folder(root)
+        api._add_authorized_folder(root)
         result = api.open_folder(str(child))
 
     assert result["ok"] is True
@@ -78,7 +78,7 @@ def test_open_folder_rejects_missing_without_creating_it(launched):
     api = DesktopApi()
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp).resolve()
-        api.add_authorized_folder(root)
+        api._add_authorized_folder(root)
         missing = root / "does_not_exist"
         result = api.open_folder(str(missing))
 
@@ -100,7 +100,7 @@ def test_linux_open_folder_falls_back_to_gio_when_xdg_open_missing(monkeypatch, 
     monkeypatch.setattr("previewgen.api.shutil.which", lambda cmd: "/usr/bin/gio" if cmd == "gio" else None)
     api = DesktopApi()
     try:
-        api.add_authorized_folder(tmp_path)
+        api._add_authorized_folder(tmp_path)
         response = api.open_folder(str(tmp_path))
         assert response["ok"] is True
         assert launched == [["/usr/bin/gio", "open", str(tmp_path.resolve())]]
@@ -113,7 +113,7 @@ def test_linux_open_folder_reports_missing_system_opener_without_launch(monkeypa
     monkeypatch.setattr("previewgen.api.shutil.which", lambda _cmd: None)
     api = DesktopApi()
     try:
-        api.add_authorized_folder(tmp_path)
+        api._add_authorized_folder(tmp_path)
         response = api.open_folder(str(tmp_path))
         assert response["ok"] is False
         assert response["error"] == "NO_FOLDER_OPENER"

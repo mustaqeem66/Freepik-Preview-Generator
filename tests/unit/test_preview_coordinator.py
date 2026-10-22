@@ -115,7 +115,7 @@ def test_start_preview_defers_extraction_off_the_bridge_thread(tmp_path, monkeyp
     monkeypatch.setattr(limits, "extract_zip_member_bounded", _boom)
 
     uri = _zip_uri(zip_path, "asset.png")
-    api.add_authorized_input_folder(tmp_path)
+    api._add_authorized_input_folder(tmp_path)
     result = api.start_preview(uri, {}, request_id=7)
 
     assert result["ok"] is True
