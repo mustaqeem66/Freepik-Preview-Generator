@@ -5,3 +5,8 @@ project-includes = [
     "previewgen/**",
     "processor.py",
 ]
+# Pin the platform instead of inheriting the runner's. `resource` and
+# `os.killpg` exist only on POSIX, so a host-derived platform made this gate
+# pass on Linux/macOS and fail on Windows for code that is guarded at runtime.
+# `all` evaluates both sides of every `sys.platform` check on every runner.
+python-platform = "all"
