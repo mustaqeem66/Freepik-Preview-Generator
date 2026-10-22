@@ -140,10 +140,17 @@ def test_smoke_watchdog_exits_zero_when_the_frontend_never_reports_ready(
     monkeypatch.setenv("PREVIEWGEN_READY_MARKER", str(marker))
 
     exited = threading.Event()
-    monkeypatch.setattr(runtime.os, "_exit", lambda code: exited.set())
+    exit_codes: list[int] = []
+
+    def _record_exit(code: int) -> None:
+        exit_codes.append(code)
+        exited.set()
+
+    monkeypatch.setattr(runtime.os, "_exit", _record_exit)
 
     assert runtime.start_desktop_app() == 0
     assert exited.wait(5.0), "smoke watchdog never terminated the process"
+    assert exit_codes == [0]
     assert fake_webview.window.destroyed is True
     assert not marker.exists()
 
