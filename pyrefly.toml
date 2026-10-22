@@ -1,4 +1,7 @@
+# Pyrefly gates the shipped application code. Tests are validated by running
+# them, and scripts/ is CI tooling whose platform imports (gi, win32) only
+# resolve on one runner each.
 project-includes = [
-    "**/*.py*",
-    "**/*.ipynb",
+    "previewgen/**",
+    "processor.py",
 ]

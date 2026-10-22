@@ -1,8 +1,13 @@
 # Development / build dependencies. Regenerate the hash-pinned lock with:
 #
 #   uv pip compile --universal --generate-hashes --python-version 3.12 \
+#       -c requirements-dev-lock.txt \
 #       --output-file requirements-dev-lock.txt requirements-dev.in
+#
+# The self-constraint keeps every existing pin; without it a plain recompile
+# also upgrades unrelated transitive dependencies.
 -r requirements.in
 pyinstaller>=6.0
 pytest>=8.0
 ruff>=0.17
+pyrefly>=1.4
