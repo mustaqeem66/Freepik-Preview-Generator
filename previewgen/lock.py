@@ -156,6 +156,11 @@ class DirectoryLock:
                 getattr(errno, "ENOSYS", 38),
                 getattr(errno, "EOPNOTSUPP", 95),
                 getattr(errno, "ENOTSUP", 95),
+                # ENOLCK/EPERM are what mounts without a lock manager (some SMB,
+                # 9P, FUSE) report; refusing to export would be worse than a
+                # degraded, clearly-logged lock.
+                getattr(errno, "ENOLCK", 37),
+                getattr(errno, "EPERM", 1),
             )
 
             if is_contention and not is_unsupported:

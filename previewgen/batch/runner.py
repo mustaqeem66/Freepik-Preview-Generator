@@ -15,7 +15,7 @@ from typing import Any
 
 from previewgen.batch.archive import MAX_NESTED_DEPTH, safe_extract_zip
 from previewgen.batch.discovery import DiscoveryLimits, DiscoveryStats, discover_files
-from previewgen.batch.reporting import write_batch_reports
+from previewgen.batch.reporting import previously_generated_outputs, write_batch_reports
 from previewgen.config import (
     DISCOVERY_MAX_DEPTH,
     DISCOVERY_MAX_DIRECTORIES,
@@ -132,6 +132,12 @@ def process_folder(
         _report_progress(stats.files, -1, f"Discovering previews\u2026 ({stats.files} found)")
 
     if selected_files is None:
+        # A same-folder export writes previews next to their originals, where
+        # discovery cannot tell them apart by name, so exclude the outputs this
+        # app recorded in its own prior reports.
+        prior_outputs = (
+            previously_generated_outputs(output_folder) if output_folder == input_folder else set()
+        )
         raw_files = list(
             discover_files(
                 input_folder,
@@ -141,6 +147,7 @@ def process_folder(
                 supported_extensions=SUPPORTED_EXTENSIONS,
                 stats=discovery_stats,
                 on_progress=_on_discovery_progress,
+                excluded_paths=prior_outputs,
             )
         )
         cancelled = discovery_stats.cancelled

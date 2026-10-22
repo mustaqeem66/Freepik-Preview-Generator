@@ -126,6 +126,8 @@ def start_desktop_app() -> int:
         js_api=api,
         hidden=is_headless,
     )
+    if window is None:
+        raise RuntimeError("webview.create_window returned no window; a GUI backend is unavailable")
     # Bind api to window
     api._set_window(window, custom_chrome=custom_chrome)
 
@@ -187,14 +189,14 @@ def start_desktop_app() -> int:
         if gui_type:
             start_kwargs["gui"] = gui_type
         if is_smoke and gui_type:
-            def _auto_close_smoke() -> None:
+            def _auto_close_smoke(smoke_window: Any = window) -> None:
                 marker = os.environ.get("PREVIEWGEN_READY_MARKER")
                 for _ in range(30):
                     if marker and Path(marker).is_file():
                         break
                     time.sleep(0.5)
                 with contextlib.suppress(Exception):
-                    window.destroy()
+                    smoke_window.destroy()
                 # Terminate smoke test process so host subshell is never left waiting on Cocoa/Win32 event loops
                 threading.Timer(1.0, lambda: os._exit(0)).start()
             threading.Thread(target=_auto_close_smoke, daemon=True).start()
