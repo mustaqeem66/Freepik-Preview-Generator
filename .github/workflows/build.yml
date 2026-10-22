@@ -379,9 +379,16 @@ jobs:
         run: |
           Write-Host "Unpacking Windows artifact on machine without project Python/Node..."
           Expand-Archive -Path PreviewGen-Windows.zip -DestinationPath test_clean_win
+          # `--smoke-test` is the headless processor check and never opens a window, so it
+          # cannot exercise pywebview's bridge injection - the path that hung real Windows
+          # installs in issue #19. `--gui-smoke-test` creates the hidden WebView2 window,
+          # injects the bridge, and only writes the marker once the frontend reports ready.
           $env:PREVIEWGEN_READY_MARKER = "$PWD\gui_ready.txt"
-          $proc = Start-Process -FilePath "test_clean_win\PreviewGen.exe" -ArgumentList "--smoke-test" -NoNewWindow -PassThru -RedirectStandardOutput "$PWD\gui_stdout.log" -RedirectStandardError "$PWD\gui_stderr.log"
-          $timeoutSec = 60
+          $logFile = "$env:LOCALAPPDATA\PreviewGen\logs\previewgen.log"
+          Remove-Item $logFile -ErrorAction SilentlyContinue
+          Remove-Item $env:PREVIEWGEN_READY_MARKER -ErrorAction SilentlyContinue
+          $proc = Start-Process -FilePath "test_clean_win\PreviewGen.exe" -ArgumentList "--gui-smoke-test" -NoNewWindow -PassThru -RedirectStandardOutput "$PWD\gui_stdout.log" -RedirectStandardError "$PWD\gui_stderr.log"
+          $timeoutSec = 180
           $elapsed = 0
           while (-not $proc.HasExited -and $elapsed -lt $timeoutSec) {
             Start-Sleep -Seconds 1
@@ -391,14 +398,25 @@ jobs:
             Stop-Process -Id $proc.Id -Force
             Get-Content "$PWD\gui_stdout.log" -ErrorAction SilentlyContinue
             Get-Content "$PWD\gui_stderr.log" -ErrorAction SilentlyContinue
-            Get-Content "$env:LOCALAPPDATA\PreviewGen\logs\previewgen.log" -ErrorAction SilentlyContinue
+            Get-Content $logFile -ErrorAction SilentlyContinue
             throw "Clean machine Windows GUI smoke test timed out after $timeoutSec seconds."
           }
           if ($proc.ExitCode -ne 0) {
             Get-Content "$PWD\gui_stdout.log" -ErrorAction SilentlyContinue
             Get-Content "$PWD\gui_stderr.log" -ErrorAction SilentlyContinue
-            Get-Content "$env:LOCALAPPDATA\PreviewGen\logs\previewgen.log" -ErrorAction SilentlyContinue
+            Get-Content $logFile -ErrorAction SilentlyContinue
             throw "Clean machine Windows execution failed with code $($proc.ExitCode)"
+          }
+          if (-not (Test-Path $env:PREVIEWGEN_READY_MARKER)) {
+            Get-Content $logFile -ErrorAction SilentlyContinue
+            throw "FATAL: frontend_ready marker not written; the packaged WebView never became ready."
+          }
+          # pywebview logs one "Error while processing <dotted .NET path>" per bridge
+          # name when the introspection walk runs away. Any occurrence means the
+          # injection storm that starves the message pump is back.
+          if ((Test-Path $logFile) -and (Select-String -Path $logFile -Pattern 'Error while processing|Error occurred in script' -Quiet)) {
+            Select-String -Path $logFile -Pattern 'Error while processing|Error occurred in script' | Select-Object -First 5
+            throw "FATAL: bridge injection errors in the packaged Windows run (issue #19 regression)."
           }
           Write-Host "Verifying frozen binary render capabilities (all fixtures)..."
           $renderProc = Start-Process -FilePath "test_clean_win\PreviewGen.exe" -ArgumentList "--render-test-all --fixtures tests/fixtures" -NoNewWindow -Wait -PassThru
