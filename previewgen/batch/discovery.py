@@ -73,6 +73,7 @@ def discover_files(
     stats: DiscoveryStats | None = None,
     on_progress: Callable[[DiscoveryStats], None] | None = None,
     progress_interval: int = DEFAULT_PROGRESS_INTERVAL,
+    excluded_paths: Iterable[Path] = (),
 ) -> Iterator[Path]:
     """
     Yield supported files under ``root`` in deterministic order.
@@ -81,6 +82,8 @@ def discover_files(
     per-entry cancellation checks and quota accounting. ``stats`` is mutated in
     place so the caller can distinguish a clean finish from one that stopped
     because it was cancelled, hit a limit, or was cut short by the deadline.
+    ``excluded_paths`` drops individual already-known files (for example the
+    outputs of a previous same-folder batch) without hiding their siblings.
     """
     stats = stats if stats is not None else DiscoveryStats()
     allowed = {ext.lower() for ext in supported_extensions}
@@ -90,6 +93,7 @@ def discover_files(
         if resolved is not None:
             excluded.append(resolved)
     excluded_tuple = tuple(excluded)
+    excluded_files = {p for p in excluded_paths}
 
     start_time = time.monotonic()
 
@@ -179,6 +183,10 @@ def discover_files(
                 if resolved is None or _is_within(resolved, excluded_tuple):
                     stats.skipped += 1
                     continue
+
+            if resolved in excluded_files:
+                stats.skipped += 1
+                continue
 
             stats.files += 1
             if stats.files > limits.maximum_files:

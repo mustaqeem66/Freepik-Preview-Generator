@@ -49,6 +49,13 @@ class _PreviewRequestHandler(http.server.BaseHTTPRequestHandler):
         self.do_GET()
 
 
+class _PreviewHTTPServer(http.server.ThreadingHTTPServer):
+    """Loopback server carrying a typed back-reference to its owning facade."""
+
+    daemon_threads = True
+    preview_server: PreviewFileServer | None = None
+
+
 class PreviewFileServer:
     """Serves preview JPEGs from a private loopback HTTP endpoint."""
     _serializable = False  # never reachable from window.pywebview.api
@@ -62,6 +69,7 @@ class PreviewFileServer:
         self._counter = 0
         self._port = 0
         self._lock = threading.Lock()
+        self._stopped = False
         # Reference counts per preview handle (filename). A preview addressed by
         # several consumers survives until the last one releases it.
         self._refs: dict[str, int] = {}
@@ -71,12 +79,18 @@ class PreviewFileServer:
         return self._httpd is not None
 
     def start(self) -> None:
-        """Start the server on a loopback ephemeral port (idempotent)."""
+        """Start the server on a loopback ephemeral port (idempotent).
+
+        ``stop()`` is terminal: it is called from the one-way application
+        teardown, and a late preview request must not rebind a port and recreate
+        the session directory behind a shutdown that already happened.
+        """
+        if self._stopped:
+            raise RuntimeError("preview file server has been stopped")
         if self._httpd is not None:
             return
         self._root = create_temp_dir("previewgen_preview_")
-        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _PreviewRequestHandler)
-        httpd.daemon_threads = True
+        httpd = _PreviewHTTPServer(("127.0.0.1", 0), _PreviewRequestHandler)
         httpd.preview_server = self
         self._httpd = httpd
         self._port = int(httpd.server_address[1])
@@ -244,6 +258,7 @@ class PreviewFileServer:
         self._httpd = None
         self._thread = None
         self._root = None
+        self._stopped = True
 
     # -- request handling -------------------------------------------------
 

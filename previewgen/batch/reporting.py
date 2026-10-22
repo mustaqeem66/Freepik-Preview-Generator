@@ -21,6 +21,55 @@ from typing import Any
 from previewgen.config import REPORT_LATEST, REPORT_PREFIX, REPORT_RETENTION
 from previewgen.errors import ErrorCode
 
+_MAX_REPORTS_READ = 50
+_MAX_REPORT_BYTES = 20_000_000
+
+
+def previously_generated_outputs(output_folder: Path) -> set[Path]:
+    """Every artifact this app already wrote into ``output_folder``.
+
+    A same-folder export places previews beside their originals, where a
+    generated ``foo.jpg`` is indistinguishable by name from one the user shot.
+    The durable per-batch reports are the only record of what this app created,
+    so a re-run excludes exactly those paths instead of ingesting its own
+    output forever. Corrupt or oversized reports are skipped, never fatal.
+    """
+    generated: set[Path] = set()
+    try:
+        reports = [
+            p
+            for p in output_folder.glob(f"{REPORT_PREFIX}*.json")
+            if p.name != REPORT_LATEST and p.is_file()
+        ]
+    except OSError as exc:
+        logging.debug("Could not list prior reports in %s: %s", output_folder, exc)
+        return generated
+
+    for report in sorted(reports, key=lambda p: p.stat().st_mtime, reverse=True)[:_MAX_REPORTS_READ]:
+        try:
+            if report.stat().st_size > _MAX_REPORT_BYTES:
+                continue
+            payload = json.loads(report.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            logging.debug("Skipping unreadable batch report %s: %s", report.name, exc)
+            continue
+        if not isinstance(payload, dict):
+            continue
+        records = payload.get("files")
+        if not isinstance(records, list):
+            continue
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            name = record.get("output")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            try:
+                generated.add((output_folder / name.strip()).resolve())
+            except OSError:
+                continue
+    return generated
+
 
 def _prune_old_reports(output_folder: Path, retention: int) -> None:
     """Best-effort retention: keep only the ``retention`` newest report pairs."""
@@ -114,13 +163,14 @@ def write_batch_reports(
             "truncationReasons": summary_payload.get("truncationReasons"),
         }
         latest_tmp.write_text(json.dumps(latest_payload, indent=2), encoding="utf-8")
-        # On Windows, replace() can fail with WinError 5 Access Denied if another thread is reading
-        # or concurrently replacing the same latest pointer file; retry with exponential backoff.
+        # On Windows, replace() can fail with a transient sharing violation or
+        # access-denied while another thread reads or replaces the same pointer;
+        # retry with exponential backoff.
         for attempt in range(5):
             try:
                 latest_tmp.replace(latest_path)
                 break
-            except PermissionError:
+            except OSError:
                 if attempt == 4:
                     raise
                 time.sleep(0.02 * (2 ** attempt))

@@ -129,3 +129,17 @@ def test_publish_evicts_by_age(server, monkeypatch):
     remaining = list(server._root.glob("preview_*.jpg"))
     assert len(remaining) == 1
     assert remaining[0].name.endswith("000002.jpg")
+
+
+def test_stop_is_terminal_and_does_not_resurrect_the_listener():
+    """A late preview request after teardown must not rebind a port."""
+    server = PreviewFileServer()
+    server.publish_jpeg(JPEG_BYTES)
+    server.stop()
+
+    with pytest.raises(RuntimeError, match="stopped"):
+        server.publish_jpeg(JPEG_BYTES)
+
+    assert not server.running
+    assert server._root is None
+    assert server._httpd is None
