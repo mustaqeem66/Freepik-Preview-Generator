@@ -9,6 +9,7 @@ grant or drive the native window handle.
 from __future__ import annotations
 
 import inspect
+import json
 
 import pytest
 from PIL import Image
@@ -69,7 +70,13 @@ FORBIDDEN = frozenset({
 
 
 def bridge_visible_names(api: DesktopApi) -> set[str]:
-    """Replicate webview.util.get_functions over the live api object."""
+    """Replicate webview.util.get_functions over the live api object.
+
+    The ``try`` covers the whole body, recursion included, exactly as
+    ``webview.util.get_functions`` does: upstream logs
+    ``Error while processing <path>: maximum recursion depth exceeded`` and
+    carries on, which is what a deep toolkit graph turned into on Windows.
+    """
     names: set[str] = set()
     visited: list[int] = []
 
@@ -79,21 +86,24 @@ def bridge_visible_names(api: DesktopApi) -> set[str]:
         visited.append(id(obj))
         for attr_name in dir(obj):
             full = f"{base}.{attr_name}" if base else attr_name
-            if attr_name.startswith("_"):
-                continue
             try:
+                if attr_name.startswith("_"):
+                    continue
                 attr = getattr(obj, attr_name)
+                if not getattr(attr, "_serializable", True):
+                    continue
+                if inspect.ismethod(attr) or inspect.isfunction(attr):
+                    names.add(full)
+                elif inspect.isclass(attr) or (
+                    isinstance(attr, object) and not callable(attr)
+                    and hasattr(attr, "__module__")
+                ):
+                    walk(attr, full)
+            except RecursionError:
+                # Reached a self-renewing graph; record it so the test fails.
+                names.add(full)
             except Exception:  # noqa: BLE001 - mirrors pywebview's own guard
                 continue
-            if not getattr(attr, "_serializable", True):
-                continue
-            if inspect.ismethod(attr) or inspect.isfunction(attr):
-                names.add(full)
-            elif inspect.isclass(attr) or (
-                isinstance(attr, object) and not callable(attr)
-                and hasattr(attr, "__module__")
-            ):
-                walk(attr, full)
 
     walk(api)
     return names
@@ -133,3 +143,73 @@ def test_no_grantor_exists_for_a_page_to_call(api, tmp_path):
     denied = api.start_preview(str(source), {})
     assert denied["ok"] is False
     assert denied["error"] == "UNAUTHORIZED_SOURCE"
+
+
+class _SelfRenewing:
+    """Stand-in for a pythonnet-wrapped WinForms/WebView2 object.
+
+    `webview.util.get_functions` memoizes by ``id(obj)``, so a property that
+    hands back a *fresh* instance on every access -- which is exactly what
+    ``FontFamily.GenericSansSerif`` and the ``SyncRoot`` collections do -- walks
+    forever until Python raises `RecursionError`. Reproduced here rather than
+    mocked away because it is the mechanism behind the packaged Windows
+    "Not Responding" report (issue #19).
+    """
+
+    __module__ = "System.Drawing"
+
+    @property
+    def GenericSansSerif(self) -> _SelfRenewing:
+        return _SelfRenewing()
+
+    @property
+    def Families(self) -> _SelfRenewing:
+        return _SelfRenewing()
+
+    def Dispose(self) -> None:  # pragma: no cover - only ever enumerated
+        pass
+
+
+class _FakeForm:
+    """The public surface of `Window.native` on the Windows backend."""
+
+    __module__ = "System.Windows.Forms"
+
+    ActiveControl = _SelfRenewing()
+    DefaultFont = _SelfRenewing()
+    ZoomFactor = 1.0
+
+    def Show(self) -> None:  # pragma: no cover - only ever enumerated
+        pass
+
+
+class _FakeWindow:
+    """Everything a real `webview.Window` exposes without a leading underscore."""
+
+    def __init__(self) -> None:
+        self.native = _FakeForm()
+        self.title = "PreviewGen"
+        self.gui = "winforms"
+
+    def evaluate_js(self, script: str) -> None:  # pragma: no cover - never called
+        pass
+
+
+def test_binding_a_windows_shaped_window_reaches_no_toolkit_paths(api) -> None:
+    api._set_window(_FakeWindow())
+    visible = bridge_visible_names(api)
+    assert visible == set(EXPECTED_BRIDGE)
+    nested = {n for n in visible if "." in n}
+    assert not nested, f"page can reach the toolkit graph through {sorted(nested)}"
+
+
+def test_injected_function_list_stays_small(api) -> None:
+    """The function list is serialized into one `run_js` payload.
+
+    A recursive walk of a live backend produced a payload large enough that
+    WebView2 rejected the script outright, so the page never finished
+    initializing.
+    """
+    payload = json.dumps([{"func": name, "params": []} for name in bridge_visible_names(api)])
+    assert len(payload) < 8192, f"{len(payload)} bytes of bridge surface injected at once"
+
