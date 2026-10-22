@@ -16,7 +16,7 @@ def test_core_plan_builds_frontend_before_bundle_csp(tmp_path: Path) -> None:
     checks = release.plan_checks(tmp_path, python="py", npm="npm")
     names = [check.name for check in checks]
     assert names == [
-        "backend-ruff", "backend-core-tests", "frontend-typecheck",
+        "backend-ruff", "backend-pyrefly", "backend-core-tests", "frontend-typecheck",
         "frontend-unit-tests", "frontend-production-build", "frontend-bundle-csp",
         "frontend-studio-design",
     ]

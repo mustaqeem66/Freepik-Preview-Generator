@@ -63,6 +63,9 @@ jobs:
       - name: Lint Python (ruff)
         run: python -m ruff check .
 
+      - name: Type-check Python (pyrefly)
+        run: python -m pyrefly check
+
       # ── Frontend gate: typecheck -> tests -> production bundle ──
       # Packaging must not start unless the frontend passes all three gates.
       - name: Set up Node.js 24.15.0

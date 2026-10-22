@@ -35,4 +35,5 @@ jobs:
           PREVIEWGEN_REQUIRE_FRONTEND_BUNDLE: "1"
         run: |
           python -m ruff check .
+          python -m pyrefly check
           python -m pytest tests/ -q

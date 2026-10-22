@@ -28,7 +28,7 @@ def windows_window_responding(title: str = "PreviewGen", timeout_ms: int = 750) 
     if sys.platform != "win32":
         return None
     try:
-        user32 = ctypes.windll.user32
+        user32 = ctypes.windll.user32  # pyrefly: ignore[missing-attribute]  # Windows-only, guarded above
         user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
         user32.FindWindowW.restype = wintypes.HWND
         user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]

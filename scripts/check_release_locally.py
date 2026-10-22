@@ -57,6 +57,7 @@ def plan_checks(
 
     if backend:
         checks.append(Check("backend-ruff", (py, "-m", "ruff", "check", "."), root))
+        checks.append(Check("backend-pyrefly", (py, "-m", "pyrefly", "check"), root))
         if mode == "core":
             checks.append(Check("backend-core-tests", (py, "-m", "pytest", "tests/unit", "-m", "core", "-q"), root))
         else:
