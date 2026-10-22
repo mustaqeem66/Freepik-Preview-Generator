@@ -10,6 +10,7 @@ deletes a directory it cannot prove it owns.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import threading
@@ -85,9 +86,35 @@ def test_scan_page_serves_rows_with_undecodable_filenames():
     assert page["value"]["files"][0]["path"] == UNDECODABLE
 
 
+def _create_undecodable_name(directory: Path) -> bool:
+    """Return False when the platform cannot hold a name that is invalid UTF-8.
+
+    Only a raw ``bytes`` path through ``dir_fd`` gets it onto disk;
+    ``Path.write_bytes`` re-encodes the surrogateescape name and raises
+    ``UnicodeEncodeError`` on macOS.
+    """
+    unsupported = (OSError, UnicodeError, ValueError, NotImplementedError)
+    try:
+        dir_fd = os.open(directory, os.O_RDONLY)
+    except unsupported:
+        return False
+    try:
+        try:
+            fd = os.open(b"\xffbroken.png", os.O_CREAT | os.O_WRONLY, 0o644, dir_fd=dir_fd)
+        except unsupported:
+            return False
+        try:
+            os.write(fd, b"not really a png")
+        finally:
+            os.close(fd)
+    finally:
+        os.close(dir_fd)
+    return True
+
+
 def test_scanner_lists_a_file_whose_name_cannot_be_decoded(tmp_path):
-    import os
-    (tmp_path / os.fsdecode(b"\xffbroken.png")).write_bytes(b"not really a png")
+    if not _create_undecodable_name(tmp_path):
+        pytest.skip("this filesystem cannot store an undecodable filename")
 
     result = get_scanner().scan_folder(str(tmp_path))
 
