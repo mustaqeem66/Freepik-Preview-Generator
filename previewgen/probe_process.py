@@ -82,9 +82,9 @@ def probe_asset_isolated(
     )
     process.start()
     try:
-        start_time = time.time()
+        start_time = time.monotonic()
         while process.is_alive():
-            if (time.time() - start_time) > timeout_seconds:
+            if (time.monotonic() - start_time) > timeout_seconds:
                 _terminate(process)
                 raise TimeoutError(f"Asset probe exceeded {timeout_seconds}s for {Path(source_path).name}")
             time.sleep(0.05)

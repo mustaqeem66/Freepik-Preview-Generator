@@ -23,6 +23,7 @@ class ErrorCode:
     SCAN_CANCELLED = "SCAN_CANCELLED"
     SCAN_TRUNCATED = "SCAN_TRUNCATED"
     OUTPUT_LOCKED = "OUTPUT_LOCKED"
+    OUTPUT_FOLDER_REQUIRED = "OUTPUT_FOLDER_REQUIRED"
     REPORT_WRITE_FAILED = "REPORT_WRITE_FAILED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
@@ -39,6 +40,7 @@ _MESSAGES: dict[str, str] = {
     ErrorCode.SCAN_CANCELLED: "The scan was cancelled.",
     ErrorCode.SCAN_TRUNCATED: "The scan stopped before it finished.",
     ErrorCode.OUTPUT_LOCKED: "The output folder is in use by another PreviewGen process.",
+    ErrorCode.OUTPUT_FOLDER_REQUIRED: "Choose an output folder before exporting.",
     ErrorCode.REPORT_WRITE_FAILED: "The batch report could not be saved.",
     ErrorCode.INTERNAL_ERROR: "An unexpected error occurred.",
 }

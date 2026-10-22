@@ -194,6 +194,24 @@ class ScannerService:
 
         start_time = time.monotonic()
         item_count = 0
+        root_real = p.resolve()
+
+        def _grant_of(candidate: Path) -> Path | None:
+            """Return the candidate's real path, or None if it leaves the grant.
+
+            ``is_symlink()`` and ``followlinks=False`` only cover POSIX links.
+            A Windows junction or mounted folder reports as an ordinary
+            directory, so containment has to be decided on the resolved path.
+            Resolving once per entry also keeps the cost down: the walk calls
+            this for every directory and every file it considers.
+            """
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                return None
+            if resolved != root_real and root_real not in resolved.parents:
+                return None
+            return resolved
 
         try:
             for root, dirs, files in os.walk(p, topdown=True, followlinks=False, onerror=_on_error):
@@ -207,7 +225,7 @@ class ScannerService:
                 pruned_depth = 0
                 kept_dirs: list[str] = []
                 for d in dirs:
-                    if d.startswith(".") or d == "__MACOSX" or (Path(root) / d).is_symlink():
+                    if d.startswith(".") or d == "__MACOSX" or _grant_of(Path(root) / d) is None:
                         continue
                     if at_depth_cap:
                         pruned_depth += 1
@@ -233,13 +251,9 @@ class ScannerService:
                         _mark("maximum_files")
                         break
                     f_path = Path(root) / f_name
-                    if f_path.is_symlink():
-                        try:
-                            resolved_f = f_path.resolve()
-                            if not resolved_f.is_file() or p.resolve() not in resolved_f.parents:
-                                continue
-                        except OSError:
-                            continue
+                    real_path = _grant_of(f_path)
+                    if real_path is None or not f_path.is_file():
+                        continue
                     ext = f_path.suffix.lower()
                     if ext in SUPPORTED_EXTENSIONS and ext != ".zip":
                         ext_clean = ext.upper().lstrip(".")
@@ -248,7 +262,7 @@ class ScannerService:
                         ) or ext in (".step", ".stp", ".iges", ".igs")
                         files_payload.append({
                             "name": f_path.name,
-                            "path": str(f_path.resolve()),
+                            "path": str(real_path),
                             "ext": ext_clean,
                             "is_3d": is_3d,
                         })

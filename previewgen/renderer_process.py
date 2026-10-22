@@ -212,7 +212,7 @@ class RendererProcessPool:
                 if self._job.active and self._process.pid is not None:
                     self._job.assign(self._process.pid)
 
-            start_time = time.time()
+            start_time = time.monotonic()
 
             while True:
                 # Check for external cancellation
@@ -225,7 +225,7 @@ class RendererProcessPool:
                     break
 
                 # Check timeout
-                if (time.time() - start_time) > timeout:
+                if (time.monotonic() - start_time) > timeout:
                     logging.warning("Render timeout for %s after %.1fs", source_path.name, timeout)
                     self._terminate_process_tree()
                     raise TimeoutError(f"Rendering exceeded {timeout}s for {source_path.name}")
