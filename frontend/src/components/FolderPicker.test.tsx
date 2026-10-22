@@ -35,7 +35,6 @@ describe("FolderPicker Component", () => {
     );
 
     expect(screen.getByLabelText(/output folder path/i)).toHaveAttribute("readonly");
-    expect(screen.getByText(/pick the destination with the button below/i)).toBeInTheDocument();
   });
   it("requires a separate output folder when source files come from multiple directories", () => {
     render(<FolderPicker inputFolder="/assets" outputFolder="/exports" sameFolder={false}
@@ -58,12 +57,15 @@ describe("FolderPicker Component", () => {
     expect(browseFiles).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Browse Files…" }));
     expect(browseFiles).toHaveBeenCalledOnce();
-    // The hint is what tells the user the two buttons are not interchangeable.
-    // Matched on its stable subject rather than the exact sentence, which #56 reworded.
-    const hint = screen.getByText(/may hide files/i);
-    expect(hint).toHaveTextContent(/Choose Folder may hide files/);
-    expect(hint).toHaveTextContent(/Browse Files…/);
-    expect(hint).toHaveTextContent(/individual artwork/);
+  });
+
+  it("does not render the removed source and destination helper copy", () => {
+    render(<FolderPicker inputFolder="" outputFolder="" sameFolder={false}
+      onBrowseInput={() => {}} onBrowseFiles={() => {}}
+      onBrowseOutput={() => {}} onToggleSameFolder={() => {}} />);
+    expect(screen.queryByText(/may hide files/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/allowed to write there/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Output folder path" })).toBeInTheDocument();
   });
 
   it("disables both source selectors while a native picker is busy", () => {
