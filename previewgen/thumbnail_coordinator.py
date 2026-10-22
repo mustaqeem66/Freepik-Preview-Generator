@@ -28,6 +28,8 @@ class ThumbnailServer(Protocol):
 
 class ThumbnailCoordinator:
     """A single latest-visible request set and bounded session LRU."""
+    _serializable = False  # never reachable from window.pywebview.api
+
 
     def __init__(
         self,

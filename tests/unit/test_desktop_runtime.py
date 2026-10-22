@@ -72,7 +72,7 @@ class _FakeApi:
         self.window = None
         self.cleaned_up = False
 
-    def set_window(self, window, *, custom_chrome=False) -> None:
+    def _set_window(self, window, *, custom_chrome=False) -> None:
         self.window = window
         self.custom_chrome = custom_chrome
 

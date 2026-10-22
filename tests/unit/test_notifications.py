@@ -76,7 +76,7 @@ def test_batch_summary_status():
 def test_notifications_are_opt_in_and_keep_the_batch_operation_id(monkeypatch):
     api = DesktopApi()
     scripts = []
-    api.window = SimpleNamespace(evaluate_js=scripts.append)
+    api._window = SimpleNamespace(evaluate_js=scripts.append)
     delivered = []
     done = threading.Event()
 

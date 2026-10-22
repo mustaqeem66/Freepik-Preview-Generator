@@ -51,6 +51,8 @@ class _PreviewRequestHandler(http.server.BaseHTTPRequestHandler):
 
 class PreviewFileServer:
     """Serves preview JPEGs from a private loopback HTTP endpoint."""
+    _serializable = False  # never reachable from window.pywebview.api
+
 
     def __init__(self) -> None:
         self._root: Path | None = None

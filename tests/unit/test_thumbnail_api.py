@@ -22,7 +22,7 @@ def test_thumbnail_api_rejects_unselected_paths_and_large_lists(tmp_path, monkey
         assert requests == []
         assert not api.request_thumbnails([str(source)] * (MAX_VISIBLE_THUMBNAILS + 1))["ok"]
         assert not api.request_thumbnails([""])["ok"]
-        api.add_authorized_input_folder(tmp_path)
+        api._add_authorized_input_folder(tmp_path)
         assert api.request_thumbnails([str(source)])["ok"]
         assert requests == [[str(source)]]
     finally:
@@ -58,7 +58,7 @@ def test_thumbnail_zip_member_requires_archive_under_authorized_root(tmp_path, m
     monkeypatch.setattr(api.thumbnail_coordinator, "request", lambda paths: {})
     try:
         assert api.request_thumbnails([uri])["error"] == "UNAUTHORIZED_THUMBNAIL_SOURCE"
-        api.add_authorized_input_folder(tmp_path)
+        api._add_authorized_input_folder(tmp_path)
         assert api.request_thumbnails([uri])["ok"]
         assert api.request_thumbnails([uri.replace("piece.png", "evil.exe")])["ok"] is False
     finally:

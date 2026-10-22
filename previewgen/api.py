@@ -54,7 +54,7 @@ class DesktopApi:
     """
 
     def __init__(self) -> None:
-        self.window: Any | None = None  # webview.Window when running
+        self._window: Any | None = None  # webview.Window when running
         self._custom_chrome_enabled = False
         self.session_zip_dir: Path | None = None
         self.scanner = get_scanner()
@@ -99,9 +99,9 @@ class DesktopApi:
         )
         self.lifecycle.set_batch_finished_callback(self._on_batch_finished)
 
-    def set_window(self, win: Any, *, custom_chrome: bool = False) -> None:
+    def _set_window(self, win: Any, *, custom_chrome: bool = False) -> None:
         """Bind the only trusted native window and its titlebar mode."""
-        self.window = win
+        self._window = win
         self._custom_chrome_enabled = custom_chrome
 
     def get_window_chrome(self) -> dict[str, Any]:
@@ -114,13 +114,13 @@ class DesktopApi:
         )
         return {
             "ok": True,
-            "value": {"enabled": bool(self.window and self._custom_chrome_enabled), "platform": platform},
+            "value": {"enabled": bool(self._window and self._custom_chrome_enabled), "platform": platform},
             "error": None,
         }
 
     def window_action(self, action: str) -> dict[str, Any]:
         """Window chrome actions only: no arbitrary method name or argument."""
-        if not self.window or not self._custom_chrome_enabled:
+        if not self._window or not self._custom_chrome_enabled:
             return {"ok": False, "error": "NATIVE_CHROME_UNAVAILABLE"}
         methods = {
             "minimize": "minimize",
@@ -130,7 +130,7 @@ class DesktopApi:
         if not isinstance(action, str) or action not in methods:
             return {"ok": False, "error": "INVALID_WINDOW_ACTION"}
         try:
-            method = getattr(self.window, methods[action])
+            method = getattr(self._window, methods[action])
             if action == "close":
                 # The bridge reply must be able to return before the window
                 # and its WebView transport are destroyed.
@@ -144,14 +144,14 @@ class DesktopApi:
 
     def _register_default_authorized_paths(self) -> None:
         from previewgen.settings import get_log_directory, get_settings_directory
-        self.add_authorized_folder(get_settings_directory())
-        self.add_authorized_folder(get_log_directory())
+        self._add_authorized_folder(get_settings_directory())
+        self._add_authorized_folder(get_log_directory())
 
-    def add_authorized_folder(self, folder: Path | str) -> None:
+    def _add_authorized_folder(self, folder: Path | str) -> None:
         with contextlib.suppress(Exception), self._authorized_lock:
             self._authorized_folders.add(Path(folder).resolve())
 
-    def is_authorized_path(self, path: Path | str) -> bool:
+    def _is_authorized_path(self, path: Path | str) -> bool:
         try:
             target = Path(path).resolve()
             with self._authorized_lock:
@@ -166,14 +166,14 @@ class DesktopApi:
         except Exception:
             return False
 
-    def add_authorized_input_folder(self, folder: Path | str) -> None:
+    def _add_authorized_input_folder(self, folder: Path | str) -> None:
         """Grant source reads ONLY after a native folder selection or trusted restore."""
         target = Path(folder).resolve()
-        self.add_authorized_folder(target)
+        self._add_authorized_folder(target)
         with self._authorized_lock:
             self._authorized_input_folders.add(target)
 
-    def is_authorized_input_path(self, path: Path | str) -> bool:
+    def _is_authorized_input_path(self, path: Path | str) -> bool:
         try:
             target = Path(path).resolve()
             with self._authorized_lock:
@@ -210,15 +210,15 @@ class DesktopApi:
                 archive = Path(urllib.parse.unquote(uri.netloc + uri.path)).resolve()
                 if archive.suffix.lower() != ".zip":
                     return "INVALID_SOURCE"
-                if not self.is_authorized_input_path(archive):
+                if not self._is_authorized_input_path(archive):
                     return "UNAUTHORIZED_SOURCE"
                 return None
 
             selected = Path(source).resolve()
             if selected.suffix.lower() not in SUPPORTED_EXTENSIONS or selected.suffix.lower() == ".zip":
                 return "UNSUPPORTED_SOURCE"
-            if not (self.is_authorized_input_path(selected)
-                    or self.is_authorized_selected_file(selected)):
+            if not (self._is_authorized_input_path(selected)
+                    or self._is_authorized_selected_file(selected)):
                 return "UNAUTHORIZED_SOURCE"
             return None
         except (ValueError, OSError, TypeError):
@@ -244,14 +244,14 @@ class DesktopApi:
                 return "UNAUTHORIZED_AUXILIARY_PATH"
         return None
 
-    def add_authorized_output_folder(self, folder: Path | str) -> None:
+    def _add_authorized_output_folder(self, folder: Path | str) -> None:
         """Grant output capability only through the native destination picker."""
         target = Path(folder).resolve()
-        self.add_authorized_folder(target)
+        self._add_authorized_folder(target)
         with self._authorized_lock:
             self._authorized_output_folders.add(target)
 
-    def is_authorized_output_path(self, path: Path | str) -> bool:
+    def _is_authorized_output_path(self, path: Path | str) -> bool:
         """Check explicit destination grants, independently of source roots."""
         try:
             target = Path(path).resolve()
@@ -261,7 +261,7 @@ class DesktopApi:
         except (OSError, ValueError, TypeError):
             return False
 
-    def is_authorized_export_destination(
+    def _is_authorized_export_destination(
         self, folder: Path | str, *, exact_file: bool = False
     ) -> bool:
         """Only explicit destination grants, or Same-as-input scanned folders.
@@ -270,11 +270,11 @@ class DesktopApi:
         that does not confer write permission. Exact Add Files grants never
         authorize their parent directories for writes.
         """
-        if self.is_authorized_output_path(folder):
+        if self._is_authorized_output_path(folder):
             return True
-        return not exact_file and self.is_authorized_input_path(folder)
+        return not exact_file and self._is_authorized_input_path(folder)
 
-    def is_authorized_selected_file(self, path: Path | str) -> bool:
+    def _is_authorized_selected_file(self, path: Path | str) -> bool:
         """File-picker grants are exact source paths, never parent directories."""
         try:
             candidate = Path(path).resolve()
@@ -320,7 +320,7 @@ class DesktopApi:
         marks the final event of an operation so the frontend can reject any
         non-terminal event that arrives late for a completed operation.
         """
-        if not self.window:
+        if not self._window:
             return
         self._last_heartbeat_time = time.time()
         seq = next(self._sequence_counter)
@@ -334,7 +334,7 @@ class DesktopApi:
         }
         script = f"window.__onBridgeEvent && window.__onBridgeEvent({json.dumps(envelope)})"
         with contextlib.suppress(Exception):
-            self.window.evaluate_js(script)
+            self._window.evaluate_js(script)
 
     def _on_scan_progress(self, scan_id: str, count: int) -> None:
         self._dispatch_envelope("scan.progress", {"scanId": scan_id, "count": count}, operation_id=scan_id)
@@ -450,9 +450,9 @@ class DesktopApi:
                 Path(ready_marker).write_text("READY\n", encoding="utf-8")
             except Exception as exc:
                 logging.warning("Could not write ready marker: %s", exc)
-        if "--gui-smoke-test" in sys.argv and self.window:
+        if "--gui-smoke-test" in sys.argv and self._window:
             # Destroy window after bridge response completes so clean machine tests exit promptly
-            threading.Timer(0.5, self.window.destroy).start()
+            threading.Timer(0.5, self._window.destroy).start()
         return {"ok": True, "value": "ready", "error": None}
     def get_initial_state(self) -> dict[str, Any]:
         """Load persistent user preferences with schema version validation."""
@@ -465,9 +465,9 @@ class DesktopApi:
             selected = validated.get(key)
             if isinstance(selected, str) and selected.strip() and Path(selected).is_dir():
                 if key == "outputFolder":
-                    self.add_authorized_output_folder(selected)
+                    self._add_authorized_output_folder(selected)
                 else:
-                    self.add_authorized_input_folder(selected)
+                    self._add_authorized_input_folder(selected)
         # Restored logo/font settings are trusted only after they were previously
         # saved under their own native-picker grant.
         for key in ("logoPath", "fontPath"):
@@ -487,7 +487,7 @@ class DesktopApi:
         # unselected path into an authorized output directory.
         input_folder = settings_dict.get("inputFolder")
         if (isinstance(input_folder, str) and input_folder.strip()
-                and not self.is_authorized_input_path(input_folder)):
+                and not self._is_authorized_input_path(input_folder)):
             return {"ok": False, "value": False, "error": "UNAUTHORIZED_INPUT_PATH",
                     "code": "UNAUTHORIZED_INPUT_PATH"}
         auxiliary_error = self._auxiliary_read_error(settings_dict)
@@ -498,7 +498,7 @@ class DesktopApi:
         if (
             isinstance(output_folder, str)
             and output_folder.strip()
-            and not self.is_authorized_output_path(output_folder)
+            and not self._is_authorized_output_path(output_folder)
         ):
             return {
                 "ok": False, "value": False, "error": "UNAUTHORIZED_OUTPUT_PATH",
@@ -525,10 +525,10 @@ class DesktopApi:
         No directory is added to _authorized_folders. Unsupported/missing files
         are reported to the user instead of quietly appearing as exportable.
         """
-        if not self.window:
+        if not self._window:
             return {"ok": False, "value": None, "error": "Native file picker is unavailable"}
         try:
-            res = self.window.create_file_dialog(
+            res = self._window.create_file_dialog(
                 int(__import__("webview").OPEN_DIALOG), allow_multiple=True,
             )
             if not res:
@@ -588,13 +588,13 @@ class DesktopApi:
 
     def browse_input_folder(self) -> str:
         """Open native folder picker for input directory."""
-        if not self.window:
+        if not self._window:
             return ""
         try:
-            res = self.window.create_file_dialog(int(__import__('webview').FOLDER_DIALOG))
+            res = self._window.create_file_dialog(int(__import__('webview').FOLDER_DIALOG))
             path = res[0] if res else ""
             if path:
-                self.add_authorized_input_folder(path)
+                self._add_authorized_input_folder(path)
             return path
         except Exception as exc:
             logging.warning("Folder dialog failed: %s", exc)
@@ -602,23 +602,23 @@ class DesktopApi:
 
     def browse_output_folder(self) -> str:
         """Open native folder picker for output directory."""
-        if not self.window:
+        if not self._window:
             return ""
         try:
-            res = self.window.create_file_dialog(int(__import__('webview').FOLDER_DIALOG))
+            res = self._window.create_file_dialog(int(__import__('webview').FOLDER_DIALOG))
             path = res[0] if res else ""
             if path:
-                self.add_authorized_output_folder(path)
+                self._add_authorized_output_folder(path)
             return path
         except Exception as exc:
             logging.warning("Folder dialog failed: %s", exc)
             return ""
     def browse_logo(self) -> str:
         """Open native file picker for logo."""
-        if not self.window:
+        if not self._window:
             return ""
         try:
-            res = self.window.create_file_dialog(
+            res = self._window.create_file_dialog(
                 int(__import__('webview').OPEN_DIALOG),
                 file_types=(
                     "Image Files (*.png;*.webp;*.svg;*.ico;*.jpg;*.jpeg)",
@@ -636,10 +636,10 @@ class DesktopApi:
 
     def browse_font(self) -> str:
         """Open native file picker for custom font."""
-        if not self.window:
+        if not self._window:
             return ""
         try:
-            res = self.window.create_file_dialog(
+            res = self._window.create_file_dialog(
                 int(__import__('webview').OPEN_DIALOG),
                 file_types=("Font Files (*.ttf;*.otf;*.woff;*.woff2)", "*.ttf;*.otf;*.woff;*.woff2")
             )
@@ -658,7 +658,7 @@ class DesktopApi:
             return {"ok": False, "error": "EMPTY_PATH"}
         try:
             target = Path(path).resolve()
-            if not self.is_authorized_path(target):
+            if not self._is_authorized_path(target):
                 return {"ok": False, "error": "UNAUTHORIZED_PATH"}
             if not target.is_dir():
                 return {"ok": False, "error": "FOLDER_NOT_FOUND"}
@@ -705,7 +705,7 @@ class DesktopApi:
         try:
             folder = get_log_directory()
             folder.mkdir(parents=True, exist_ok=True)
-            self.add_authorized_folder(folder)
+            self._add_authorized_folder(folder)
             return self.open_folder(str(folder))
         except Exception as exc:
             logging.warning("Could not open diagnostics folder: %s", exc)
@@ -713,7 +713,7 @@ class DesktopApi:
 
     def scan_folder(self, folder_path: str) -> dict[str, Any]:
         """Synchronous scan of a native-authorized input root only."""
-        if not self.is_authorized_input_path(folder_path):
+        if not self._is_authorized_input_path(folder_path):
             return {"ok": False, "files": [], "total": 0, "error": "UNAUTHORIZED_INPUT_PATH"}
         return self.scanner.scan_folder(folder_path)
 
@@ -724,7 +724,7 @@ class DesktopApi:
         with self._scan_page_lock:
             self._scan_page_state = None
             self._scan_paging_enabled = paged is True
-        if not self.is_authorized_input_path(folder_path):
+        if not self._is_authorized_input_path(folder_path):
             return {"ok": False, "error": "UNAUTHORIZED_INPUT_PATH"}
         return self.scanner.start_scan(folder_path)
 
@@ -1127,9 +1127,9 @@ class DesktopApi:
             ).resolve()
             selected_exact = (
                 not file_path.startswith("zip://")
-                and self.is_authorized_selected_file(source_path)
+                and self._is_authorized_selected_file(source_path)
             )
-            if not self.is_authorized_export_destination(out_dir, exact_file=selected_exact):
+            if not self._is_authorized_export_destination(out_dir, exact_file=selected_exact):
                 code = "UNAUTHORIZED_OUTPUT_PATH" if selected_exact else "UNAUTHORIZED_PATH"
                 return {"ok": False, "value": None, "error": code, "code": code}
 
@@ -1199,12 +1199,12 @@ class DesktopApi:
             # Never authorize a destination just because JavaScript requested it.
             # Source roots come from the folder chooser or scan workflow; output
             # roots come from the native chooser or restored saved preferences.
-            if not self.is_authorized_input_path(source):
+            if not self._is_authorized_input_path(source):
                 return {"ok": False, "error": "UNAUTHORIZED_INPUT_PATH"}
             auxiliary_error = self._auxiliary_read_error(config_dict)
             if auxiliary_error:
                 return {"ok": False, "error": auxiliary_error}
-            if not self.is_authorized_export_destination(output):
+            if not self._is_authorized_export_destination(output):
                 return {"ok": False, "error": "UNAUTHORIZED_OUTPUT_PATH"}
             with self._batch_start_lock:
                 self._batch_operation_id = op_id
@@ -1240,7 +1240,7 @@ class DesktopApi:
             if not isinstance(output_folder, str) or not output_folder.strip():
                 return {"ok": False, "error": "OUTPUT_FOLDER_REQUIRED"}
             output = Path(output_folder).resolve()
-            if not self.is_authorized_output_path(output):
+            if not self._is_authorized_output_path(output):
                 return {"ok": False, "error": "UNAUTHORIZED_OUTPUT_PATH"}
             auxiliary_error = self._auxiliary_read_error(config_dict)
             if auxiliary_error:
@@ -1254,7 +1254,7 @@ class DesktopApi:
                 if not isinstance(raw, str) or not raw.strip():
                     return {"ok": False, "error": "INVALID_FILE_SELECTION"}
                 source = Path(raw).resolve()
-                if not self.is_authorized_selected_file(source):
+                if not self._is_authorized_selected_file(source):
                     return {"ok": False, "error": "UNAUTHORIZED_SELECTED_FILE"}
                 if (not source.is_file() or source.suffix.lower() not in SUPPORTED_EXTENSIONS
                     or source.suffix.lower() == ".zip"):

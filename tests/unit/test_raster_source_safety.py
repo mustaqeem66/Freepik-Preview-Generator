@@ -50,7 +50,7 @@ def test_single_jpeg_export_with_overwrite_never_mutates_input(tmp_path):
     original = file.read_bytes()
     api = DesktopApi()
     try:
-        api.add_authorized_input_folder(tmp_path)
+        api._add_authorized_input_folder(tmp_path)
         result = api.export_preview(str(file), {
             "outputFolder": str(tmp_path), "overwritePolicy": "overwrite",
         })

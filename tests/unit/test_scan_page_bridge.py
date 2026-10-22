@@ -45,7 +45,7 @@ def test_large_scan_completion_is_metadata_only_and_pages_stay_bounded() -> None
     api.scanner = ScannerService()
     api._scan_paging_enabled = True
     window = FakeWindow()
-    api.window = window
+    api._window = window
     files = [_row(i, padding=450) for i in range(5000)]
     try:
         api._on_scan_finished("large-scan", {
@@ -92,7 +92,7 @@ def test_small_scan_uses_legacy_terminal_envelope() -> None:
     api.scanner = ScannerService()
     api._scan_paging_enabled = True
     window = FakeWindow()
-    api.window = window
+    api._window = window
     original = [_row(i) for i in range(SCAN_INLINE_RESULT_LIMIT)]
     try:
         api._on_scan_finished("small-scan", {"files": original, "total": len(original)})
@@ -108,10 +108,10 @@ def test_byte_heavy_small_result_pages_and_oversized_row_fails_safely() -> None:
     api = DesktopApi()
     api.scanner = ScannerService()
     api._scan_paging_enabled = True
-    api.window = FakeWindow()
+    api._window = FakeWindow()
     try:
         api._on_scan_finished("wide", {"files": [_row(1, padding=SCAN_PAGE_MAX_BYTES)], "total": 1})
-        result = _last_event(api.window)["payload"]["result"]
+        result = _last_event(api._window)["payload"]["result"]
         assert result["files"] == []
         assert result["paged"]["total"] == 1
         assert api.get_scan_page("wide", 0)["error"] == "SCAN_ROW_TOO_LARGE"
@@ -123,7 +123,7 @@ def test_scan_pages_are_sequential_and_revoked_when_new_scan_starts(monkeypatch)
     api = DesktopApi()
     api.scanner = ScannerService()
     api._scan_paging_enabled = True
-    api.window = FakeWindow()
+    api._window = FakeWindow()
     try:
         api._on_scan_finished("old", {
             "files": [_row(i) for i in range(300)], "total": 300,
@@ -138,7 +138,7 @@ def test_scan_pages_are_sequential_and_revoked_when_new_scan_starts(monkeypatch)
         assert api.get_scan_page("old", 0)["error"] == "SCAN_PAGE_OUT_OF_ORDER"
 
         monkeypatch.setattr(api.scanner, "start_scan", lambda folder: {"ok": True, "scanId": "new"})
-        api.add_authorized_input_folder("/some/folder")
+        api._add_authorized_input_folder("/some/folder")
         assert api.start_scan("/some/folder") == {"ok": True, "scanId": "new"}
         assert api.get_scan_page("old", first["value"]["nextOffset"])["error"] == "SCAN_RESULT_EXPIRED"
     finally:

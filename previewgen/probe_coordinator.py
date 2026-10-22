@@ -93,6 +93,8 @@ class ProbeCoordinator:
     Supervises asset probe requests with latest-wins semantics.
     Ensures at most one active probe job and one pending latest request.
     """
+    _serializable = False  # never reachable from window.pywebview.api
+
 
     def __init__(self) -> None:
         self._lock = threading.Lock()

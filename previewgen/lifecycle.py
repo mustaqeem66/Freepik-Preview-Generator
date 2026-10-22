@@ -67,6 +67,8 @@ class LifecycleManager:
     Manages application lifecycle, worker threads, and orderly shutdown.
     GUI-independent.
     """
+    _serializable = False  # never reachable from window.pywebview.api
+
 
     def __init__(self) -> None:
         self.cancel_event = threading.Event()

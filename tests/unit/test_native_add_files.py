@@ -26,7 +26,7 @@ class FakePicker:
 def _grant(api: DesktopApi, monkeypatch, selected: list[Path]):
     window = FakePicker([str(path) for path in selected])
     monkeypatch.setitem(sys.modules, "webview", types.SimpleNamespace(OPEN_DIALOG=1))
-    api.set_window(window)
+    api._set_window(window)
     return api.browse_files(), window
 
 
@@ -45,10 +45,10 @@ def test_native_picker_grants_individual_paths_only(tmp_path, monkeypatch):
         assert [entry["name"] for entry in result["value"]["files"]] == ["one.png"]
         assert len(result["value"]["rejected"]) == 1
         assert window.calls == [(1, True)]
-        assert api.is_authorized_selected_file(source)
-        assert not api.is_authorized_selected_file(neighbour)
-        assert not api.is_authorized_path(source.parent)
-        assert not api.is_authorized_output_path(source.parent)
+        assert api._is_authorized_selected_file(source)
+        assert not api._is_authorized_selected_file(neighbour)
+        assert not api._is_authorized_path(source.parent)
+        assert not api._is_authorized_output_path(source.parent)
     finally:
         api.cleanup()
 
@@ -63,10 +63,10 @@ def test_injected_files_and_unauthorized_output_rejected(tmp_path, monkeypatch):
         picked, _ = _grant(api, monkeypatch, [source])
         assert picked["ok"]
         assert api.start_batch_files([str(intruder)], str(tmp_path), {})["error"] == "UNAUTHORIZED_OUTPUT_PATH"
-        api.add_authorized_output_folder(tmp_path / "out")
+        api._add_authorized_output_folder(tmp_path / "out")
         result = api.start_batch_files([str(intruder)], str(tmp_path / "out"), {})
         assert result["error"] == "UNAUTHORIZED_SELECTED_FILE"
-        api.add_authorized_folder(tmp_path)
+        api._add_authorized_folder(tmp_path)
         result = api.start_batch_files([str(source)], str(tmp_path), {})
         # Even explicitly selected SOURCE folders are not output grants for
         # the exact-file multi-directory workflow.
@@ -90,7 +90,7 @@ def test_selected_files_from_two_folders_are_batch_exported(tmp_path, monkeypatc
     try:
         picked, _ = _grant(api, monkeypatch, [a, b])
         assert picked["ok"], picked
-        api.add_authorized_output_folder(output)
+        api._add_authorized_output_folder(output)
         started = api.start_batch_files(
             [str(a), str(b)], str(output), {"overwritePolicy": "rename"}
         )
@@ -102,8 +102,8 @@ def test_selected_files_from_two_folders_are_batch_exported(tmp_path, monkeypatc
         assert (output / "art-a.jpg").is_file()
         assert (output / "art-b.jpg").is_file()
         assert list(output.glob("previewgen-report-*.json"))
-        assert not api.is_authorized_path(first)
-        assert not api.is_authorized_path(second)
+        assert not api._is_authorized_path(first)
+        assert not api._is_authorized_path(second)
     finally:
         api.cleanup()
 
@@ -117,7 +117,7 @@ def test_raw_zip_is_rejected_in_file_picker_until_member_preview_is_supported(tm
         assert result["ok"]
         assert result["value"]["files"] == []
         assert "choose its folder" in result["value"]["rejected"][0]
-        assert not api.is_authorized_selected_file(archive)
+        assert not api._is_authorized_selected_file(archive)
     finally:
         api.cleanup()
 
@@ -136,7 +136,7 @@ def test_duplicate_basename_sources_keep_independent_batch_outputs(tmp_path, mon
         sources = [folder / "same.png" for folder in dirs]
         selected, _ = _grant(api, monkeypatch, sources)
         assert len(selected["value"]["files"]) == 2
-        api.add_authorized_output_folder(output)
+        api._add_authorized_output_folder(output)
         started = api.start_batch_files([str(source) for source in sources], str(output), {})
         assert started["ok"], started
         worker = api.lifecycle.batch_thread
@@ -171,11 +171,11 @@ def test_settings_cannot_launder_a_new_output_grant(tmp_path, monkeypatch):
         assert not denied["ok"]
         assert denied["error"] == "UNAUTHORIZED_OUTPUT_PATH"
         assert saved == []
-        assert not api.is_authorized_output_path(output)
+        assert not api._is_authorized_output_path(output)
 
         # Output selections are supported, but only after the native picker
         # (or a separately reviewed restored preference) grants that path.
-        api.add_authorized_output_folder(output)
+        api._add_authorized_output_folder(output)
         accepted = api.save_settings({"outputFolder": str(output), "revision": 2})
         assert accepted["ok"]
         assert saved == [{"outputFolder": str(output), "revision": 2}]
@@ -196,13 +196,13 @@ def test_picked_asset_single_export_requires_explicit_output_grant(tmp_path, mon
         assert result["ok"]
         # A source-folder grant from another operation is not a destination
         # grant for an Add Files source, even when both refer to the same path.
-        api.add_authorized_folder(source)
+        api._add_authorized_folder(source)
         denied = api.export_preview(str(art), {"outputFolder": str(source)})
         assert not denied["ok"]
         assert denied["error"] == "UNAUTHORIZED_OUTPUT_PATH"
         assert not (source / "art.jpg").exists()
 
-        api.add_authorized_output_folder(output)
+        api._add_authorized_output_folder(output)
         allowed = api.export_preview(str(art), {
             "outputFolder": str(output), "overwritePolicy": "rename"
         })
@@ -221,15 +221,15 @@ def test_clearing_collection_revokes_picker_read_capabilities(tmp_path, monkeypa
     try:
         picked, _ = _grant(api, monkeypatch, [first, second])
         assert len(picked["value"]["files"]) == 2
-        assert api.is_authorized_selected_file(first)
-        assert api.is_authorized_selected_file(second)
+        assert api._is_authorized_selected_file(first)
+        assert api._is_authorized_selected_file(second)
         result = api.clear_selected_files()
         assert result == {"ok": True, "value": 2, "error": None}
-        assert not api.is_authorized_selected_file(first)
-        assert not api.is_authorized_selected_file(second)
+        assert not api._is_authorized_selected_file(first)
+        assert not api._is_authorized_selected_file(second)
         assert api.clear_selected_files()["value"] == 0
         output = tmp_path / "output"
-        api.add_authorized_output_folder(output)
+        api._add_authorized_output_folder(output)
         denied = api.start_batch_files([str(first)], str(output), {})
         assert denied["error"] == "UNAUTHORIZED_SELECTED_FILE"
     finally:

@@ -45,6 +45,6 @@ def test_open_diagnostics_folder_is_authorized_and_local(monkeypatch, tmp_path):
     result = api.open_diagnostics_folder()
     assert result["ok"]
     assert logs.is_dir()
-    assert api.is_authorized_path(logs)
+    assert api._is_authorized_path(logs)
     assert visited == [str(logs)]
     api.cleanup()
