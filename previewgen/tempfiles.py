@@ -159,6 +159,7 @@ def cleanup_stale_temp_dirs(
             owner_pid: int | None = None
             created: float | None = None
             marker = entry / OWNER_MARKER
+            provenance_unknown = False
             if marker.is_file():
                 try:
                     data = json.loads(marker.read_text(encoding="utf-8"))
@@ -168,6 +169,7 @@ def cleanup_stale_temp_dirs(
                         created = float(data["created"])
                 except Exception:
                     owner_pid = None
+                    provenance_unknown = True
 
             reference = created if created is not None else entry.stat().st_mtime
             age = now - reference
@@ -175,7 +177,10 @@ def cleanup_stale_temp_dirs(
             # do not delete fresh directories under MINIMUM_DELETION_AGE_SECONDS
             is_stale = age > max_age_seconds
             owner_dead = owner_pid is not None and not _pid_alive(owner_pid)
-            eligible = (owner_dead and age >= MINIMUM_DELETION_AGE_SECONDS) or (owner_pid is None and is_stale)
+            eligible = (
+                (owner_dead and age >= MINIMUM_DELETION_AGE_SECONDS)
+                or (owner_pid is None and is_stale and not provenance_unknown)
+            )
 
             if eligible and safe_rmtree(entry, "stale temp"):
                 removed += 1

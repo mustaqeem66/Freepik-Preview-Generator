@@ -152,71 +152,86 @@ class ProbeCoordinator:
                 self._cancel_requested = True
 
     def _run_loop(self) -> None:
-        while self._running:
-            with self._lock:
-                task = self._pending_task
-                self._pending_task = None
-                if not task:
-                    self._active_op_id = None
-                    break
-                # A freshly dequeued task supersedes any earlier cancel signal.
-                self._cancel_requested = False
-                self._active_op_id = task["operation_id"]
-
-            op_id = task["operation_id"]
-
-            try:
-                res = self._probe_isolated(op_id, task["source"])
+        try:
+            while self._running:
                 with self._lock:
-                    superseded = (
-                        self._pending_task is not None
-                        or self._active_op_id != op_id
-                        or self._cancel_requested
-                    )
-                if superseded:
-                    continue
+                    task = self._pending_task
+                    self._pending_task = None
+                    if not task:
+                        self._active_op_id = None
+                        break
+                    # A freshly dequeued task supersedes any earlier cancel signal.
+                    self._cancel_requested = False
+                    self._active_op_id = task["operation_id"]
 
-                if res.get("status") == "success":
-                    probe_data = res["value"]
-                    if self._dispatch_fn:
-                        self._dispatch_fn(
-                            "probe.completed",
-                            {
-                                "operationId": op_id,
-                                "probe": probe_data,
-                            },
-                            op_id,
+                op_id = task["operation_id"]
+
+                try:
+                    res = self._probe_isolated(op_id, task["source"])
+                    with self._lock:
+                        superseded = (
+                            self._pending_task is not None
+                            or self._active_op_id != op_id
+                            or self._cancel_requested
                         )
-                else:
+                    if superseded:
+                        continue
+
+                    if res.get("status") == "success":
+                        probe_data = res["value"]
+                        if self._dispatch_fn:
+                            self._dispatch_fn(
+                                "probe.completed",
+                                {
+                                    "operationId": op_id,
+                                    "probe": probe_data,
+                                },
+                                op_id,
+                            )
+                    else:
+                        if self._dispatch_fn:
+                            self._dispatch_fn(
+                                "probe.failed",
+                                {
+                                    "operationId": op_id,
+                                    "error": res.get("error", "Asset probe failed"),
+                                    "code": res.get("error_type", "UNKNOWN"),
+                                },
+                                op_id,
+                            )
+                except Exception as exc:
+                    logging.debug("Probe execution notice for %s: %s", op_id, exc)
                     if self._dispatch_fn:
                         self._dispatch_fn(
                             "probe.failed",
                             {
                                 "operationId": op_id,
-                                "error": res.get("error", "Asset probe failed"),
-                                "code": res.get("error_type", "UNKNOWN"),
+                                "error": str(exc),
+                                "code": type(exc).__name__,
                             },
                             op_id,
                         )
-            except Exception as exc:
-                logging.debug("Probe execution notice for %s: %s", op_id, exc)
-                if self._dispatch_fn:
-                    self._dispatch_fn(
-                        "probe.failed",
-                        {
-                            "operationId": op_id,
-                            "error": str(exc),
-                            "code": type(exc).__name__,
-                        },
-                        op_id,
-                    )
+
+        finally:
+            # The loop can only exit while holding no work, but a submit that
+            # wins the lock between the exit decision and this thread actually
+            # stopping would see is_alive() true and queue work for nobody.
+            # Clearing the reference under the lock -- and respawning if a task
+            # arrived in that window -- closes it.
+            with self._lock:
+                if self._worker_thread is threading.current_thread():
+                    self._worker_thread = None
+                    if self._running and self._pending_task is not None:
+                        self._worker_thread = threading.Thread(
+                            target=self._run_loop, daemon=True)
+                        self._worker_thread.start()
 
     def _probe_isolated(self, op_id: str, source: str) -> dict[str, Any]:
         self._slot.ensure_started()
         job_id = self._slot.send({"source": str(source)})
 
         display_name = Path(str(source)).name or str(source)
-        start_t = time.time()
+        start_t = time.monotonic()
         timeout = DEFAULT_PROBE_TIMEOUT_SECONDS
         while True:
             with self._lock:
@@ -230,7 +245,7 @@ class ProbeCoordinator:
                 self._slot.kill()
                 return {"status": "error", "error": "superseded", "error_type": "CANCELLED"}
 
-            if (time.time() - start_t) > timeout:
+            if (time.monotonic() - start_t) > timeout:
                 logging.warning("Asset probe timeout for %s after %.1fs", display_name, timeout)
                 self._slot.kill()
                 return {"status": "error", "error": f"Probe timed out ({timeout}s)", "error_type": "TIMEOUT"}

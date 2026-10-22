@@ -28,6 +28,7 @@ from previewgen import limits
 from previewgen.assets import calculate_export_dimensions as _calc_export_dimensions
 from previewgen.config import DISCOVERY_MAX_FILES, SUPPORTED_3D_EXTENSIONS, SUPPORTED_EXTENSIONS, PreviewConfig
 from previewgen.destinations import protect_source_destinations
+from previewgen.errors import ErrorCode
 from previewgen.lifecycle import ActiveOperation, LifecycleManager
 from previewgen.preview_coordinator import DEFAULT_PREVIEW_TIMEOUT_SECONDS, PreviewCoordinator
 from previewgen.preview_server import PreviewFileServer
@@ -344,7 +345,12 @@ class DesktopApi:
         files = result.get("files")
         if (self._scan_paging_enabled and isinstance(files, list) and (
             len(files) > SCAN_INLINE_RESULT_LIMIT
-            or len(json.dumps(files, ensure_ascii=False).encode("utf-8")) > SCAN_PAGE_MAX_BYTES
+            # ensure_ascii=False here would raise UnicodeEncodeError: os.walk
+            # decodes undecodable filename bytes with surrogateescape, and lone
+            # surrogates cannot be encoded back to UTF-8. The escaped form is
+            # also what _dispatch_envelope actually transmits, so measuring it
+            # keeps the byte budget honest.
+            or len(json.dumps(files).encode("utf-8")) > SCAN_PAGE_MAX_BYTES
         )):
             # Scanner callbacks can race a newer scan start just after their
             # own is-current check. Never replace the new scan's page cache.
@@ -393,7 +399,7 @@ class DesktopApi:
             chunk: list[dict[str, Any]] = []
             payload_bytes = 512
             for file in files[offset:offset + limit]:
-                encoded_size = len(json.dumps(file, ensure_ascii=False).encode("utf-8")) + 2
+                encoded_size = len(json.dumps(file).encode("utf-8")) + 2
                 if payload_bytes + encoded_size > SCAN_PAGE_MAX_BYTES:
                     if not chunk:
                         return {"ok": False, "value": None, "error": "SCAN_ROW_TOO_LARGE"}
@@ -715,18 +721,31 @@ class DesktopApi:
         """Synchronous scan of a native-authorized input root only."""
         if not self._is_authorized_input_path(folder_path):
             return {"ok": False, "files": [], "total": 0, "error": "UNAUTHORIZED_INPUT_PATH"}
-        return self.scanner.scan_folder(folder_path)
+        try:
+            return self.scanner.scan_folder(folder_path)
+        except Exception as exc:
+            # A share that disappears between picking and walking raises here;
+            # every bridge method answers with the envelope, never a rejection.
+            logging.warning("Scan failed: %s", exc)
+            return {"ok": False, "files": [], "total": 0, "error": str(exc)}
 
     def start_scan(self, folder_path: str, paged: bool = False) -> dict[str, Any]:
         """Start scan, requiring a new UI to explicitly opt into paged rows."""
         # A legacy UI calls start_scan(folder) and expects a complete inline
         # scan.finished event; never hand it metadata it cannot consume.
+        if not self._is_authorized_input_path(folder_path):
+            return {"ok": False, "error": "UNAUTHORIZED_INPUT_PATH"}
         with self._scan_page_lock:
             self._scan_page_state = None
             self._scan_paging_enabled = paged is True
-        if not self._is_authorized_input_path(folder_path):
-            return {"ok": False, "error": "UNAUTHORIZED_INPUT_PATH"}
-        return self.scanner.start_scan(folder_path)
+        try:
+            return self.scanner.start_scan(folder_path)
+        except Exception as exc:
+            with self._scan_page_lock:
+                self._scan_page_state = None
+                self._scan_paging_enabled = False
+            logging.warning("Scan could not be started: %s", exc)
+            return {"ok": False, "error": str(exc)}
 
     def cancel_scan(self, scan_id: str | None = None) -> dict[str, Any]:
         """Request cancellation of a specific scan to prevent stale commands.
@@ -1238,7 +1257,7 @@ class DesktopApi:
             if not isinstance(file_paths, list) or not 0 < len(file_paths) <= 5000:
                 return {"ok": False, "error": "INVALID_FILE_SELECTION"}
             if not isinstance(output_folder, str) or not output_folder.strip():
-                return {"ok": False, "error": "OUTPUT_FOLDER_REQUIRED"}
+                return {"ok": False, "error": ErrorCode.OUTPUT_FOLDER_REQUIRED}
             output = Path(output_folder).resolve()
             if not self._is_authorized_output_path(output):
                 return {"ok": False, "error": "UNAUTHORIZED_OUTPUT_PATH"}

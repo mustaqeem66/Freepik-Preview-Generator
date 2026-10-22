@@ -237,82 +237,97 @@ class PreviewCoordinator:
                 self._cancel_requested = True
 
     def _run_loop(self) -> None:
-        while self._running:
-            with self._lock:
-                task = self._pending_task
-                self._pending_task = None
-                if not task:
-                    self._active_op_id = None
-                    break
-                # A freshly dequeued task supersedes any earlier cancel signal.
-                self._cancel_requested = False
-                self._active_op_id = task["operation_id"]
-
-            op_id = task["operation_id"]
-
-            try:
-                res = self._render_isolated(
-                    op_id, task["source"], task["config_dict"], task["max_dimension"]
-                )
-                # Check if this task was superseded while running
+        try:
+            while self._running:
                 with self._lock:
-                    superseded = (
-                        self._pending_task is not None
-                        or self._active_op_id != op_id
-                        or self._cancel_requested
-                    )
-                if superseded:
-                    continue  # Superseded/cancelled, do not publish or dispatch
+                    task = self._pending_task
+                    self._pending_task = None
+                    if not task:
+                        self._active_op_id = None
+                        break
+                    # A freshly dequeued task supersedes any earlier cancel signal.
+                    self._cancel_requested = False
+                    self._active_op_id = task["operation_id"]
 
-                if res.get("status") == "success":
-                    jpeg_bytes = res["jpeg_bytes"]
-                    orig_w = res["width"]
-                    orig_h = res["height"]
-                    preview_url = self.preview_server.publish_jpeg(jpeg_bytes)
-                    preview_id = preview_url.split("/")[-1] if "/" in preview_url else preview_url
-                    metrics = res.get("metrics", {})
-                    logging.info(
-                        "Preview generated [op=%s, totalMs=%.1f, renderMs=%.1f]",
-                        op_id,
-                        metrics.get("totalMs", 0.0),
-                        metrics.get("renderMs", 0.0),
+                op_id = task["operation_id"]
+
+                try:
+                    res = self._render_isolated(
+                        op_id, task["source"], task["config_dict"], task["max_dimension"]
                     )
-                    if self._dispatch_fn:
-                        self._dispatch_fn(
-                            "preview.completed",
-                            {
-                                "operationId": op_id,
-                                "url": preview_url,
-                                "previewId": preview_id,
-                                "width": orig_w,
-                                "height": orig_h,
-                                "metrics": metrics,
-                            },
-                            op_id,
+                    # Check if this task was superseded while running
+                    with self._lock:
+                        superseded = (
+                            self._pending_task is not None
+                            or self._active_op_id != op_id
+                            or self._cancel_requested
                         )
-                else:
+                    if superseded:
+                        continue  # Superseded/cancelled, do not publish or dispatch
+
+                    if res.get("status") == "success":
+                        jpeg_bytes = res["jpeg_bytes"]
+                        orig_w = res["width"]
+                        orig_h = res["height"]
+                        preview_url = self.preview_server.publish_jpeg(jpeg_bytes)
+                        preview_id = preview_url.split("/")[-1] if "/" in preview_url else preview_url
+                        metrics = res.get("metrics", {})
+                        logging.info(
+                            "Preview generated [op=%s, totalMs=%.1f, renderMs=%.1f]",
+                            op_id,
+                            metrics.get("totalMs", 0.0),
+                            metrics.get("renderMs", 0.0),
+                        )
+                        if self._dispatch_fn:
+                            self._dispatch_fn(
+                                "preview.completed",
+                                {
+                                    "operationId": op_id,
+                                    "url": preview_url,
+                                    "previewId": preview_id,
+                                    "width": orig_w,
+                                    "height": orig_h,
+                                    "metrics": metrics,
+                                },
+                                op_id,
+                            )
+                    else:
+                        if self._dispatch_fn:
+                            self._dispatch_fn(
+                                "preview.failed",
+                                {
+                                    "operationId": op_id,
+                                    "error": res.get("error", "Preview generation failed"),
+                                    "code": res.get("error_type", "UNKNOWN"),
+                                },
+                                op_id,
+                            )
+                except Exception as exc:
+                    logging.debug("Preview execution notice for %s: %s", op_id, exc)
                     if self._dispatch_fn:
                         self._dispatch_fn(
                             "preview.failed",
                             {
                                 "operationId": op_id,
-                                "error": res.get("error", "Preview generation failed"),
-                                "code": res.get("error_type", "UNKNOWN"),
+                                "error": str(exc),
+                                "code": type(exc).__name__,
                             },
                             op_id,
                         )
-            except Exception as exc:
-                logging.debug("Preview execution notice for %s: %s", op_id, exc)
-                if self._dispatch_fn:
-                    self._dispatch_fn(
-                        "preview.failed",
-                        {
-                            "operationId": op_id,
-                            "error": str(exc),
-                            "code": type(exc).__name__,
-                        },
-                        op_id,
-                    )
+
+        finally:
+            # The loop can only exit while holding no work, but a submit that
+            # wins the lock between the exit decision and this thread actually
+            # stopping would see is_alive() true and queue work for nobody.
+            # Clearing the reference under the lock -- and respawning if a task
+            # arrived in that window -- closes it.
+            with self._lock:
+                if self._worker_thread is threading.current_thread():
+                    self._worker_thread = None
+                    if self._running and self._pending_task is not None:
+                        self._worker_thread = threading.Thread(
+                            target=self._run_loop, daemon=True)
+                        self._worker_thread.start()
 
     def _render_isolated(
         self,
@@ -329,7 +344,7 @@ class PreviewCoordinator:
         })
 
         display_name = Path(str(source)).name or str(source)
-        start_t = time.time()
+        start_t = time.monotonic()
         timeout = DEFAULT_PREVIEW_TIMEOUT_SECONDS
         while True:
             with self._lock:
@@ -343,14 +358,14 @@ class PreviewCoordinator:
                 self._slot.kill()
                 return {"status": "error", "error": "superseded", "error_type": "CANCELLED"}
 
-            if (time.time() - start_t) > timeout:
+            if (time.monotonic() - start_t) > timeout:
                 logging.warning("Live preview timeout for %s after %.1fs", display_name, timeout)
                 self._slot.kill()
                 return {"status": "error", "error": f"Preview timed out ({timeout}s)", "error_type": "TIMEOUT"}
 
             res = self._slot.poll(job_id, timeout=0.04)
             if res is not None:
-                total_ms = (time.time() - start_t) * 1000.0
+                total_ms = (time.monotonic() - start_t) * 1000.0
                 res["metrics"] = {"totalMs": total_ms, "renderMs": total_ms}
                 return res
 
@@ -389,9 +404,9 @@ class PreviewCoordinator:
                     "max_dimension": max_dimension,
                     "source_only": source_only,
                 })
-                start_t = time.time()
+                start_t = time.monotonic()
                 while True:
-                    if (time.time() - start_t) > timeout_seconds:
+                    if (time.monotonic() - start_t) > timeout_seconds:
                         logging.warning("Synchronous preview timeout for %s after %.1fs", source, timeout_seconds)
                         self._sync_slot.kill()
                         return {
