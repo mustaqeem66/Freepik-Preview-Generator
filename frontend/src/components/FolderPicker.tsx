@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FolderOpen, FolderOutput, Info } from "lucide-react";
+import { FolderOpen, FolderOutput } from "lucide-react";
 
 interface FolderPickerProps {
   inputFolder: string;
@@ -34,7 +34,6 @@ export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseIn
       {onBrowseFiles && <button type="button" className="button source-files-button" disabled={disabled}
         onClick={onBrowseFiles}>Browse Files…</button>}
     </div>
-    <p className="picker-hint"><Info size={14} aria-hidden="true" />For privacy, select a directory through Choose Folder. The field above displays its authorized path, not a freeform scan target. Choose Folder may hide files; use <strong>Browse Files…</strong> to select individual artwork.</p>
     <div className="section-heading destination-heading"><FolderOutput size={16} /><h2>Destination</h2></div>
     <label className="check-row"><input type="checkbox" checked={sameFolder && !forceSeparateOutput}
       disabled={disabled || forceSeparateOutput}
@@ -43,13 +42,9 @@ export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseIn
       Selected files may come from different folders, so choose a separate output destination.
     </p>}
     {sameFolder && !forceSeparateOutput ? <p className="path-hint" title={inputFolder}>Saving in the source folder</p> : <>
-      <label className="sr-only" htmlFor="output-folder">Output folder path</label>
-      {/* Export only writes into folders selected through the native picker, so
-          typing a path here would produce an UNAUTHORIZED_PATH error. */}
       <input id="output-folder" type="text" value={output} placeholder="Choose an output folder"
         disabled={disabled} readOnly title={outputFolder}
-        aria-describedby="output-folder-hint" />
-      <p id="output-folder-hint" className="picker-hint">Pick the destination with the button below so PreviewGen is allowed to write there.</p>
+        aria-label="Output folder path" />
     </>}
     <button type="button" className="button" disabled={disabled || (sameFolder && !forceSeparateOutput)} onClick={onBrowseOutput}>
       <FolderOutput size={15} />Choose Output Folder
