@@ -5,120 +5,120 @@ user chooses it in the *operating-system* file dialog. Unit tests simulate the
 grant; this drives the real GTK chooser pywebview opens and asserts what the
 application may read afterwards.
 
-One ``webview.start`` session runs both scenarios, because the GTK main loop
-cannot be re-entered reliably from a second call in the same process. Only one
-asset is picked per file dialog: a headless ``GtkFileChooser`` replaces rather
-than extends its selection when ``select_filename()`` is applied twice, so
-multi-select is left to the unit-level grant tests instead of being faked here.
+The GUI session runs in a subprocess on purpose. ``webview.start()`` owns the
+thread that runs it, so a test that started it in-process would leave pytest's
+own process multi-threaded, and the batch tests that fork a renderer afterwards
+then deadlock inside ``multiprocessing``. Only one asset is picked per dialog:
+a headless ``GtkFileChooser`` replaces rather than extends its selection when
+``select_filename()`` is applied twice, so multi-select stays covered by the
+unit-level grant tests instead of being faked here.
 """
 from __future__ import annotations
 
+import json
+import os
+import subprocess
 import sys
-import threading
 from pathlib import Path
 
 import pytest
-
-gi = pytest.importorskip("gi")
-gi.require_version("Gdk", "3.0")
-gi.require_version("Gtk", "3.0")
-
-import webview  # noqa: E402
-from gi.repository import Gdk, GLib, Gtk  # noqa: E402
-from PIL import Image  # noqa: E402
-
-from previewgen.api import DesktopApi  # noqa: E402
 
 pytestmark = [
     pytest.mark.full_runtime,
     pytest.mark.skipif(sys.platform != "linux", reason="GTK chooser is the Linux native path"),
     pytest.mark.skipif(
-        not (GLib.getenv("DISPLAY") or GLib.getenv("WAYLAND_DISPLAY")),
+        not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
         reason="native file dialogs need a display",
     ),
 ]
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+CHILD_FLAG = "--native-picker-child"
+BUDGET = 600  # ticks at 80ms; the 90s session watchdog is the real stop
+EVIDENCE_PREFIX = "PICKER_EVIDENCE "
 
-class _ChooserDriver:
-    """Answers each native dialog as soon as it holds the wanted selection.
 
-    ``Gtk.Dialog.run()`` nests the default main context, so a timeout source
-    added before the call still fires while the chooser is up. The chooser
-    loads its folder model asynchronously, so a selection applied on the first
-    tick is dropped; the driver re-applies it until the widget reports it back,
-    which is the state a real user's click leaves behind.
-    """
+def _observe_session(workdir: Path) -> dict[str, object]:
+    """Run the real picker flow and report the permissions it left behind."""
+    sys.path.insert(0, str(PROJECT_ROOT))
+    import threading
 
-    budget = 150
+    import webview
+    from gi.repository import Gdk, GLib, Gtk
+    from PIL import Image
 
-    def __init__(self, folder: Path, pick: Path):
-        self.folder = folder
-        self.pick = pick
-        self.ticks = 0
-        self.navigated: set[int] = set()
-        self.answered: list[int] = []
+    from previewgen.api import DesktopApi
 
-    def _ready(self, dialog: Gtk.FileChooserDialog, key: int) -> bool:
-        if key not in self.navigated:
-            dialog.set_current_folder(str(self.folder))
-            self.navigated.add(key)
-        dialog.select_filename(str(self.pick))
-        chosen = dialog.get_filename()
-        return chosen is not None and Path(chosen) == self.pick
+    chosen = workdir / "chosen.png"
+    Image.new("RGB", (24, 24), "red").save(chosen)
+    Image.new("RGB", (24, 24), "blue").save(workdir / "sibling.png")
+    Image.new("RGB", (24, 24), "green").save(workdir / "never-picked.png")
+    (workdir / "notes.txt").write_text("not artwork", encoding="utf-8")
 
-    def poll(self) -> bool:
-        self.ticks += 1
-        give_up = self.ticks >= self.budget
+    api = DesktopApi()
+    evidence: dict[str, object] = {}
+    finished = threading.Event()
+    state = {"ticks": 0, "navigated": set(), "answered": [], "pick": chosen}
+
+    def ready(dialog) -> bool:
+        key = id(dialog)
+        if key not in state["navigated"]:
+            dialog.set_current_folder(str(workdir))
+            state["navigated"].add(key)
+        dialog.select_filename(str(state["pick"]))
+        return Path(dialog.get_filename() or "") == state["pick"]
+
+    def poll() -> bool:
+        state["ticks"] += 1
+        give_up = state["ticks"] >= BUDGET
+        evidence["give_up"] = give_up
         for toplevel in Gtk.Window.list_toplevels():
             if not isinstance(toplevel, Gtk.FileChooserDialog):
                 continue
             key = id(toplevel)
-            if key in self.answered:
+            if key in state["answered"]:
                 continue
-            if not self._ready(toplevel, key) and not give_up:
-                break
-            self.answered.append(key)
+            if not ready(toplevel) and not give_up:
+                return True
+            state["answered"].append(key)
             toplevel.response(Gtk.ResponseType.CANCEL if give_up else Gtk.ResponseType.OK)
-        return self.ticks < self.budget and not self.answered
+            return False
+        return True
 
-
-def test_native_picker_selection_is_what_becomes_readable(tmp_path):
-    chosen = tmp_path / "chosen.png"
-    Image.new("RGB", (24, 24), "red").save(chosen)
-    Image.new("RGB", (24, 24), "blue").save(tmp_path / "sibling.png")
-    Image.new("RGB", (24, 24), "green").save(tmp_path / "never-picked.png")
-    (tmp_path / "notes.txt").write_text("not artwork", encoding="utf-8")
-
-    api = DesktopApi()
-    outcome: dict[str, object] = {}
-    finished = threading.Event()
-
-    def _ask(driver: _ChooserDriver, call):
-        Gdk.threads_add_timeout(GLib.PRIORITY_DEFAULT, 80, driver.poll)
+    def ask(driver_pick: Path, call):
+        state["pick"] = driver_pick
+        Gdk.threads_add_timeout(GLib.PRIORITY_DEFAULT, 80, poll)
         return call()
 
     def scenario() -> None:
         try:
-            outcome["files"] = _ask(_ChooserDriver(tmp_path, chosen), api.browse_files)
+            evidence["files"] = ask(chosen, api.browse_files)
             # Snapshot before the folder dialog widens the read capability.
-            outcome["exact"] = api._is_authorized_selected_file(chosen)
-            outcome["sibling"] = api._is_authorized_selected_file(tmp_path / "sibling.png")
-            outcome["folder_read"] = api._is_authorized_input_path(tmp_path / "sibling.png")
-            outcome["folder"] = _ask(_ChooserDriver(tmp_path, tmp_path),
-                                     lambda: api.browse_input_folder())
+            evidence["exact"] = api._is_authorized_selected_file(chosen)
+            evidence["sibling"] = api._is_authorized_selected_file(workdir / "sibling.png")
+            evidence["folder_read"] = api._is_authorized_input_path(workdir / "sibling.png")
+            evidence["folder"] = ask(workdir, api.browse_input_folder)
+            evidence["granted_read"] = api._is_authorized_input_path(workdir / "never-picked.png")
+            evidence["write_granted"] = api._is_authorized_output_path(workdir)
+            evidence["preview"] = api.start_preview(str(workdir / "never-picked.png"), {})
+            outside = workdir.parent / "picker-outside.png"
+            Image.new("RGB", (24, 24), "white").save(outside)
+            evidence["outside"] = api.start_preview(str(outside), {})
+            evidence["non_image"] = api._source_read_error(str(workdir / "notes.txt"))
+            Path(outside).unlink(missing_ok=True)
         finally:
             finished.set()
-            # destroy() marshals back to the GUI loop; joining here would block
-            # that same loop, because webview.start runs launch() on it.
-            api._window.destroy()
+            # destroy() marshals back to the GUI loop; joining it here would
+            # block that same loop, because webview.start runs launch() on it.
+            window.destroy()
 
     def launch() -> None:
         threading.Thread(target=scenario, daemon=True).start()
 
         def watchdog() -> bool:
             if not finished.is_set():
-                outcome["error"] = "native dialog was never answered"
-                api._window.destroy()
+                evidence["error"] = "native dialog was never answered"
+                window.destroy()
             return False
 
         GLib.timeout_add_seconds(90, watchdog)
@@ -126,32 +126,43 @@ def test_native_picker_selection_is_what_becomes_readable(tmp_path):
     window = webview.create_window("picker-e2e", url="about:blank", js_api=api)
     api._set_window(window)
     webview.start(launch, gui="gtk")
+    return evidence
 
-    assert finished.is_set(), "the native GUI session did not finish"
-    assert "error" not in outcome, outcome.get("error")
 
-    files = outcome["files"]
-    assert files["ok"] is True
+def test_native_picker_selection_is_what_becomes_readable(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve()), CHILD_FLAG, str(tmp_path)],
+        capture_output=True, text=True, timeout=180, cwd=str(PROJECT_ROOT),
+    )
+    assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+    line = next(
+        (line for line in result.stdout.splitlines() if line.startswith(EVIDENCE_PREFIX)), None
+    )
+    assert line is not None, f"no evidence line in:\n{result.stdout}\n{result.stderr}"
+    evidence = json.loads(line[len(EVIDENCE_PREFIX):])
+    assert "error" not in evidence, f"the GUI session stalled: {evidence}"
+    assert evidence["give_up"] is False, f"the native dialog was never answered: {evidence}"
+
+    files = evidence["files"]
+    assert files["ok"] is True, files
     assert [Path(entry["path"]).name for entry in files["value"]["files"]] == ["chosen.png"]
     assert files["value"]["rejected"] == []
 
-    # Add Files grants the picked asset alone -- not its sibling, not the folder.
-    assert outcome["exact"] is True
-    assert outcome["sibling"] is False
-    assert outcome["folder_read"] is False
+    # Add Files grants the picked asset alone -- not its sibling, not its folder.
+    assert evidence["exact"] is True
+    assert evidence["sibling"] is False
+    assert evidence["folder_read"] is False
 
     # Choose Folder grants the directory for reading, and nothing for writing.
-    assert Path(str(outcome["folder"])).resolve() == tmp_path.resolve()
-    assert api._is_authorized_input_path(tmp_path / "never-picked.png") is True
-    assert api._is_authorized_output_path(tmp_path) is False
+    assert Path(str(evidence["folder"])).resolve() == tmp_path.resolve()
+    assert evidence["granted_read"] is True
+    assert evidence["write_granted"] is False
 
-    assert api.start_preview(str(tmp_path / "never-picked.png"), {})["ok"] is True
-    outside = Path("/tmp/picker-e2e-outside.png")
-    Image.new("RGB", (24, 24), "white").save(outside)
-    try:
-        assert api.start_preview(str(outside), {})["error"] == "UNAUTHORIZED_SOURCE"
-    finally:
-        outside.unlink(missing_ok=True)
-    assert api._source_read_error(str(tmp_path / "notes.txt")) == "UNSUPPORTED_SOURCE"
+    assert evidence["preview"]["ok"] is True
+    assert evidence["outside"]["error"] == "UNAUTHORIZED_SOURCE"
+    assert evidence["non_image"] == "UNSUPPORTED_SOURCE"
 
-    api.cleanup()
+
+if __name__ == "__main__" and CHILD_FLAG in sys.argv:
+    print(EVIDENCE_PREFIX + json.dumps(_observe_session(Path(sys.argv[-1]))))
+    raise SystemExit(0)
