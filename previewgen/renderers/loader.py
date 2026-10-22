@@ -129,10 +129,21 @@ def load_source_image(
         from PIL import ImageOps
         img = ImageOps.exif_transpose(img) or img
 
-        if img.mode in ("I;16", "I;16L", "I;16B", "I"):
+        if img.mode in ("I;16", "I;16L", "I;16B", "I;16N"):
             import numpy as np
             arr = (np.array(img, dtype=np.float32) / 256.0).clip(0, 255).astype(np.uint8)
             result = Image.fromarray(arr).convert("RGBA")
+        elif img.mode in ("I", "F"):
+            import numpy as np
+            # The numeric range of a 32-bit integer or float raster depends on
+            # the writer: an 8-bit scan arrives as mode "I" with 0..255 values
+            # and a normalized float image tops out at 1.0. Scaling by a fixed
+            # divisor rendered both almost pure black.
+            arr = np.array(img, dtype=np.float64)
+            peak = float(arr.max(initial=0.0))
+            if peak > 255.0 or (img.mode == "F" and peak > 0.0):
+                arr = arr * (255.0 / peak)
+            result = Image.fromarray(arr.clip(0, 255).astype(np.uint8), mode="L").convert("RGBA")
         elif img.mode in ("CMYK", "YCbCr"):
             result = img.convert("RGB").convert("RGBA")
         else:

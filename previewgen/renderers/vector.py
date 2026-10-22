@@ -4,6 +4,7 @@ Rasterizes SVG/SVGZ vector files using resvg.
 """
 from __future__ import annotations
 
+import logging
 from io import BytesIO
 from pathlib import Path
 
@@ -30,12 +31,16 @@ def _load_svg(source_path: Path, max_dimension: int | None = None, target_dimens
         svg_str = raw_bytes.decode("utf-8", errors="replace")
         size = limits._declared_svg_size(svg_str)
         desired = target_dimension if target_dimension is not None else max_dimension
-        render_options: dict[str, int] = {}
+        width: int | None = None
+        height: int | None = None
         if size and desired is not None and (target_dimension is not None or max(size) > desired):
-            render_options["width" if size[0] >= size[1] else "height"] = desired
-        # Rasterize at the requested resolution, not at native size followed by
-        # a bitmap upscale that permanently blurs vector edges.
-        png_bytes = resvg_py.svg_to_bytes(svg_string=svg_str, **render_options)
+            # Rasterize at the requested resolution, not at native size followed by
+            # a bitmap upscale that permanently blurs vector edges.
+            if size[0] >= size[1]:
+                width = int(desired)
+            else:
+                height = int(desired)
+        png_bytes = resvg_py.svg_to_bytes(svg_string=svg_str, width=width, height=height)
         return limits.bounded_image_from_bytes(png_bytes, "SVG render")
     except Exception as exc:
         raise RuntimeError(f"Could not render SVG file '{source_path.name}': {exc}") from exc
@@ -54,13 +59,19 @@ def _load_ai(
             import pypdfium2 as pdfium  # pyrefly: ignore[missing-import]  # optional .ai dependency
             with pdfium.PdfDocument(source_path) as doc:
                 if len(doc) > 0:
-                    with doc[0] as page:
+                    # PdfPage and PdfBitmap are not context managers in pypdfium2;
+                    # using `with` here raised TypeError every time, so every .ai
+                    # export silently fell through to the tiny XMP thumbnail.
+                    page = doc[0]
+                    try:
                         w_pts, h_pts = page.get_size()
                         scale = target_dim / max(w_pts, h_pts)
-                        with page.render(scale=scale, fill_color=(0, 0, 0, 0)) as bitmap:
-                            return bitmap.to_pil().convert("RGBA")
-        except Exception:
-            pass
+                        bitmap = page.render(scale=scale, fill_color=(0, 0, 0, 0))
+                        return bitmap.to_pil().convert("RGBA")
+                    finally:
+                        page.close()
+        except Exception as exc:
+            logging.debug("PDF-compatible .ai rasterization failed for %s: %s", source_path.name, exc)
 
         # 2. Fallback: extract embedded XMP thumbnail
         raw_bytes = source_path.read_bytes()

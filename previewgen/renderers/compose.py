@@ -191,39 +191,40 @@ def compose_preview(
     result = Image.alpha_composite(bg, original)
 
     # ── 1. Custom Logo / Icon Branding Overlay ──
+    # A logo the user explicitly asked for is composited without a try/except:
+    # swallowing the failure here would ship an unbranded image labelled success.
     if config.logo_path and Path(config.logo_path).is_file():
-        try:
-            # Lazy import avoids a circular dependency with the loader.
-            from previewgen.renderers.loader import load_source_image
+        # Lazy import avoids a circular dependency with the loader.
+        from previewgen.renderers.loader import load_source_image
 
-            logo_file = Path(config.logo_path)
-            logo_img = load_source_image(logo_file)
-            base_dim = round(min(width, height) * 0.16 * max(0.2, min(3.0, config.logo_scale)))
-            lw, lh = logo_img.size
-            if max(lw, lh) > 0:
-                ratio = base_dim / max(lw, lh)
-                target_lw = max(16, round(lw * ratio))
-                target_lh = max(16, round(lh * ratio))
-                logo_scaled = logo_img.resize((target_lw, target_lh), Image.Resampling.LANCZOS)
+        logo_file = Path(config.logo_path)
+        logo_img = load_source_image(logo_file)
+        base_dim = round(min(width, height) * 0.16 * max(0.2, min(3.0, config.logo_scale)))
+        lw, lh = logo_img.size
+        if max(lw, lh) > 0:
+            ratio = base_dim / max(lw, lh)
+            target_lw = max(16, round(lw * ratio))
+            target_lh = max(16, round(lh * ratio))
+            logo_scaled = logo_img.resize((target_lw, target_lh), Image.Resampling.LANCZOS)
 
-                clamped_logo_op = max(0.0, min(1.0, config.logo_opacity))
-                if clamped_logo_op < 0.99:
-                    lr, lg, lb, la = logo_scaled.split()
-                    la = la.point(lambda p: round(p * clamped_logo_op))
-                    logo_scaled.putalpha(la)
+            clamped_logo_op = max(0.0, min(1.0, config.logo_opacity))
+            if clamped_logo_op < 0.99:
+                lr, lg, lb, la = logo_scaled.split()
+                la = la.point(lambda p: round(p * clamped_logo_op))
+                logo_scaled.putalpha(la)
 
-                lx = max(
-                    0, min(width - target_lw, round((width - target_lw) * max(0.0, min(1.0, config.logo_pos_x))))
-                )
-                ly = max(
-                    0, min(height - target_lh, round((height - target_lh) * max(0.0, min(1.0, config.logo_pos_y))))
-                )
+            lx = max(
+                0, min(width - target_lw, round((width - target_lw) * max(0.0, min(1.0, config.logo_pos_x))))
+            )
+            ly = max(
+                0, min(height - target_lh, round((height - target_lh) * max(0.0, min(1.0, config.logo_pos_y))))
+            )
 
-                logo_layer = Image.new("RGBA", result.size, (0, 0, 0, 0))
-                logo_layer.paste(logo_scaled, (lx, ly))
-                result = Image.alpha_composite(result, logo_layer)
-        except Exception:
-            pass
+            logo_layer = Image.new("RGBA", result.size, (0, 0, 0, 0))
+            logo_layer.paste(logo_scaled, (lx, ly))
+            result = Image.alpha_composite(result, logo_layer)
+        else:
+            raise ValueError(f"Logo has no pixels to composite: {logo_file.name}")
 
     # ── 2. Watermark Text Overlay ──
     label = config.text.strip()
