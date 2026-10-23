@@ -133,7 +133,7 @@ class PreviewFileServer:
             # protect a frame from count/byte eviction; the age limit still
             # applies so a dropped handle can never pin a stale frame forever.
             now = time.time()
-            existing = sorted(self._root.glob("preview_*.jpg"), key=lambda p: p.name)
+            existing = sorted(self._root.glob("preview_*.jpg"), key=self._frame_order)
             for handle in list(self._refs):
                 if not (self._root / handle).is_file():
                     self._refs.pop(handle, None)
@@ -162,6 +162,17 @@ class PreviewFileServer:
                     self._refs.pop(stale.name, None)
 
             return f"http://127.0.0.1:{self._port}/{self._token}/{name}"
+
+    @staticmethod
+    def _frame_order(path: Path) -> tuple[int, str]:
+        """Order frames by their numeric publish counter.
+
+        The zero-padded name only sorts numerically up to six digits; past that
+        a lexicographic sort can place the newest frame first and make the
+        "never prune the active frame" assumption evict it instead.
+        """
+        digits = path.stem.rsplit("_", 1)[-1]
+        return (int(digits) if digits.isdigit() else -1, path.name)
 
     def _resolve_preview(self, handle: str) -> tuple[str, Path] | None:
         """Resolve a handle (bare preview id or full loopback URL) to a safe path."""

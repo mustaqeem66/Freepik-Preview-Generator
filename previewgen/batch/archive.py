@@ -37,8 +37,6 @@ def safe_extract_zip(
     archive a fresh allowance. ``depth``/``max_depth`` stop archive-in-archive
     recursion. Returns the list of extracted file paths.
     """
-    import zipfile
-
     if depth > max_depth:
         raise ValueError(f"Nested archive depth exceeds {max_depth} levels")
 
@@ -60,7 +58,7 @@ def safe_extract_zip(
     member_count = 0
 
     _ensure_running(is_cancelled)
-    with zipfile.ZipFile(source, "r") as zf:
+    with limits.open_zip_bounded(source, max_entries=max_members) as zf:
         infolist = zf.infolist()
         if len(infolist) > max_members:
             raise ValueError(f"Archive exceeds maximum member limit ({len(infolist)} > {max_members})")

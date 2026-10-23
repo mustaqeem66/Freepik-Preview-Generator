@@ -26,7 +26,6 @@ import tempfile
 import threading
 import time
 import urllib.parse
-import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -80,7 +79,7 @@ def _preview_worker(job_queue: Any, result_queue: Any) -> None:  # pragma: no co
 
                 extracted_temp = Path(tempfile.mkdtemp(prefix="previewgen_worker_zip_"))
                 target_file = extracted_temp / Path(entry_name).name
-                with zipfile.ZipFile(zip_path, "r") as zf:
+                with limits.open_zip_bounded(zip_path) as zf:
                     limits.extract_zip_member_bounded(zf, entry_name, target_file)
                 source_path = target_file
             else:
@@ -139,7 +138,7 @@ def _materialize_source(source: str | Path) -> tuple[Path, Path | None]:
     temp_root = Path(tempfile.mkdtemp(prefix="previewgen_ondemand_"))
     target = temp_root / Path(entry_name).name
     try:
-        with zipfile.ZipFile(zip_path, "r") as zf:
+        with limits.open_zip_bounded(zip_path) as zf:
             limits.extract_zip_member_bounded(zf, entry_name, target)
     except Exception:
         safe_rmtree(temp_root, "failed on-demand preview extraction")

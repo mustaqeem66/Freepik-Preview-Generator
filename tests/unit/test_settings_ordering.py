@@ -99,3 +99,14 @@ def test_api_save_settings_persists_revision_and_rejects_stale(isolated_settings
         assert _persisted()["text"] == "hello"
     finally:
         api.cleanup()
+
+
+def test_failed_write_attempts_leave_no_temp_files(isolated_settings, monkeypatch):
+    def _disk_full(_fd):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(settings_module.os, "fsync", _disk_full)
+
+    assert settings_module.save_settings({"text": "x", "revision": 1}) is False
+    assert not settings_module.SETTINGS_FILE.exists()
+    assert list(isolated_settings.glob("settings_*.tmp")) == []

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from previewgen import limits
 from previewgen.config import (
     SUPPORTED_3D_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
@@ -268,8 +269,16 @@ class ScannerService:
                         })
                     elif ext == ".zip":
                         try:
-                            import zipfile
-                            with zipfile.ZipFile(f_path, "r") as zf:
+                            declared_members = limits.zip_declared_member_count(f_path)
+                            if (declared_members is not None
+                                    and declared_members > limits.MAX_ZIP_DIRECTORY_ENTRIES):
+                                _mark("maximum_archive_members")
+                                logging.warning(
+                                    "Skipping archive %s with %d declared entries (central directory cap)",
+                                    f_path.name, declared_members,
+                                )
+                                continue
+                            with limits.open_zip_bounded(f_path) as zf:
                                 all_members = zf.infolist()
                                 members = all_members[:1000]
                                 if len(all_members) > len(members):

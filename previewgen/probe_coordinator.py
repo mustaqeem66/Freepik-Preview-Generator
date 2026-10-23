@@ -55,7 +55,6 @@ def _probe_worker(job_queue: Any, result_queue: Any) -> None:  # pragma: no cove
             if source_spec.startswith("zip://"):
                 import tempfile
                 import urllib.parse
-                import zipfile
 
                 from previewgen import limits
 
@@ -67,7 +66,7 @@ def _probe_worker(job_queue: Any, result_queue: Any) -> None:  # pragma: no cove
 
                 extracted_temp = Path(tempfile.mkdtemp(prefix="previewgen_worker_probe_"))
                 target_file = extracted_temp / Path(entry_name).name
-                with zipfile.ZipFile(zip_path, "r") as zf:
+                with limits.open_zip_bounded(zip_path) as zf:
                     limits.extract_zip_member_bounded(zf, entry_name, target_file)
                 source_path = target_file
             else:

@@ -247,3 +247,62 @@ def test_extract_zip_member_bounded_rejects_compression_ratio(tmp_path):
     finally:
         previewgen_config.MAX_COMPRESSION_RATIO = original
 
+
+def test_zip_declared_member_count_reads_eocd_without_opening(tmp_path):
+    import zipfile
+
+    archive = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("a.png", b"a")
+        zf.writestr("b.png", b"b")
+
+    assert limits.zip_declared_member_count(archive) == 2
+    assert limits.zip_declared_member_count(tmp_path / "missing.zip") is None
+    (tmp_path / "not-a-zip.bin").write_bytes(b"plain text")
+    assert limits.zip_declared_member_count(tmp_path / "not-a-zip.bin") is None
+
+
+def test_open_zip_bounded_rejects_before_materializing_entries(tmp_path, monkeypatch):
+    import zipfile
+
+    archive = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("a.png", b"a")
+        zf.writestr("b.png", b"b")
+
+    with limits.open_zip_bounded(archive) as zf:
+        assert len(zf.infolist()) == 2
+
+    def _must_not_construct(*_args, **_kwargs):
+        raise AssertionError("zipfile must not be constructed for an over-budget archive")
+
+    monkeypatch.setattr(zipfile, "ZipFile", _must_not_construct)
+    with pytest.raises(ValueError, match="maximum member limit"):
+        limits.open_zip_bounded(archive, max_entries=1)
+
+
+def test_open_zip_bounded_counts_records_when_eocd_total_lies(tmp_path):
+    import struct
+    import zipfile
+
+    archive = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("a.png", b"a")
+        zf.writestr("b.png", b"b")
+
+    # Two records, but both EOCD counters claim one. ``zipfile`` reads the whole
+    # directory by byte size and happily returns both members, so trusting the
+    # declared total would let an arbitrarily large directory through.
+    data = bytearray(archive.read_bytes())
+    eocd = data.rfind(b"PK\x05\x06")
+    assert eocd >= 0
+    struct.pack_into("<H", data, eocd + 8, 1)
+    struct.pack_into("<H", data, eocd + 10, 1)
+    archive.write_bytes(data)
+
+    with zipfile.ZipFile(archive, "r") as zf:
+        assert zf.namelist() == ["a.png", "b.png"]
+    assert limits.zip_declared_member_count(archive) == 1
+    with pytest.raises(ValueError, match="maximum member limit"):
+        limits.open_zip_bounded(archive, max_entries=1)
+
