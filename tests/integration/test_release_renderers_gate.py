@@ -38,7 +38,10 @@ FIXTURE_MATRIX = {
     "sample.dxf": ("ezdxf", 64, "DXF"),
     "sample.obj": ("trimesh", 256, "OBJ"),
     "sample.glb": ("trimesh", 256, "GLB"),
+    "sample.3mf": ("trimesh", 256, "3MF"),
+    "sample_pbr.glb": ("trimesh", 256, "PBR"),
     "sample.step": ("cascadio", 256, "STEP"),
+    "sample.igs": ("cascadio", 256, "IGES"),
     "sample.dae": ("collada", 64, "COLLADA"),
 }
 
@@ -52,11 +55,14 @@ MANDATORY_RENDERER_ENGINES = [
     "cascadio",
     "matplotlib",
     "collada",
+    "lxml",
+    "networkx",
 ]
 
 # Mandatory engines pulled in transitively by the renderer stack (e.g. text and
-# composition) rather than owning a format-specific fixture of their own.
-SUPPORTING_RENDERER_ENGINES = {"matplotlib"}
+# composition, or trimesh's 3MF loader) rather than owning a format-specific
+# fixture of their own.
+SUPPORTING_RENDERER_ENGINES = {"matplotlib", "lxml", "networkx"}
 
 
 @pytest.mark.core
@@ -73,7 +79,10 @@ def test_release_matrix_exercises_every_mandatory_engine():
     assert uncovered <= SUPPORTING_RENDERER_ENGINES, f"mandatory engines without a fixture: {uncovered}"
 
     labels = {label for _engine, _dim, label in FIXTURE_MATRIX.values()}
-    assert {"PNG", "RASTER", "SVG", "PSD", "DXF", "OBJ", "GLB", "STEP", "COLLADA"} == labels
+    assert {
+        "PNG", "RASTER", "SVG", "PSD", "DXF", "OBJ", "GLB", "3MF", "PBR",
+        "STEP", "IGES", "COLLADA",
+    } == labels
     assert all(dim > 0 for _engine, dim, _label in FIXTURE_MATRIX.values())
 
 

@@ -31,7 +31,19 @@
       "sourceApp": "bundled fixture"
     },
     {
+      "file": "sample_pbr.glb",
+      "sourceApp": "bundled fixture"
+    },
+    {
+      "file": "sample.3mf",
+      "sourceApp": "bundled fixture"
+    },
+    {
       "file": "sample.step",
+      "sourceApp": "bundled fixture"
+    },
+    {
+      "file": "sample.igs",
       "sourceApp": "bundled fixture"
     },
     {

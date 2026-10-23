@@ -64,9 +64,13 @@ _register(
     "Renders a sample card; a usable font face and WOFF decompression support are required.",
 )
 _register(
-    (".obj", ".glb", ".gltf", ".stl", ".ply", ".3mf"),
+    (".obj", ".glb", ".gltf", ".stl", ".ply"),
     "mesh", "Software mesh renderer", ("trimesh",),
     "Camera orbit is a rasterized mesh approximation; materials and animation can be flattened.",
+)
+_register(
+    (".3mf",), "mesh", "3MF mesh renderer", ("trimesh", "lxml", "networkx"),
+    "Uses trimesh's 3MF XML importer; materials and animation can be flattened.",
 )
 _register(
     (".dae",), "mesh", "COLLADA mesh renderer", ("trimesh", "collada"),

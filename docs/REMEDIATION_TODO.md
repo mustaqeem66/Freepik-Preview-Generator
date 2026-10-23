@@ -68,7 +68,7 @@ are gated by the `build` job on tag pushes.
 | Terminal bridge events arriving before the start promise resolved were dropped | buffer-and-replay gated on the returned operation id | `usePreview.test.ts`, `useAssetProbe.test.ts` |
 | Stale export-size responses overwrote newer input; picking another asset kept a live request | local commit plus per-file request-sequence invalidation | `ExportSizePanel.test.tsx` |
 | Cached `window.pywebview.api` survived reload; selection index derived from a stale file list | cache follows the live bridge object; selection is real state | `bridge.test.ts` |
-| Blender invoked with `-Y`; full-scene face path unbounded | `--disable-autoexec`, resolution-scaled face budget | `tests/unit/test_mesh3d_hardening.py` |
+| Blender invoked with `-Y`; dense meshes were stride-subsampled, leaving holes | `--disable-autoexec`; every visible face drawn, with vectorized 2x2 splats for subpixel triangles | `tests/unit/test_mesh3d_hardening.py` |
 | Nested ZIPs extracted one level deep, failures suppressed, no shared budget or cancellation | depth-capped BFS extraction on one shared byte budget, failures reported, cancel-aware | `tests/unit/test_archive_security.py` |
 | Embedded BMP search matched any `BM` pair; EXIF orientation dropped on embedded thumbnails | header-validated BMP discovery; `exif_transpose` inside `bounded_image_from_bytes` | renderer/unit suites |
 | `text_pos` magic-number override silently beat the chosen anchor | custom position is opt-in only | compose unit tests |
@@ -87,3 +87,16 @@ are gated by the `build` job on tag pushes.
 - [x] Add frontend regression coverage for failed saves, transient recovery and revision monotonicity.
 - [ ] Verify with `cd frontend && npm ci && npm run typecheck && npm test && npm run build` (not executed in this GitHub-connected session).
 - [ ] Validate manual disconnect/reconnect and OS shutdown persistence with a real desktop build. A sudden process kill may still lose in-memory changes.
+
+## 2026-10-23 — Renderer format audit (branch `fix/renderer-format-audit`)
+
+| Finding | Fix | Gate |
+| --- | --- | --- |
+| `.3mf` advertised but `trimesh`'s 3MF loader imports `lxml`/`networkx`, which were absent from every lock | direct pins, lock regeneration, `--collect-all` in the release build, fixture manifest entry | `tests/integration/test_release_renderers_gate.py`, `tests/fixtures/renderer-samples.json` |
+| `.igs`/`.iges` parsed with the STEP reader and always failed | reader selected from the extension before `cascadio.to_glb_bytes` | `tests/unit/test_cad_hardening.py` |
+| Untextured PBR GLB raised `IndexError` through lazy `face_colors` | visuals normalized to per-face/per-vertex arrays with a guarded fallback | `test_mesh3d_hardening.py::test_untextured_pbr_glb_renders` |
+| Dense meshes were stride-subsampled, leaving transparent holes | all visible faces drawn; subpixel triangles splatted in one vectorized pass | `test_mesh3d_hardening.py::test_dense_mesh_draws_every_face_without_holes` |
+| Z-up sources (STL/3MF/CAD kernels) rendered lying on their side | explicit Z-up to Y-up transform for those formats | `test_mesh3d_hardening.py::test_z_up_models_are_rotated_upright` |
+| DWG previews with exactly one bitmap record were rejected | record count check accepts one, rejects zero | `tests/unit/test_cad_hardening.py` |
+| Non-finite vertices, empty geometry and blank renders surfaced as opaque failures | explicit `ValueError`s and a blank-output guard | `test_mesh3d_hardening.py` |
+
