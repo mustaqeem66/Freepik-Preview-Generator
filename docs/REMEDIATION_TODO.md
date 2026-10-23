@@ -25,7 +25,7 @@ This checklist compares the public GitHub branch with the user-supplied `Preview
 - [x] Stop preview HTTP server during desktop cleanup.
 - [x] Add regression tests and a pull-request CI gate.
 - [x] Align planned v2.1.2 version in Python, frontend and installer sources.
-- [ ] Pass full PR CI (Ruff, pytest, TS, Vitest, build), verify on Windows GUI.
+- [x] Pass full PR CI (Ruff, pytest, TS, Vitest, build); packaged Windows GUI smoke passes on a clean CI runner (build run 39921711896).
 - [ ] Reconcile missing audited v2.1.1 source code and tests before publishing v2.1.2.
 - [x] Reproduce and repair missing Collada renderer dependency across source, hash locks, frozen binary and release fixtures.
 - [x] Verify DXF at 512/1024/2400 after matplotlib finalize (aspect preservation remains covered by the renderer and manual checks).
