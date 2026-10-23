@@ -269,8 +269,6 @@ class ScannerService:
                         })
                     elif ext == ".zip":
                         try:
-                            import zipfile
-
                             declared_members = limits.zip_declared_member_count(f_path)
                             if (declared_members is not None
                                     and declared_members > limits.MAX_ZIP_DIRECTORY_ENTRIES):
@@ -280,7 +278,7 @@ class ScannerService:
                                     f_path.name, declared_members,
                                 )
                                 continue
-                            with zipfile.ZipFile(f_path, "r") as zf:
+                            with limits.open_zip_bounded(f_path) as zf:
                                 all_members = zf.infolist()
                                 members = all_members[:1000]
                                 if len(all_members) > len(members):

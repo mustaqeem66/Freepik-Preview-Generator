@@ -409,58 +409,86 @@ def validate_dxf_entity_limits(document: object) -> None:
         _exceeds(f"CAD entity count {count} exceeds the supported limit")
 
 
-def zip_declared_member_count(path: Path | str) -> int | None:
-    """Read a ZIP's declared entry count from its end-of-central-directory record.
+_ZIP_EOCD_SIZE = 22
+_ZIP64_LOCATOR_SIZE = 20
+_ZIP64_EOCD_SIZE = 56
+_ZIP_CENTRAL_DIR_HEADER_SIZE = 46
 
-    ``zipfile`` materializes one ``ZipInfo`` object per member when it opens an
-    archive, so a crafted archive with millions of tiny entries can exhaust the
-    host process before any per-member limit is checked. The EOCD (and, when
-    present, ZIP64) record is fixed-size metadata at the tail of the file, so a
-    bounded read can reject that archive first.
 
-    Returns ``None`` when the count cannot be read (not a ZIP, truncated, or an
-    unsupported layout); the caller then lets ``zipfile`` validate the file.
+def _read_zip_directory_info(path: Path | str) -> dict[str, int] | None:
+    """Locate the central directory the same way ``zipfile`` does.
+
+    Returns ``declared_total``, ``cd_start`` and ``cd_size``, or ``None`` when
+    no end-of-central-directory record is found. The ZIP64 record is only used
+    when it sits exactly where ``zipfile`` expects it, so both readers agree on
+    which bytes make up the directory.
     """
-    eocd_min_size = 22
     max_comment = 65535
     try:
         with open(path, "rb") as fh:
             fh.seek(0, 2)
-            size = fh.tell()
-            if size < eocd_min_size:
+            file_size = fh.tell()
+            if file_size < _ZIP_EOCD_SIZE:
                 return None
-            tail_size = min(size, eocd_min_size + max_comment)
-            fh.seek(size - tail_size)
+            tail_size = min(file_size, _ZIP_EOCD_SIZE + max_comment)
+            fh.seek(file_size - tail_size)
             tail = fh.read(tail_size)
             # The signature may also appear inside the archive comment, so walk
             # backwards until a record whose declared comment length exactly
             # reaches the end of the file is found.
             search_end = len(tail)
-            eocd = -1
             while True:
                 eocd = tail.rfind(b"PK\x05\x06", 0, search_end)
-                if eocd < 0 or eocd + eocd_min_size > len(tail):
+                if eocd < 0 or eocd + _ZIP_EOCD_SIZE > len(tail):
                     return None
                 comment_len = struct.unpack_from("<H", tail, eocd + 20)[0]
-                if eocd + eocd_min_size + comment_len == len(tail):
+                if eocd + _ZIP_EOCD_SIZE + comment_len == len(tail):
                     break
                 search_end = eocd
-            total = struct.unpack_from("<H", tail, eocd + 10)[0]
-            if total != 0xFFFF:
-                return total
-            # ZIP64: a locator record sits immediately before the EOCD record
-            # and points at the real 64-bit entry count.
-            locator = eocd - 20
-            if locator < 0 or tail[locator:locator + 4] != b"PK\x06\x07":
-                return None
-            record_offset = struct.unpack_from("<Q", tail, locator + 8)[0]
-            fh.seek(record_offset)
-            record = fh.read(40)
-            if len(record) < 40 or record[:4] != b"PK\x06\x06":
-                return None
-            return struct.unpack_from("<Q", record, 32)[0]
+            eocd_abs = file_size - tail_size + eocd
+
+            declared_total = struct.unpack_from("<H", tail, eocd + 10)[0]
+            cd_size = struct.unpack_from("<I", tail, eocd + 12)[0]
+            cd_end = eocd_abs
+
+            # ``zipfile`` treats an archive as ZIP64 whenever the locator sits
+            # immediately before the EOCD, even when the 32-bit fields are not
+            # sentinels; mirror that so a fake locator cannot desynchronise us.
+            if eocd >= _ZIP64_LOCATOR_SIZE + _ZIP64_EOCD_SIZE:
+                locator = eocd - _ZIP64_LOCATOR_SIZE
+                if tail[locator:locator + 4] == b"PK\x06\x07":
+                    record = tail[locator - _ZIP64_EOCD_SIZE:locator]
+                    if len(record) == _ZIP64_EOCD_SIZE and record[:4] == b"PK\x06\x06":
+                        declared_total = struct.unpack_from("<Q", record, 32)[0]
+                        cd_size = struct.unpack_from("<Q", record, 40)[0]
+                        cd_end = eocd_abs - _ZIP64_LOCATOR_SIZE - _ZIP64_EOCD_SIZE
+
+            return {
+                "declared_total": declared_total,
+                "cd_start": cd_end - cd_size,
+                "cd_size": cd_size,
+                "file_size": file_size,
+            }
     except (OSError, struct.error, ValueError):
         return None
+
+
+def zip_declared_member_count(path: Path | str) -> int | None:
+    """Read a ZIP's declared entry count from its end-of-central-directory record.
+
+    Why this matters: ``zipfile`` materializes one ``ZipInfo`` object per member
+    when it opens an archive, so a crafted archive with millions of tiny entries
+    can exhaust the host process before any per-member limit is checked.
+
+    Do not use this as a security bound on its own: the declared count can
+    understate the records actually present. :func:`open_zip_bounded` counts the
+    real central-directory records before constructing ``ZipFile``.
+
+    Returns ``None`` when the record cannot be read (not a ZIP, truncated, or an
+    unsupported layout); the caller then lets ``zipfile`` validate the file.
+    """
+    info = _read_zip_directory_info(path)
+    return None if info is None else info["declared_total"]
 
 
 # Hard ceiling for archives whose central directory is materialized in the GUI,
@@ -470,17 +498,75 @@ def zip_declared_member_count(path: Path | str) -> int | None:
 MAX_ZIP_DIRECTORY_ENTRIES = 50_000
 
 
+def _count_central_directory_records(
+    path: Path | str,
+    cd_start: int,
+    cd_size: int,
+    max_entries: int,
+) -> int | None:
+    """Count central-directory records with bounded sequential reads.
+
+    Returns ``max_entries + 1`` as soon as the budget is exceeded, ``None`` when
+    the directory is inconsistent with its declared size, and the exact count
+    otherwise. Only 46-byte headers plus declared field lengths are read, so the
+    count does not depend on the (spoofable) EOCD total.
+    """
+    count = 0
+    remaining = cd_size
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(cd_start)
+            while remaining > 0:
+                if count > max_entries:
+                    return count
+                if remaining < _ZIP_CENTRAL_DIR_HEADER_SIZE:
+                    return None
+                header = fh.read(_ZIP_CENTRAL_DIR_HEADER_SIZE)
+                if len(header) < _ZIP_CENTRAL_DIR_HEADER_SIZE or header[:4] != b"PK\x01\x02":
+                    return None
+                name_len = struct.unpack_from("<H", header, 28)[0]
+                extra_len = struct.unpack_from("<H", header, 30)[0]
+                comment_len = struct.unpack_from("<H", header, 32)[0]
+                record_size = _ZIP_CENTRAL_DIR_HEADER_SIZE + name_len + extra_len + comment_len
+                if record_size > remaining:
+                    return None
+                fh.seek(record_size - _ZIP_CENTRAL_DIR_HEADER_SIZE, 1)
+                remaining -= record_size
+                count += 1
+    except (OSError, struct.error):
+        return None
+    return count
+
+
 def open_zip_bounded(
     path: Path | str,
     *,
     max_entries: int = MAX_ZIP_DIRECTORY_ENTRIES,
 ) -> Any:
-    """Open a ZIP for reading only after its declared entry count is bounded."""
+    """Open a ZIP only after its actual central directory is bounded.
+
+    The declared EOCD count is checked first as a cheap fast path, then every
+    central-directory record is counted from the directory bytes ``zipfile``
+    will read. A truncated or inconsistent directory fails closed rather than
+    falling back to unbounded materialization.
+    """
     import zipfile
 
-    count = zip_declared_member_count(path)
-    if count is not None and count > max_entries:
-        raise ValueError(f"Archive exceeds maximum member limit ({count} > {max_entries})")
+    info = _read_zip_directory_info(path)
+    if info is not None:
+        if info["declared_total"] > max_entries:
+            raise ValueError(
+                f"Archive exceeds maximum member limit ({info['declared_total']} > {max_entries})"
+            )
+        if info["cd_start"] < 0 or info["cd_size"] > info["file_size"]:
+            raise ValueError("Archive central directory is malformed or unsupported")
+        actual = _count_central_directory_records(
+            path, info["cd_start"], info["cd_size"], max_entries
+        )
+        if actual is None:
+            raise ValueError("Archive central directory is malformed or unsupported")
+        if actual > max_entries:
+            raise ValueError(f"Archive exceeds maximum member limit ({actual} > {max_entries})")
     return zipfile.ZipFile(path, "r")
 
 

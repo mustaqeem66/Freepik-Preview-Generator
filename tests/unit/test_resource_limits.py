@@ -280,3 +280,29 @@ def test_open_zip_bounded_rejects_before_materializing_entries(tmp_path, monkeyp
     with pytest.raises(ValueError, match="maximum member limit"):
         limits.open_zip_bounded(archive, max_entries=1)
 
+
+def test_open_zip_bounded_counts_records_when_eocd_total_lies(tmp_path):
+    import struct
+    import zipfile
+
+    archive = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("a.png", b"a")
+        zf.writestr("b.png", b"b")
+
+    # Two records, but both EOCD counters claim one. ``zipfile`` reads the whole
+    # directory by byte size and happily returns both members, so trusting the
+    # declared total would let an arbitrarily large directory through.
+    data = bytearray(archive.read_bytes())
+    eocd = data.rfind(b"PK\x05\x06")
+    assert eocd >= 0
+    struct.pack_into("<H", data, eocd + 8, 1)
+    struct.pack_into("<H", data, eocd + 10, 1)
+    archive.write_bytes(data)
+
+    with zipfile.ZipFile(archive, "r") as zf:
+        assert zf.namelist() == ["a.png", "b.png"]
+    assert limits.zip_declared_member_count(archive) == 1
+    with pytest.raises(ValueError, match="maximum member limit"):
+        limits.open_zip_bounded(archive, max_entries=1)
+
