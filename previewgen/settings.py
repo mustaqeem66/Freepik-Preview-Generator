@@ -141,6 +141,7 @@ def save_settings(settings_dict: dict[str, Any], max_retries: int = 3) -> bool:
         if attempt > 0:
             time.sleep(delay)
 
+        temp_file: Path | None = None
         try:
             SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
             serialized = json.dumps(payload, indent=2)
@@ -166,6 +167,11 @@ def save_settings(settings_dict: dict[str, Any], max_retries: int = 3) -> bool:
                     _current_revision = max(_current_revision, incoming_rev)
             return True
         except Exception as exc:
+            # A failed attempt (fsync, replace, backup copy) must not leave its
+            # partially written temp file behind in the settings directory.
+            if temp_file is not None:
+                with contextlib.suppress(OSError):
+                    temp_file.unlink(missing_ok=True)
             if attempt == len(retry_delays) - 1:
                 logging.warning("Atomic settings write failed after %d retries: %s", len(retry_delays), exc)
             continue

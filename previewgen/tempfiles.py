@@ -132,8 +132,9 @@ def cleanup_stale_temp_dirs(
     Remove leftover PreviewGen temporary directories whose owning process is
     dead, or that are older than ``max_age_seconds``. Returns the count removed.
 
-    Directories lacking an owner marker are only removed once they exceed the
-    stale age threshold, so an in-flight legacy directory is never clobbered.
+    Directories lacking an owner marker — or whose marker cannot be read — are
+    only removed once they exceed the stale age threshold, so an in-flight
+    directory is never clobbered and a corrupt marker cannot pin one forever.
     """
     base = base or Path(tempfile.gettempdir())
     try:
@@ -159,7 +160,6 @@ def cleanup_stale_temp_dirs(
             owner_pid: int | None = None
             created: float | None = None
             marker = entry / OWNER_MARKER
-            provenance_unknown = False
             if marker.is_file():
                 try:
                     data = json.loads(marker.read_text(encoding="utf-8"))
@@ -168,8 +168,10 @@ def cleanup_stale_temp_dirs(
                     if data.get("created") is not None:
                         created = float(data["created"])
                 except Exception:
+                    # An unreadable marker is treated exactly like a missing one:
+                    # the directory stays protected until it exceeds the stale age.
                     owner_pid = None
-                    provenance_unknown = True
+                    created = None
 
             reference = created if created is not None else entry.stat().st_mtime
             age = now - reference
@@ -179,7 +181,7 @@ def cleanup_stale_temp_dirs(
             owner_dead = owner_pid is not None and not _pid_alive(owner_pid)
             eligible = (
                 (owner_dead and age >= MINIMUM_DELETION_AGE_SECONDS)
-                or (owner_pid is None and is_stale and not provenance_unknown)
+                or (owner_pid is None and is_stale)
             )
 
             if eligible and safe_rmtree(entry, "stale temp"):

@@ -247,3 +247,36 @@ def test_extract_zip_member_bounded_rejects_compression_ratio(tmp_path):
     finally:
         previewgen_config.MAX_COMPRESSION_RATIO = original
 
+
+def test_zip_declared_member_count_reads_eocd_without_opening(tmp_path):
+    import zipfile
+
+    archive = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("a.png", b"a")
+        zf.writestr("b.png", b"b")
+
+    assert limits.zip_declared_member_count(archive) == 2
+    assert limits.zip_declared_member_count(tmp_path / "missing.zip") is None
+    (tmp_path / "not-a-zip.bin").write_bytes(b"plain text")
+    assert limits.zip_declared_member_count(tmp_path / "not-a-zip.bin") is None
+
+
+def test_open_zip_bounded_rejects_before_materializing_entries(tmp_path, monkeypatch):
+    import zipfile
+
+    archive = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("a.png", b"a")
+        zf.writestr("b.png", b"b")
+
+    with limits.open_zip_bounded(archive) as zf:
+        assert len(zf.infolist()) == 2
+
+    def _must_not_construct(*_args, **_kwargs):
+        raise AssertionError("zipfile must not be constructed for an over-budget archive")
+
+    monkeypatch.setattr(zipfile, "ZipFile", _must_not_construct)
+    with pytest.raises(ValueError, match="maximum member limit"):
+        limits.open_zip_bounded(archive, max_entries=1)
+

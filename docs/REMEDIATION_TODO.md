@@ -100,3 +100,17 @@ are gated by the `build` job on tag pushes.
 | DWG previews with exactly one bitmap record were rejected | record count check accepts one, rejects zero | `tests/unit/test_cad_hardening.py` |
 | Non-finite vertices, empty geometry and blank renders surfaced as opaque failures | explicit `ValueError`s and a blank-output guard | `test_mesh3d_hardening.py` |
 
+## 2026-10-23 — Full-repository defect audit (branch `fix/audit-2026-10-23`)
+
+Audit performed directly on `main` at `101b9af`; each fix ships with a regression test.
+
+| Finding | Fix | Gate |
+| --- | --- | --- |
+| Every PSD preview leaked the open foreground document (layer data, file handle, mmap) in the long-lived gallery worker | `_load_psd` closes the `PSDImage` in a `finally`, including when `composite()` fails | `tests/integration/test_psd_renderer.py` |
+| A failed atomic settings write left its partially written `settings_*.tmp` in the settings directory | each failed attempt removes its temp file before retrying | `tests/unit/test_settings_ordering.py` |
+| A temp directory whose owner marker could not be read was pinned forever, permanently leaking extraction output after a crash mid-marker-write | an unreadable marker is treated like a missing one: reclaimed only past `STALE_AGE_SECONDS` (fresh directories still protected by `MINIMUM_DELETION_AGE_SECONDS`) | `tests/unit/test_startup_cleanup.py`, `tests/unit/test_backend_audit_regressions.py` |
+| Preview frames sorted lexicographically; past six digits the newest frame sorted below older ones and was pruned while still referenced | frame pruning orders by the numeric publish counter | `tests/unit/test_preview_server.py` |
+| GUI/main-process ZIP paths materialized the entire central directory before the member cap was applied (memory exhaustion via a small archive declaring millions of entries) | read the declared entry count from the EOCD/ZIP64 record and refuse oversized archives before constructing `ZipFile`; all extraction sites use `open_zip_bounded` | `tests/unit/test_resource_limits.py` |
+
+The corrupt-owner-marker change supersedes the narrower rule added in #78: both an unmarked and an unreadable-marker directory are equally unprovable, and the stale-age bound is the actual safety mechanism. Leaving corrupt markers alone made the leak permanent.
+

@@ -104,3 +104,25 @@ def test_unrelated_directory_is_never_removed(tmp_path):
 
     assert removed == 0
     assert unrelated.is_dir()
+
+
+def test_stale_dir_with_corrupt_owner_marker_is_removed(tmp_path):
+    d = Path(tempfile.mkdtemp(prefix="previewgen_probe_", dir=str(tmp_path)))
+    (d / OWNER_MARKER).write_text("{not valid json", encoding="utf-8")
+    past = time.time() - STALE_AGE_SECONDS - 120
+    os.utime(d, (past, past))
+
+    removed = cleanup_stale_temp_dirs(base=tmp_path)
+
+    assert removed == 1
+    assert not d.exists(), "a corrupt marker must not pin a stale temp dir forever"
+
+
+def test_fresh_dir_with_corrupt_owner_marker_is_kept(tmp_path):
+    d = Path(tempfile.mkdtemp(prefix="previewgen_probe_", dir=str(tmp_path)))
+    (d / OWNER_MARKER).write_text("{not valid json", encoding="utf-8")
+
+    removed = cleanup_stale_temp_dirs(base=tmp_path)
+
+    assert removed == 0
+    assert d.is_dir()

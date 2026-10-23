@@ -33,3 +33,41 @@ def test_psd_rendering_integration():
         assert out_jpg.is_file()
         with Image.open(out_jpg) as out:
             assert out.size == (300, 300)
+
+
+def test_psd_document_is_closed_after_composite(monkeypatch):
+    from previewgen.renderers import psd as psd_renderer
+
+    closed: list[bool] = []
+
+    class FakeDocument:
+        def composite(self):
+            return Image.new("RGBA", (8, 8), (10, 20, 30, 255))
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(PSDImage, "open", lambda _path: FakeDocument())
+    result = psd_renderer._load_psd(Path("sample.psd"))
+
+    assert result.mode == "RGBA"
+    assert closed == [True]
+
+
+def test_psd_document_is_closed_when_composite_fails(monkeypatch):
+    from previewgen.renderers import psd as psd_renderer
+
+    closed: list[bool] = []
+
+    class BrokenDocument:
+        def composite(self):
+            raise ValueError("corrupt composite")
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(PSDImage, "open", lambda _path: BrokenDocument())
+    with pytest.raises(ValueError, match="corrupt composite"):
+        psd_renderer._load_psd(Path("sample.psd"))
+
+    assert closed == [True]

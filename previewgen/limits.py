@@ -407,6 +407,83 @@ def validate_dxf_entity_limits(document: object) -> None:
         ) from exc
     if count > previewgen_config.MAX_CAD_ENTITIES:
         _exceeds(f"CAD entity count {count} exceeds the supported limit")
+
+
+def zip_declared_member_count(path: Path | str) -> int | None:
+    """Read a ZIP's declared entry count from its end-of-central-directory record.
+
+    ``zipfile`` materializes one ``ZipInfo`` object per member when it opens an
+    archive, so a crafted archive with millions of tiny entries can exhaust the
+    host process before any per-member limit is checked. The EOCD (and, when
+    present, ZIP64) record is fixed-size metadata at the tail of the file, so a
+    bounded read can reject that archive first.
+
+    Returns ``None`` when the count cannot be read (not a ZIP, truncated, or an
+    unsupported layout); the caller then lets ``zipfile`` validate the file.
+    """
+    eocd_min_size = 22
+    max_comment = 65535
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            if size < eocd_min_size:
+                return None
+            tail_size = min(size, eocd_min_size + max_comment)
+            fh.seek(size - tail_size)
+            tail = fh.read(tail_size)
+            # The signature may also appear inside the archive comment, so walk
+            # backwards until a record whose declared comment length exactly
+            # reaches the end of the file is found.
+            search_end = len(tail)
+            eocd = -1
+            while True:
+                eocd = tail.rfind(b"PK\x05\x06", 0, search_end)
+                if eocd < 0 or eocd + eocd_min_size > len(tail):
+                    return None
+                comment_len = struct.unpack_from("<H", tail, eocd + 20)[0]
+                if eocd + eocd_min_size + comment_len == len(tail):
+                    break
+                search_end = eocd
+            total = struct.unpack_from("<H", tail, eocd + 10)[0]
+            if total != 0xFFFF:
+                return total
+            # ZIP64: a locator record sits immediately before the EOCD record
+            # and points at the real 64-bit entry count.
+            locator = eocd - 20
+            if locator < 0 or tail[locator:locator + 4] != b"PK\x06\x07":
+                return None
+            record_offset = struct.unpack_from("<Q", tail, locator + 8)[0]
+            fh.seek(record_offset)
+            record = fh.read(40)
+            if len(record) < 40 or record[:4] != b"PK\x06\x06":
+                return None
+            return struct.unpack_from("<Q", record, 32)[0]
+    except (OSError, struct.error, ValueError):
+        return None
+
+
+# Hard ceiling for archives whose central directory is materialized in the GUI,
+# probe or batch process. Deliberately far above MAX_ZIP_MEMBERS: archives over
+# that cap are still rejected by their own extraction limits, but this bound
+# stops an enormous directory from being allocated before those checks run.
+MAX_ZIP_DIRECTORY_ENTRIES = 50_000
+
+
+def open_zip_bounded(
+    path: Path | str,
+    *,
+    max_entries: int = MAX_ZIP_DIRECTORY_ENTRIES,
+) -> Any:
+    """Open a ZIP for reading only after its declared entry count is bounded."""
+    import zipfile
+
+    count = zip_declared_member_count(path)
+    if count is not None and count > max_entries:
+        raise ValueError(f"Archive exceeds maximum member limit ({count} > {max_entries})")
+    return zipfile.ZipFile(path, "r")
+
+
 def extract_zip_member_bounded(zf: Any, entry_name: str, dest_path: Path | str) -> None:
     """Copy a single archive member to ``dest_path`` enforcing member/ratio limits.
 

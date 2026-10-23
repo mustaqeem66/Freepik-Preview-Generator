@@ -131,6 +131,16 @@ def test_publish_evicts_by_age(server, monkeypatch):
     assert remaining[0].name.endswith("000002.jpg")
 
 
+def test_counter_rollover_keeps_numeric_frame_order(server):
+    """Past six digits the zero-padded names stop sorting lexicographically."""
+    server._counter = 999_997
+    for _ in range(3):
+        server.publish_jpeg(JPEG_BYTES)
+
+    remaining = {path.name for path in server._root.glob("preview_*.jpg")}
+    assert remaining == {"preview_999999.jpg", "preview_1000000.jpg"}
+
+
 def test_stop_is_terminal_and_does_not_resurrect_the_listener():
     """A late preview request after teardown must not rebind a port."""
     server = PreviewFileServer()

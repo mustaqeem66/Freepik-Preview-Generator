@@ -234,7 +234,10 @@ def _aged(directory: Path) -> None:
     os.utime(directory, (stamp, stamp))
 
 
-def test_stale_sweep_removes_only_directories_it_can_prove_are_its_own(tmp_path):
+def test_stale_sweep_reclaims_unmarked_and_corrupt_marker_dirs_after_stale_age(tmp_path):
+    # A truncated marker is crash debris: it proves no more ownership than a
+    # missing one. Both are reclaimed only after the stale-age bound, which is
+    # the actual safety mechanism; leaving corrupt markers alone leaked forever.
     unmarked = tmp_path / "previewgen_render_1_unmarked"
     unmarked.mkdir()
     _aged(unmarked)
@@ -246,6 +249,6 @@ def test_stale_sweep_removes_only_directories_it_can_prove_are_its_own(tmp_path)
 
     removed = cleanup_stale_temp_dirs(base=tmp_path, max_age_seconds=3600)
 
-    assert removed == 1, "an unprovable directory was deleted, or a real leak survived"
+    assert removed == 2, "a stale previewgen directory was left behind"
     assert not unmarked.exists()
-    assert corrupt.exists(), "a directory with an unreadable owner marker must be left alone"
+    assert not corrupt.exists()

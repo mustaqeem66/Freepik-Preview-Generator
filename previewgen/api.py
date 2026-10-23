@@ -1012,7 +1012,6 @@ class DesktopApi:
 
             if file_path.startswith("zip://"):
                 import urllib.parse
-                import zipfile
                 parsed = urllib.parse.urlparse(file_path)
                 zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
                 qs = urllib.parse.parse_qs(parsed.query)
@@ -1022,7 +1021,7 @@ class DesktopApi:
                 temp_dir = Path(tempfile.mkdtemp(prefix="previewgen_probe_"))
                 op.temp_roots.add(temp_dir)
                 target_file = temp_dir / Path(entry_name).name
-                with zipfile.ZipFile(zip_path, "r") as zf:
+                with limits.open_zip_bounded(zip_path) as zf:
                     limits.extract_zip_member_bounded(zf, entry_name, target_file)
                 source_path = target_file
             else:
@@ -1059,7 +1058,6 @@ class DesktopApi:
 
             if file_path.startswith("zip://"):
                 import urllib.parse
-                import zipfile
                 parsed = urllib.parse.urlparse(file_path)
                 zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
                 qs = urllib.parse.parse_qs(parsed.query)
@@ -1068,7 +1066,7 @@ class DesktopApi:
                     return {"ok": False, "value": None, "error": "Invalid zip entry URI"}
                 temp_dir = Path(tempfile.mkdtemp(prefix="previewgen_dim_"))
                 target_file = temp_dir / Path(entry_name).name
-                with zipfile.ZipFile(zip_path, "r") as zf:
+                with limits.open_zip_bounded(zip_path) as zf:
                     limits.extract_zip_member_bounded(zf, entry_name, target_file)
                 source_path = target_file
             else:
@@ -1121,7 +1119,6 @@ class DesktopApi:
 
             if file_path.startswith("zip://"):
                 import urllib.parse
-                import zipfile
                 parsed = urllib.parse.urlparse(file_path)
                 zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
                 qs = urllib.parse.parse_qs(parsed.query)
@@ -1130,7 +1127,7 @@ class DesktopApi:
                     return {"ok": False, "value": None, "error": "Invalid zip entry URI"}
                 temp_dir = Path(tempfile.mkdtemp(prefix="previewgen_export_"))
                 target_file = temp_dir / Path(entry_name).name
-                with zipfile.ZipFile(zip_path, "r") as zf:
+                with limits.open_zip_bounded(zip_path) as zf:
                     limits.extract_zip_member_bounded(zf, entry_name, target_file)
                 source_path = target_file
                 default_out_dir = zip_path.parent
