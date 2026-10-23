@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+import threading
 import time
 import types
 from pathlib import Path
@@ -119,6 +120,39 @@ def test_normal_launch_does_not_arm_auto_close_watchdog(monkeypatch, tmp_path):
     assert fake_api.cleaned_up is True
     assert fake_webview.window.destroyed is False
     assert exit_calls == []
+
+
+def test_smoke_watchdog_exits_zero_when_the_frontend_never_reports_ready(
+    monkeypatch, tmp_path
+):
+    """The packaged CI gates must assert the ready marker, not the exit code.
+
+    Issue #19's packaged Windows build never finished bridge injection and never
+    reported ready, yet the smoke watchdog still destroyed the window and called
+    ``os._exit(0)``, so a gate that only checks the exit status passes it.
+    """
+    runtime, fake_webview, _api = _load_runtime(
+        monkeypatch, tmp_path, ["previewgen", "--gui-smoke-test"]
+    )
+    monkeypatch.setattr(runtime.sys, "platform", "win32")
+    monkeypatch.setattr(runtime, "SMOKE_READY_POLL_SECONDS", 0.001)
+    marker = tmp_path / "never-written.marker"
+    monkeypatch.setenv("PREVIEWGEN_READY_MARKER", str(marker))
+
+    exited = threading.Event()
+    exit_codes: list[int] = []
+
+    def _record_exit(code: int) -> None:
+        exit_codes.append(code)
+        exited.set()
+
+    monkeypatch.setattr(runtime.os, "_exit", _record_exit)
+
+    assert runtime.start_desktop_app() == 0
+    assert exited.wait(5.0), "smoke watchdog never terminated the process"
+    assert exit_codes == [0]
+    assert fake_webview.window.destroyed is True
+    assert not marker.exists()
 
 
 def test_linux_smoke_without_webview_bindings_fails_closed(monkeypatch, tmp_path):

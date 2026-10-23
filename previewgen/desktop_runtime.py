@@ -26,6 +26,12 @@ from previewgen.dialogs import applescript_string
 from previewgen.resources import get_html_dist
 from previewgen.ui_watchdog import WindowHangDetector, log_thread_stacks, windows_window_responding
 
+# Smoke mode gives the frontend 15s to report ready, then closes the window and
+# exits 0 regardless; only the ready marker separates a hung injection from a
+# clean run, so that is what the packaged CI gates assert on.
+SMOKE_READY_POLL_ATTEMPTS = 30
+SMOKE_READY_POLL_SECONDS = 0.5
+
 
 def show_fatal_error(title: str, message: str) -> None:
     """Show fatal error dialog appropriate for platform."""
@@ -191,10 +197,10 @@ def start_desktop_app() -> int:
         if is_smoke and gui_type:
             def _auto_close_smoke(smoke_window: Any = window) -> None:
                 marker = os.environ.get("PREVIEWGEN_READY_MARKER")
-                for _ in range(30):
+                for _ in range(SMOKE_READY_POLL_ATTEMPTS):
                     if marker and Path(marker).is_file():
                         break
-                    time.sleep(0.5)
+                    time.sleep(SMOKE_READY_POLL_SECONDS)
                 with contextlib.suppress(Exception):
                     smoke_window.destroy()
                 # Terminate smoke test process so host subshell is never left waiting on Cocoa/Win32 event loops
