@@ -31,7 +31,7 @@ This checklist compares the public GitHub branch with the user-supplied `Preview
 - [x] Verify DXF at 512/1024/2400 after matplotlib finalize (aspect preservation remains covered by the renderer and manual checks).
 - [ ] Exercise actual Windows installer/uninstaller/desktop icon/custom directory and non-smoke startup on a clean Windows VM.
 - [x] Verify macOS shell checksum fallback with `shasum`/`openssl` and no `sha256sum` on `PATH`.
-- [ ] Align every advertised format with release-gate fixture or an explicit limitation.
+- [x] Align every advertised format with release-gate fixture or an explicit limitation (registry already carries a caveat for every extension; the renderer audit added 3MF/IGES/PBR fixtures).
 
 ## Desktop experience
 
@@ -47,12 +47,12 @@ This checklist compares the public GitHub branch with the user-supplied `Preview
 ## Security, operations and performance
 
 - [x] Restrict bridge path authorization to user-selected or committed roots (no implicit expansion during export).
-- [ ] Add and regression-test a restrictive CSP compatible with packaged frontend and pywebview.
+- [x] Add and regression-test a restrictive CSP compatible with packaged frontend and pywebview (`frontend/security/csp.ts`, WebKit enforcement in `scripts/verify_csp_webview.py`, now a Linux packaging gate against the frozen HTML).
 - [x] Review untrusted ZIP, Blender, DXF, CAD, font, SVG and model parsing and subprocess time budgets.
 - [ ] Replace per-file process spawn only after a measured, isolated worker-pool design passes cancellation and crash tests.
-- [ ] Benchmark advertised throughput; fix README claims (60fps orbit, deep ZIP recursion, Framer Motion, ICC transform, 500 files/60s).
+- [x] Benchmark advertised throughput; fix README claims (README truth pass removed the 60fps, deep-ZIP, Framer Motion, ICC and 500-files/60s claims).
 - [ ] Create signed versioned builds, updater, rollback and reproducible release provenance.
-- [ ] Pin release actions by commit SHA and remove hardcoded signtool locations.
+- [x] Pin release actions by commit SHA and remove hardcoded signtool locations (every `uses:` is SHA-pinned; signtool is discovered from the installed Windows SDK).
 - [ ] Add crash logs/diagnostics with consent and no automatic collection of artwork.
 
 ## Round-3 audit remediation (branch `fix/v2.1.2-audit-hardening`)

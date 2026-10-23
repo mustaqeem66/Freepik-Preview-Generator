@@ -108,6 +108,23 @@ jobs:
             ${{ runner.os == 'macOS' && '--osx-bundle-identifier com.zenartisan.previewgen --windowed' || '' }} \
             app.py --clean -y
 
+      # Issue #20: a policy string no engine enforces is not a control. Prove
+      # the shipped directives in WebKitGTK against both the built HTML and the
+      # copy PyInstaller froze into the artifact. Linux only: the other jobs run
+      # the positive packaged-GUI smoke, not engine-level negative probes.
+      - name: Verify production CSP in WebKit
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          mkdir -p build_diagnostics
+          xvfb-run -a python scripts/verify_csp_webview.py \
+            --report build_diagnostics/csp-webview.json
+          packaged_html="$(find dist/PreviewGen -path '*/frontend/dist/index.html' -print -quit)"
+          test -n "$packaged_html" || { echo "FATAL: packaged frontend HTML not found"; exit 1; }
+          xvfb-run -a python scripts/verify_csp_webview.py \
+            --dist "$packaged_html" \
+            --report build_diagnostics/csp-webview-packaged.json
+
       - name: Collect build diagnostics and renderer versions
         shell: bash
         run: |
