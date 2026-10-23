@@ -5,7 +5,6 @@ Software-renders triangle meshes (.obj, .glb, .gltf, .stl, .ply, .3mf, .dae,
 """
 from __future__ import annotations
 
-import contextlib
 import os
 from pathlib import Path
 from typing import Any
@@ -18,6 +17,124 @@ from previewgen.renderers.proprietary import extract_blend_thumbnail
 
 _MESH_CACHE: dict[tuple[str, float], Any] = {}
 
+# STL and 3MF (and CAD kernels) store geometry Z-up; glTF/OBJ/DAE are Y-up.
+_Z_UP_EXTENSIONS = frozenset({".stl", ".3mf"})
+
+# Above this many visible triangles, subpixel triangles are splatted in one
+# vectorized pass instead of costing a per-triangle polygon call.
+_SPLAT_THRESHOLD = 500_000
+
+
+def _splat_subpixel_triangles(flat_rgba, triangles, colors, width: int, height: int) -> None:
+    """Paint depth-ordered 2x2 splats for triangles smaller than a pixel.
+
+    Triangles arrive far-to-near, so for overlapping pixels the nearest splat
+    wins. The 2x2 footprint closes seams between neighbouring subpixel faces.
+    """
+    import numpy as np
+
+    if len(triangles) == 0:
+        return
+    centre_x = np.rint(triangles[:, :, 0].mean(axis=1)).astype(np.int64)
+    centre_y = np.rint(triangles[:, :, 1].mean(axis=1)).astype(np.int64)
+
+    # One pass per footprint pixel: stable sort keeps the far-to-near input
+    # order, so the last occurrence of a pixel is its nearest splat.
+    for dx, dy in ((0, 0), (1, 0), (0, 1), (1, 1)):
+        x = centre_x + dx
+        y = centre_y + dy
+        inside = (x >= 0) & (x < width) & (y >= 0) & (y < height)
+        if not inside.any():
+            continue
+        pixel_id = y[inside] * width + x[inside]
+        splat_color = colors[inside]
+        order = np.argsort(pixel_id, kind="stable")
+        pixel_id = pixel_id[order]
+        splat_color = splat_color[order]
+        keep = np.ones(len(pixel_id), dtype=bool)
+        keep[:-1] = pixel_id[1:] != pixel_id[:-1]
+        flat_rgba[pixel_id[keep], :3] = splat_color[keep, :3]
+        flat_rgba[pixel_id[keep], 3] = 255
+
+
+def _safe_face_colors(mesh, face_count: int):
+    """Return per-face RGB colors or ``None``, never trusting trimesh's lazy
+    ``face_colors`` property: for malformed visuals it raises IndexError rather
+    than returning a wrong-length array."""
+    import numpy as np
+
+    visual = getattr(mesh, "visual", None)
+    if visual is None or not getattr(visual, "defined", False):
+        return None
+    try:
+        colors = np.asarray(visual.face_colors)
+    except Exception:
+        return None
+    if colors.ndim == 1 and colors.size in (3, 4):
+        return np.tile(colors[:3], (face_count, 1))
+    if colors.ndim == 2 and colors.shape[0] == face_count and colors.shape[1] >= 3:
+        return colors[:, :3]
+    return None
+
+
+def _normalize_visuals(mesh) -> None:
+    """Rebuild the mesh visual as colorable per-face/per-vertex data.
+
+    ``TextureVisuals.to_color()`` hands back a lone ``(4,)`` RGBA for an
+    untextured PBR material; assigning that to trimesh makes the lazy
+    ``face_colors`` property index a 4-element array with every face index and
+    raise IndexError, which used to abort the whole preview.
+    """
+    import numpy as np
+    from trimesh.visual.color import ColorVisuals
+
+    visual = getattr(mesh, "visual", None)
+    if visual is None or not getattr(visual, "defined", False):
+        return
+    try:
+        converted = visual.to_color() if hasattr(visual, "to_color") else visual
+
+        vertex_colors = getattr(converted, "vertex_colors", None)
+        if vertex_colors is not None:
+            vertex_colors = np.asarray(vertex_colors)
+            if vertex_colors.ndim == 1 and vertex_colors.size in (3, 4):
+                vertex_colors = np.tile(vertex_colors[:3], (len(mesh.vertices), 1))
+            if (
+                vertex_colors.ndim != 2
+                or vertex_colors.shape[0] != len(mesh.vertices)
+                or vertex_colors.shape[1] < 3
+            ):
+                vertex_colors = None
+            else:
+                vertex_colors = vertex_colors[:, :3]
+
+        face_colors = None
+        n_faces = len(mesh.faces) if getattr(mesh, "faces", None) is not None else 0
+        if n_faces:
+            try:
+                face_colors = np.asarray(converted.face_colors)
+            except Exception:
+                face_colors = None
+            if face_colors is not None:
+                if face_colors.ndim == 1 and face_colors.size in (3, 4):
+                    face_colors = np.tile(face_colors[:3], (n_faces, 1))
+                if (
+                    face_colors.ndim != 2
+                    or face_colors.shape[0] != n_faces
+                    or face_colors.shape[1] < 3
+                ):
+                    face_colors = None
+                else:
+                    face_colors = face_colors[:, :3]
+
+        mesh.visual = ColorVisuals(
+            mesh=mesh, face_colors=face_colors, vertex_colors=vertex_colors
+        )
+    except Exception:
+        # A visual we cannot normalize must not take the geometry down with it;
+        # the renderer falls back to the configured model color.
+        return
+
 
 def render_3d_mesh(
     mesh,
@@ -25,20 +142,45 @@ def render_3d_mesh(
     pitch_deg: float = 30.0,
     model_color: tuple[int, int, int] = (120, 130, 160),
     target_dimension: int = 2400,
+    z_up: bool = False,
 ) -> Image.Image:
     """Render a 3D mesh from any yaw/pitch angle to a transparent RGBA PIL Image."""
     import numpy as np
 
-    W, H = target_dimension, target_dimension
     if not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
-        return Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        raise ValueError("3D mesh contains no vertices")
 
-    verts = mesh.vertices - mesh.centroid
+    raw_verts = np.asarray(mesh.vertices, dtype=float)
+    if not np.isfinite(raw_verts).all():
+        raise ValueError("3D mesh contains non-finite vertex coordinates")
+    raw_faces = getattr(mesh, "faces", None)
+    faces = np.asarray(raw_faces) if raw_faces is not None else np.zeros((0, 3), dtype=np.int64)
+
+    # A multi-million-triangle asset is mostly subpixel at preview size. Render
+    # it at a reduced internal resolution so most faces take the vectorized
+    # splat path, then upscale; every face is still drawn and coverage is kept.
+    render_dim = target_dimension
+    if len(faces) > 2 * _SPLAT_THRESHOLD:
+        render_dim = max(
+            400,
+            int(round(target_dimension * ((2 * _SPLAT_THRESHOLD) / len(faces)) ** 0.75)),
+        )
+        render_dim = min(render_dim, target_dimension)
+    W, H = render_dim, render_dim
+
+    # trimesh's area-weighted centroid walks every triangle (seconds on a
+    # multi-million-face mesh); the vertex mean frames the model just as well.
+    verts = raw_verts - raw_verts.mean(axis=0)
     norms = np.linalg.norm(verts, axis=1)
     max_radius = float(np.max(norms)) if len(norms) > 0 else 1.0
     if max_radius <= 0 or not np.isfinite(max_radius):
-        max_radius = 1.0
+        raise ValueError("3D mesh has zero spatial extent")
     verts = verts / max_radius
+
+    # Z-up sources (STL/3MF/CAD) are rotated into the renderer's Y-up frame.
+    z_up_transform = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, -1.0, 0.0]])
+    if z_up:
+        verts = verts @ z_up_transform.T
 
     yaw = np.radians(yaw_deg)
     pitch = np.radians(pitch_deg)
@@ -60,71 +202,78 @@ def render_3d_mesh(
     pts_2d = np.column_stack([v_rot[:, 0], -v_rot[:, 1]]) * scale + np.array([W / 2, H / 2])
     pts_2d = np.nan_to_num(pts_2d, nan=W / 2.0)
 
-    # Point cloud fallback when no faces exist
-    if not hasattr(mesh, "faces") or len(mesh.faces) == 0:
+    if len(faces) == 0:
         result_img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         draw = ImageDraw.Draw(result_img)
         pt_col = (*model_color, 220)
         step = max(1, len(pts_2d) // 25_000)
         for pt in pts_2d[::step]:
             draw.ellipse([pt[0] - 2, pt[1] - 2, pt[0] + 2, pt[1] + 2], fill=pt_col)
+        if not np.asarray(result_img)[:, :, 3].any():
+            raise ValueError("3D point cloud rendered to an empty image")
         return result_img
 
     normals = (
         mesh.face_normals
         if hasattr(mesh, "face_normals") and mesh.face_normals is not None
-        else np.zeros((len(mesh.faces), 3))
+        else np.zeros((len(faces), 3))
     )
+    if z_up:
+        normals = normals @ z_up_transform.T
     n_rot = np.nan_to_num(normals @ R.T, nan=0.0)
     # Visible face determination and depth sorting (Finding: Hardware acceleration & optimized vector raster)
     visible_mask = n_rot[:, 2] > -0.55
     vis_indices = np.where(visible_mask)[0]
     if len(vis_indices) == 0:
-        return Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        # Open, single-sided surfaces viewed from behind: shade them two-sided
+        # instead of returning a blank "successful" preview.
+        vis_indices = np.arange(len(faces))
 
-    faces_vis = mesh.faces[vis_indices]
-    face_z = v_rot[faces_vis].mean(axis=1)[:, 2]
-    vis_order = vis_indices[np.argsort(face_z)]
+    z = v_rot[:, 2]
+    face_z = (z[faces[:, 0]] + z[faces[:, 1]] + z[faces[:, 2]]) / 3.0
+    vis_order = vis_indices[np.argsort(face_z[vis_indices])]
 
-    # Optimization: a triangle that covers a fraction of a pixel costs the same
-    # Python loop as one that is visible, so cap the drawn work at every size.
-    face_budget = 25_000 if target_dimension <= 1000 else 80_000
-    if len(vis_order) > face_budget:
-        stride = max(2, len(vis_order) // face_budget)
-        vis_order = vis_order[::stride]
-
+    # Every visible face is drawn. Striding (previously used to cap draw work)
+    # dropped triangles and left holes in dense meshes, so the face-count limit
+    # in config.MAX_3D_FACES is the only budget.
     light_dir = np.array([0.45, 0.65, 0.61])
     light_dir /= np.linalg.norm(light_dir)
     diffuse = np.nan_to_num(np.abs(n_rot[vis_order] @ light_dir) * 0.72, nan=0.0)
     ambient = 0.35
     intensity = np.clip(ambient + diffuse, 0.0, 1.0)
 
-    has_face_colors = (
-        hasattr(mesh, "visual")
-        and getattr(mesh.visual, "defined", False)
-        and hasattr(mesh.visual, "face_colors")
-        and mesh.visual.face_colors is not None
-        and len(mesh.visual.face_colors) == len(mesh.faces)
-    )
-
+    face_colors = _safe_face_colors(mesh, len(faces))
     default_base = np.array(model_color, dtype=float)
-    base_colors = (
-        mesh.visual.face_colors[vis_order, :3].astype(float)
-        if has_face_colors
-        else default_base
-    )
+    base_colors = face_colors[vis_order].astype(float) if face_colors is not None else default_base
     lit_colors = np.clip(intensity[:, None] * base_colors, 0, 255).astype(np.uint8)
-    ordered_faces = mesh.faces[vis_order]
-    ordered_pts = pts_2d[ordered_faces]  # shape: (N, 3, 2)
+    ordered_pts = pts_2d[faces[vis_order]]  # shape: (N, 3, 2)
 
     result_img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+
+    if len(vis_order) > _SPLAT_THRESHOLD:
+        tri_min = ordered_pts.min(axis=1)
+        tri_max = ordered_pts.max(axis=1)
+        subpixel = ((tri_max[:, 0] - tri_min[:, 0]) * (tri_max[:, 1] - tri_min[:, 1])) <= 1.0
+        if subpixel.any():
+            flat_rgba = np.array(result_img).reshape(-1, 4)
+            _splat_subpixel_triangles(
+                flat_rgba, ordered_pts[subpixel], lit_colors[subpixel], W, H
+            )
+            result_img = Image.fromarray(flat_rgba.reshape(H, W, 4), "RGBA")
+        draw_indices = np.flatnonzero(~subpixel)
+    else:
+        draw_indices = np.arange(len(vis_order))
+
     draw = ImageDraw.Draw(result_img)
+    for i in draw_indices:
+        draw.polygon(ordered_pts[i].reshape(-1).tolist(), fill=tuple(lit_colors[i]))
 
-    for i in range(len(vis_order)):
-        poly = ordered_pts[i]
-        points = [(poly[0, 0], poly[0, 1]), (poly[1, 0], poly[1, 1]), (poly[2, 0], poly[2, 1])]
-        draw.polygon(points, fill=tuple(lit_colors[i]))
-
+    if not np.asarray(result_img)[:, :, 3].any():
+        raise ValueError("3D mesh rendered to an empty image")
+    if render_dim != target_dimension:
+        result_img = result_img.resize(
+            (target_dimension, target_dimension), Image.Resampling.BILINEAR
+        )
     return result_img
 
 
@@ -216,11 +365,7 @@ def _load_3d(source_path: Path, config: PreviewConfig, target_dimension: int = 2
             mesh = loaded
 
         limits.validate_loaded_mesh(mesh)
-
-        # Pre-convert visual colors once so we never repeat it during orbit
-        if hasattr(mesh, "visual") and mesh.visual is not None:
-            with contextlib.suppress(Exception):
-                getattr(mesh, "visual", None) and setattr(mesh, "visual", mesh.visual.to_color())
+        _normalize_visuals(mesh)
 
         _MESH_CACHE[key] = mesh
         if len(_MESH_CACHE) > 16:
@@ -232,4 +377,5 @@ def _load_3d(source_path: Path, config: PreviewConfig, target_dimension: int = 2
         pitch_deg=config.pitch,
         model_color=config.model_color,
         target_dimension=target_dimension,
+        z_up=ext in _Z_UP_EXTENSIONS,
     )

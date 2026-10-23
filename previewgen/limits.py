@@ -30,7 +30,7 @@ RASTER_EXTENSIONS = frozenset(
     {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".ico"}
 )
 SVG_EXTENSIONS = frozenset({".svg", ".svgz"})
-MESH_EXTENSIONS = frozenset({".obj", ".stl", ".ply", ".glb", ".gltf"})
+MESH_EXTENSIONS = frozenset({".obj", ".stl", ".ply", ".glb", ".gltf", ".dae", ".3mf"})
 PSD_EXTENSIONS = frozenset({".psd"})
 
 

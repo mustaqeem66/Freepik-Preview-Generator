@@ -12,7 +12,7 @@ from PIL import Image
 
 from previewgen import limits
 from previewgen.config import MAX_SOURCE_FILE_BYTES, PreviewConfig
-from previewgen.renderers.mesh3d import _MESH_CACHE, render_3d_mesh
+from previewgen.renderers.mesh3d import _MESH_CACHE, _normalize_visuals, render_3d_mesh
 
 
 def _load_dxf(source_path: Path, target_dimension: int = 2400) -> Image.Image:
@@ -85,7 +85,7 @@ def extract_dwg_thumbnail(path: Path) -> Image.Image | None:
                 return None
             f.seek(next_pos)
             byt_cnt_raw = f.read(1)
-            if not byt_cnt_raw or byt_cnt_raw[0] <= 1:
+            if not byt_cnt_raw or byt_cnt_raw[0] == 0:
                 return None
             for _ in range(byt_cnt_raw[0]):
                 code_raw = f.read(1)
@@ -141,7 +141,17 @@ def _load_cad_solid(source_path: Path, config: PreviewConfig, target_dimension: 
             mesh = _MESH_CACHE[key]
         else:
             import cascadio
-            glb_bytes = cascadio.to_glb_bytes(source_path.read_bytes())
+
+            # cascadio defaults to the STEP reader; an IGES body parsed as STEP
+            # always fails, so select the reader from the extension.
+            file_type = (
+                cascadio.FileType.IGES
+                if source_path.suffix.lower() in {".iges", ".igs"}
+                else cascadio.FileType.STEP
+            )
+            glb_bytes = cascadio.to_glb_bytes(source_path.read_bytes(), file_type=file_type)
+            if not glb_bytes:
+                raise ValueError("CAD kernel produced no mesh data")
             import trimesh
             mesh = trimesh.load(BytesIO(glb_bytes), file_type="glb")
             if isinstance(mesh, trimesh.Scene):
@@ -151,6 +161,7 @@ def _load_cad_solid(source_path: Path, config: PreviewConfig, target_dimension: 
                 except Exception:
                     mesh = trimesh.util.concatenate(mesh.dump())
             limits.validate_loaded_mesh(mesh)
+            _normalize_visuals(mesh)
             _MESH_CACHE[key] = mesh
             if len(_MESH_CACHE) > 16:
                 _MESH_CACHE.pop(next(iter(_MESH_CACHE)))
@@ -161,6 +172,8 @@ def _load_cad_solid(source_path: Path, config: PreviewConfig, target_dimension: 
             pitch_deg=config.pitch,
             model_color=config.model_color,
             target_dimension=target_dimension,
+            # CAD kernels (STEP/IGES) author in Z-up.
+            z_up=True,
         )
     except ImportError as exc:
         raise RuntimeError(
