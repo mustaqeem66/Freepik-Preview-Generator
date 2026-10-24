@@ -81,9 +81,7 @@ def _load_ai(
         if match:
             clean_b64 = re.sub(rb"\s+", b"", match.group(1))
             jpeg_bytes = base64.b64decode(clean_b64)
-            with Image.open(BytesIO(jpeg_bytes)) as img:
-                img.load()
-                return img.convert("RGBA")
+            return limits.bounded_image_from_bytes(jpeg_bytes, "Illustrator embedded thumbnail")
 
         # 3. Fallback: check for embedded JPEG stream inside file
         jpg_start = raw_bytes.find(b"\xff\xd8\xff")
@@ -91,9 +89,9 @@ def _load_ai(
             jpg_end = raw_bytes.find(b"\xff\xd9", jpg_start)
             if jpg_end != -1:
                 try:
-                    with Image.open(BytesIO(raw_bytes[jpg_start : jpg_end + 2])) as img:
-                        img.load()
-                        return img.convert("RGBA")
+                    return limits.bounded_image_from_bytes(
+                        raw_bytes[jpg_start : jpg_end + 2], "Illustrator embedded JPEG"
+                    )
                 except Exception:
                     pass
 
@@ -135,9 +133,11 @@ def _load_eps(
             if magic == 0xC6D3D0C5:
                 t_off, t_len = struct.unpack_from("<LL", raw_bytes, 20)
                 if t_off > 0 and t_len > 0 and t_off + t_len <= len(raw_bytes):
-                    with Image.open(BytesIO(raw_bytes[t_off : t_off + t_len])) as img:
-                        img.load()
-                        return _finish(img.convert("RGBA"))
+                    return _finish(
+                        limits.bounded_image_from_bytes(
+                            raw_bytes[t_off : t_off + t_len], "EPS embedded TIFF thumbnail"
+                        )
+                    )
 
         # 2. XMP metadata thumbnail extraction (<xmpGImg:image>)
         import base64
@@ -146,13 +146,14 @@ def _load_eps(
         if match:
             clean_b64 = re.sub(rb"\s+", b"", match.group(1))
             jpeg_bytes = base64.b64decode(clean_b64)
-            with Image.open(BytesIO(jpeg_bytes)) as img:
-                img.load()
-                return _finish(img.convert("RGBA"))
+            return _finish(limits.bounded_image_from_bytes(jpeg_bytes, "EPS embedded thumbnail"))
 
         # 3. Standard Pillow EPS parser fallback
         try:
             with Image.open(BytesIO(raw_bytes)) as img:
+                # The EPS bounding box decides the raster size; reject a huge
+                # declared canvas before Pillow allocates for the render.
+                limits.check_raster_size(*img.size, "EPS render")
                 img.load()
                 return _finish(img.convert("RGBA"))
         except Exception:

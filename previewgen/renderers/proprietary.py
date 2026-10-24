@@ -91,16 +91,22 @@ def _load_max(source_path: Path) -> Image.Image:
 
 def extract_f3d_thumbnail(path: Path) -> Image.Image | None:
     """Extract pre-rendered high-res PNG thumbnail from Autodesk Fusion 360 (.f3d) archives."""
-    import zipfile
+    limit = previewgen_config.MAX_EMBEDDED_THUMBNAIL_BYTES
     try:
-        with zipfile.ZipFile(str(path), "r") as zf:
+        with limits.open_zip_bounded(path) as zf:
             for name in zf.namelist():
                 if "thumbnail" in name.lower() and name.lower().endswith((".png", ".jpg", ".jpeg")):
-                    if zf.getinfo(name).file_size > previewgen_config.MAX_EMBEDDED_THUMBNAIL_BYTES:
+                    member = zf.getinfo(name)
+                    if member.file_size > limit:
                         # Keep looking: Fusion archives often carry a second,
                         # smaller preview alongside an oversized one.
                         continue
-                    data = zf.read(name)
+                    # Bound the actual stream too: a spoofed member header must
+                    # not force an unbounded read into memory.
+                    with zf.open(member) as stream:
+                        data = stream.read(limit + 1)
+                    if len(data) > limit:
+                        continue
                     return limits.bounded_image_from_bytes(data, "Fusion 360 thumbnail")
         return None
     except Exception:

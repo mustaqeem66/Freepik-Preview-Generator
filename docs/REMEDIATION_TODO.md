@@ -114,3 +114,16 @@ Audit performed directly on `main` at `101b9af`; each fix ships with a regressio
 
 The corrupt-owner-marker change supersedes the narrower rule added in #78: both an unmarked and an unreadable-marker directory are equally unprovable, and the stale-age bound is the actual safety mechanism. Leaving corrupt markers alone made the leak permanent.
 
+## 2026-10-24 — Second full-repository audit (branch `fix/audit-2026-10-24`)
+
+Audit performed directly on `main` at `576b6a2`; each fix ships with a regression test. Modules reviewed in full: `api`, `assets`, `batch/*`, `cli`, `config`, `destinations`, `entrypoint`, `lifecycle`, `limits`, `preview_coordinator`, `probe_coordinator`, `probe_process`, `proc`, `processor`, `renderer_process`, `renderers/*`, `resources`, `scanner`, `settings`, `thumbnail_coordinator`, `worker_slot`, and the main frontend bridge/hooks/components.
+
+| Finding | Fix | Gate |
+| --- | --- | --- |
+| A failed `WorkerSlot` spawn leaked both multiprocessing queue pipes (and their feeder threads) plus the Windows Job Object handle for the slot's lifetime | close the queues/job and reap a partially started child before re-raising | `tests/unit/test_preview_coordinator.py::test_worker_slot_closes_queues_when_process_start_fails` |
+| `probe_asset_isolated` created its result queue outside the `try`, so a failed `process.start()` leaked the queue | start the process inside the guarded block so the existing `finally` disposes the queue | `tests/unit/test_probe_process.py::test_probe_asset_isolated_closes_queue_when_start_fails` |
+| Procreate (`procreate`/`brush`/`brushset`), Krita and Fusion 360 thumbnail paths opened `zipfile.ZipFile` directly, materializing an unbounded central directory | route every archive through `limits.open_zip_bounded`; Fusion thumbnails also bound the actual member stream, not just the declared size | `tests/unit/test_renderer_audit_regressions.py::test_creator_archives_open_through_the_bounded_zip_reader`, `::test_f3d_thumbnail_opens_through_the_bounded_zip_reader` |
+| Illustrator/EPS embedded-thumbnail fallbacks decoded unbounded bytes with `Image.open`, and the Pillow EPS fallback rendered at the file's declared bounding box without a size cap | all embedded previews use `limits.bounded_image_from_bytes`; the EPS render checks `limits.check_raster_size` before `load()` | `tests/unit/test_creator_formats.py`, `tests/unit/test_renderer_audit_regressions.py` |
+
+Not changed after review: `LifecycleManager.start_batch` joins the superseded worker thread from the new worker thread only (never the bridge thread), which is required to keep output writes serialized; and `ActiveOperation.process_ids` is defense-in-depth metadata for shutdown logging, while actual renderer children are owned and reaped by their coordinators. Neither is a functional defect.
+

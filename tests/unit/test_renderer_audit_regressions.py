@@ -20,6 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from previewgen import config as previewgen_config
+from previewgen import limits
 from previewgen.config import PreviewConfig
 from previewgen.errors import ErrorCode, classify_exception
 from previewgen.renderers.compose import compose_preview
@@ -123,3 +124,62 @@ def test_valid_logo_is_actually_composited(tmp_path):
 
     assert result.getpixel((5, 5)) == (255, 0, 0)
     assert result.getpixel((195, 145)) != (255, 0, 0)
+
+
+def _png_bytes(size: tuple[int, int]) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGBA", size, "purple").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("loader_name", "member"),
+    [
+        ("_load_procreate", "QuickLook/thumbnail.png"),
+        ("_load_procreate_brush", "brush/thumbnail.png"),
+        ("_load_kra", "preview.png"),
+    ],
+)
+def test_creator_archives_open_through_the_bounded_zip_reader(
+    tmp_path, monkeypatch, loader_name, member
+):
+    """Creator ZIP containers must not materialize an unbounded central directory."""
+    import previewgen.renderers.creator as creator
+
+    archive = tmp_path / "artwork.bin"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr(member, _png_bytes((32, 24)))
+
+    calls: list[Path] = []
+    real = limits.open_zip_bounded
+
+    def spy(path, **kwargs):
+        calls.append(Path(path))
+        return real(path, **kwargs)
+
+    monkeypatch.setattr(creator.limits, "open_zip_bounded", spy)
+
+    rendered = getattr(creator, loader_name)(archive)
+
+    assert rendered.size == (32, 24)
+    assert calls == [archive]
+
+
+def test_f3d_thumbnail_opens_through_the_bounded_zip_reader(tmp_path, monkeypatch):
+    archive = tmp_path / "part.f3d"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("Thumbnail/preview.png", _png_bytes((40, 30)))
+
+    calls: list[Path] = []
+    real = limits.open_zip_bounded
+
+    def spy(path, **kwargs):
+        calls.append(Path(path))
+        return real(path, **kwargs)
+
+    monkeypatch.setattr(limits, "open_zip_bounded", spy)
+
+    thumb = extract_f3d_thumbnail(archive)
+
+    assert thumb is not None and thumb.size == (40, 30)
+    assert calls == [archive]

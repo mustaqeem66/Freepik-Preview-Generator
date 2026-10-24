@@ -124,18 +124,34 @@ class WorkerSlot:
                     queue.close()
 
     def _spawn_unlocked(self) -> None:
-        self._job_queue = mp.Queue()
-        self._result_queue = mp.Queue()
+        job_queue = mp.Queue()
+        result_queue = mp.Queue()
         # Create the Job Object before starting the child so the window in which
         # the worker can spawn an unmanaged descendant is only the assign() call.
         job_handle = proc.WindowsJob(self._memory_limit_bytes) if sys.platform == "win32" else None
         process = mp.Process(
             target=self._target,
-            args=(self._job_queue, self._result_queue),
+            args=(job_queue, result_queue),
             daemon=True,
             name=f"previewgen-{self._name}",
         )
-        process.start()
+        try:
+            process.start()
+        except BaseException:
+            # A failed start would otherwise leak both queue pipes (and their
+            # feeder threads) plus the Job Object handle for the slot's lifetime.
+            if process.pid is not None:
+                with contextlib.suppress(Exception):
+                    proc.reap_process_tree(process, job_handle, kill_timeout=self._kill_timeout)
+            for queue in (result_queue, job_queue):
+                with contextlib.suppress(Exception):
+                    queue.close()
+            if job_handle is not None:
+                with contextlib.suppress(Exception):
+                    job_handle.close()
+            raise
+        self._job_queue = job_queue
+        self._result_queue = result_queue
         if job_handle is not None:
             if not job_handle.active:
                 logging.warning("%s worker has no Job Object; containment is degraded", self._name)
