@@ -222,6 +222,41 @@ def test_worker_slot_restarts_only_after_being_reaped():
         slot.kill()
 
 
+def test_worker_slot_closes_queues_when_process_start_fails(monkeypatch):
+    """A failed spawn must not leak the slot's queue pipes for the app's lifetime."""
+    closed: list[str] = []
+
+    class FakeQueue:
+        def close(self) -> None:
+            closed.append("close")
+
+    class FailingProcess:
+        pid = None
+
+        def start(self) -> None:
+            raise OSError("cannot start process")
+
+        def is_alive(self) -> bool:
+            return False
+
+        def join(self, timeout: float | None = None) -> None:
+            pass
+
+    import previewgen.worker_slot as worker_slot
+
+    monkeypatch.setattr(worker_slot.mp, "Queue", FakeQueue)
+    monkeypatch.setattr(worker_slot.mp, "Process", lambda **_kwargs: FailingProcess())
+
+    slot = WorkerSlot(_echo_worker, name="test-fail", memory_limit_bytes=0)
+
+    with pytest.raises(OSError, match="cannot start process"):
+        slot.ensure_started()
+
+    assert closed == ["close", "close"], "both queue pipes must be closed"
+    assert slot._process is None
+    assert slot.spawn_count == 0
+
+
 def test_worker_slot_reports_job_errors_without_dying():
     slot = WorkerSlot(_echo_worker, name="test-echo", memory_limit_bytes=0, kill_timeout=2.0)
     try:

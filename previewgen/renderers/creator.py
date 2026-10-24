@@ -51,7 +51,7 @@ def _archive_image(zf: zipfile.ZipFile, name: str, nested: bool = False) -> Imag
 def _load_procreate(source_path: Path) -> Image.Image:
     """Extract flattened canvas composite from a Procreate (.procreate) document."""
     try:
-        with zipfile.ZipFile(source_path, "r") as zf:
+        with limits.open_zip_bounded(source_path) as zf:
             names = zf.namelist()
             target = next(
                 (n for n in names if n.lower() in ("quicklook/thumbnail.png", "thumbnail.png")),
@@ -67,7 +67,7 @@ def _load_procreate(source_path: Path) -> Image.Image:
 def _load_procreate_brush(source_path: Path) -> Image.Image:
     """Extract brush tip or stroke preview from .brush or .brushset."""
     try:
-        with zipfile.ZipFile(source_path, "r") as zf:
+        with limits.open_zip_bounded(source_path) as zf:
             names = zf.namelist()
             # 1. Prefer QuickLook preview
             target = next(
@@ -130,7 +130,7 @@ def _load_clip(source_path: Path) -> Image.Image:
 def _load_kra(source_path: Path) -> Image.Image:
     """Extract flattened composite or preview from a Krita (.kra) OpenDocument ZIP."""
     try:
-        with zipfile.ZipFile(source_path, "r") as zf:
+        with limits.open_zip_bounded(source_path) as zf:
             names = set(zf.namelist())
             # Prefer full-resolution merged image
             target = "mergedimage.png" if "mergedimage.png" in names else "preview.png"

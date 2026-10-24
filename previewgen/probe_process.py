@@ -80,8 +80,8 @@ def probe_asset_isolated(
         args=(str(source_path), result_queue),
         daemon=True,
     )
-    process.start()
     try:
+        process.start()
         start_time = time.monotonic()
         while process.is_alive():
             if (time.monotonic() - start_time) > timeout_seconds:

@@ -29,3 +29,38 @@ def test_probe_asset_isolated_fails_closed_on_uninspectable_asset(tmp_path):
 
     with pytest.raises(RuntimeError):
         probe_asset_isolated(bad)
+
+
+def test_probe_asset_isolated_closes_queue_when_start_fails(monkeypatch):
+    """A failed spawn must not leak the probe result queue."""
+    closed: list[str] = []
+
+    class FakeQueue:
+        def close(self) -> None:
+            closed.append("close")
+
+        def join_thread(self) -> None:
+            closed.append("join_thread")
+
+    class FailingProcess:
+        pid = None
+
+        def start(self) -> None:
+            raise OSError("cannot start process")
+
+        def is_alive(self) -> bool:
+            return False
+
+        def join(self, timeout: float | None = None) -> None:
+            pass
+
+    import previewgen.probe_process as probe_process
+
+    monkeypatch.setattr(probe_process.mp, "Queue", FakeQueue)
+    monkeypatch.setattr(probe_process.mp, "Process", lambda **_kwargs: FailingProcess())
+
+    with pytest.raises(OSError, match="cannot start process"):
+        probe_asset_isolated(Path("artwork.png"))
+
+    assert "close" in closed
+    assert "join_thread" in closed
