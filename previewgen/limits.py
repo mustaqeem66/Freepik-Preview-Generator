@@ -20,7 +20,7 @@ import tempfile
 import zlib
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO, Iterator
 
 from PIL import Image, ImageOps
 
@@ -269,7 +269,7 @@ MAX_MESH_INSPECTION_LINE_BYTES = 256 * 1024
 MAX_MESH_INSPECTION_JSON_BYTES = 64 * 1024 * 1024
 
 
-def _mesh_lines(stream):
+def _mesh_lines(stream: BinaryIO) -> Iterator[bytes]:
     while True:
         line = stream.readline(MAX_MESH_INSPECTION_LINE_BYTES + 1)
         if not line:
