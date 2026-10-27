@@ -24,7 +24,7 @@ export function FolderPicker({ inputFolder, outputFolder, sameFolder, onBrowseIn
     <div className="section-heading"><FolderOpen size={16} /><h2>Source folder</h2></div>
     <p className="muted">Your artwork stays on this computer.</p>
     <label className="sr-only" htmlFor="input-folder">Input folder path</label>
-    <input id="input-folder" type="text" value={input} placeholder="Paste a folder path…"
+    <input id="input-folder" type="text" value={input} placeholder="Choose a source folder…"
       disabled={disabled} readOnly title="Use Choose Folder to authorize a source directory"
       />
     <div className="source-choice-actions" role="group" aria-label="Choose artwork source">
