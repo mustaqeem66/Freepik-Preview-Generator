@@ -59,7 +59,7 @@ export function SettingsPanel({ state, onChange, onBrowseLogo, onBrowseFont, is3
       <p className="muted">The checkerboard demonstrates transparency. JPG exports have an opaque background.</p>
       <label className="check-row"><input type="checkbox" checked={state.animationContactSheet === true}
         onChange={(event) => onChange({ animationContactSheet: event.target.checked })} />Animated GIF/WebP contact sheet</label>
-      {state.animationContactSheet === true && <p className="muted">Shows up to nine GIF/WebP frames in one canvas. Other formats and single-frame images are unchanged.</p>
+      {state.animationContactSheet === true && <p className="muted">Shows up to nine GIF/WebP frames in one canvas. Other formats and single-frame images are unchanged.</p>}
       <label className="check-row"><input type="checkbox" checked={state.autoFrame === true}
         onChange={(e) => onChange({ autoFrame: e.target.checked })} />Auto-frame transparent subject</label>
       {state.autoFrame === true && <>
