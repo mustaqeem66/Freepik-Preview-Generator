@@ -12,6 +12,7 @@ import io
 import re
 import sqlite3
 import struct
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -32,14 +33,23 @@ def _archive_image(zf: zipfile.ZipFile, name: str, nested: bool = False) -> Imag
         raise ValueError("Embedded image exceeds compression ratio limit")
     with zf.open(member) as stream:
         data = stream.read(previewgen_config.MAX_EMBEDDED_THUMBNAIL_BYTES + 1)
+    if len(data) > previewgen_config.MAX_EMBEDDED_THUMBNAIL_BYTES:
+        raise ValueError("Embedded image exceeds size limit")
     if name.lower().endswith(".brush") and not nested:
-        with zipfile.ZipFile(io.BytesIO(data)) as brush:
-            names = brush.namelist()
-            target = next((n for n in names if n.lower().endswith("thumbnail.png")), None)
-            target = target or next((n for n in names if n.lower().endswith("shape.png")), None)
-            if not target:
-                raise ValueError("No image in nested Procreate brush")
-            return _archive_image(brush, target, nested=True)
+        # Inspect the *inner* central directory before ZipFile creates ZipInfo
+        # objects. A brushset can contain a zip bomb disguised as one brush.
+        with tempfile.TemporaryDirectory(prefix="previewgen_nested_brush_") as root:
+            inner_path = Path(root) / "inner.brush"
+            inner_path.write_bytes(data)
+            with limits.open_zip_bounded(
+                inner_path, max_entries=previewgen_config.MAX_ZIP_MEMBERS
+            ) as brush:
+                names = brush.namelist()
+                target = next((n for n in names if n.lower().endswith("thumbnail.png")), None)
+                target = target or next((n for n in names if n.lower().endswith("shape.png")), None)
+                if not target:
+                    raise ValueError("No image in nested Procreate brush")
+                return _archive_image(brush, target, nested=True)
     image = limits.bounded_image_from_bytes(data, name)
     if Path(name).name.lower() == "shape.png":
         alpha = image.convert("L")
@@ -131,9 +141,16 @@ def _load_kra(source_path: Path) -> Image.Image:
     """Extract flattened composite or preview from a Krita (.kra) OpenDocument ZIP."""
     try:
         with limits.open_zip_bounded(source_path) as zf:
-            names = set(zf.namelist())
-            # Prefer full-resolution merged image
-            target = "mergedimage.png" if "mergedimage.png" in names else "preview.png"
+            names = zf.namelist()
+            # Some valid archives use different casing or place previews
+            # inside subfolders. Never assume preview.png exists.
+            target = next(
+                (name for expected in ("mergedimage.png", "preview.png")
+                 for name in names if name.rsplit("/", 1)[-1].lower() == expected),
+                None,
+            )
+            if target is None:
+                raise ValueError("No Krita mergedimage.png or preview.png available")
             return _archive_image(zf, target)
     except Exception as exc:
         raise RuntimeError(f"Could not load Krita painting '{source_path.name}': {exc}") from exc
