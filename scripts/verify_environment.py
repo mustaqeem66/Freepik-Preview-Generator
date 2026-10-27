@@ -34,9 +34,13 @@ MANDATORY_ENGINES: dict[str, str] = {
     "resvg_py": "SVG / SVGZ vector rasterization",
     "psd_tools": "Photoshop (.psd) composite extraction",
     "trimesh": "3D models (OBJ/GLB/GLTF/STL/PLY)",
+    "collada": "COLLADA (.dae) scene decoding",
+    "lxml": "XML-based 3D model and CAD parsing",
+    "networkx": "3MF/scene graph processing",
     "ezdxf": "AutoCAD DXF drawings",
     "cascadio": "CAD solids (STEP/STP/IGES/IGS)",
-    "matplotlib": "Watermark text composition",
+    "matplotlib": "DXF vector drawing rasterization",
+    "fontTools": "WOFF / WOFF2 font decoding",
 }
 
 # module -> capability. Absence downgrades a documented feature but does not

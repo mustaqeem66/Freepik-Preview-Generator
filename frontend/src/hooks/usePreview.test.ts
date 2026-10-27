@@ -120,6 +120,22 @@ describe("usePreview concurrency", () => {
     await waitFor(() => expect(releasePreview).toHaveBeenCalledWith("preview_000001"));
   });
 
+  it("regenerates the current 3D preview when only the untextured model color changes", async () => {
+    const startPreview = vi.fn(async (_path: string, _state: PreviewState) => ({ ok: true, operationId: "preview-color", status: "queued" }));
+    const cancelPreview = vi.fn(async () => ({ ok: true }));
+    // @ts-expect-error mock window.pywebview
+    window.pywebview = { api: { start_preview: startPreview, cancel_preview: cancelPreview } };
+    const mesh: FileInfo = { name: "model.stl", path: "/model.stl", ext: "STL", is_3d: true };
+    const { rerender } = renderHook(
+      ({ state }: { state: PreviewState }) => usePreview(mesh, state),
+      { initialProps: { state: baseState({ modelColor: "#7882A0" }) } }
+    );
+    await waitFor(() => expect(startPreview).toHaveBeenCalledTimes(1));
+    rerender({ state: baseState({ modelColor: "#FF0000" }) });
+    await waitFor(() => expect(startPreview).toHaveBeenCalledTimes(2));
+    expect(startPreview.mock.calls[1][1]).toMatchObject({ modelColor: "#FF0000" });
+  });
+
   it("does not request a preview when there is no active file", async () => {
     const fakeApi = {
       render_preview: vi.fn(async () => ({ ok: true, value: null, error: null })),

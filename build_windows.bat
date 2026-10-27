@@ -21,7 +21,7 @@ if exist "frontend\package.json" (
 )
 python -m pip install --require-hashes -r requirements-dev-lock.txt
 if errorlevel 1 exit /b 1
-pyinstaller --noconsole --name PreviewGen --icon=app.ico --add-data "app.ico;." --add-data "frontend\dist;frontend\dist" --add-data "previewgen\settings_schema.json;previewgen" --collect-all psd_tools --collect-all trimesh --collect-all webview --collect-all ezdxf --collect-all olefile --collect-all cascadio --collect-all resvg_py --collect-all matplotlib --collect-all pypdfium2 --collect-all pypdfium2_raw --collect-all fontTools --collect-all brotli app.py --clean -y
+pyinstaller --noconsole --name PreviewGen --icon=app.ico --add-data "app.ico;." --add-data "frontend\dist;frontend\dist" --add-data "previewgen\settings_schema.json;previewgen" --collect-all psd_tools --collect-all trimesh --collect-all collada --collect-all lxml --collect-all networkx --collect-all webview --collect-all ezdxf --collect-all olefile --collect-all cascadio --collect-all resvg_py --collect-all matplotlib --collect-all pypdfium2 --collect-all pypdfium2_raw --collect-all fontTools --collect-all brotli app.py --clean -y
 if errorlevel 1 (
   echo Build failed. Read the error above.
   pause
