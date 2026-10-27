@@ -125,21 +125,35 @@ def extract_maya_thumbnail(path: Path) -> Image.Image | None:
     try:
         ext = path.suffix.lower()
         if ext == ".ma":
+            import base64
+            import re
+
+            # Untrusted ASCII scenes can contain gigabyte-long geometry lines.
+            # Read a fixed prefix rather than using unbounded readline().
             with open(path, encoding="utf-8", errors="ignore") as f:
-                for _ in range(500):
-                    line = f.readline()
-                    if not line:
+                header = f.read(8 * 1024 * 1024)
+            for marker in re.finditer(r"thumbnail", header, re.IGNORECASE):
+                # Maya thumbnails can be encoded as successive quoted base64
+                # chunks, sometimes split across multiple scene lines.
+                section = header[marker.end():marker.end() + 2 * 1024 * 1024]
+                chunks: list[str] = []
+                total = 0
+                last = 0
+                for match in re.finditer(r'["\\\']([A-Za-z0-9+/=]{24,})["\\\']', section):
+                    if chunks and match.start() - last > 512:
+                        break  # unrelated later scene attributes
+                    chunk = match.group(1)
+                    total += len(chunk)
+                    if total > 2 * 1024 * 1024:
                         break
-                    if "thumbnail" in line.lower():
-                        import base64
-                        import re
-                        m = re.search(r'["\']([A-Za-z0-9+/=]{100,})["\']', line)
-                        if m:
-                            try:
-                                 raw = base64.b64decode(m.group(1))
-                                 return limits.bounded_image_from_bytes(raw, "Maya thumbnail")
-                            except Exception:
-                                pass
+                    chunks.append(chunk)
+                    last = match.end()
+                    try:
+                        raw = base64.b64decode("".join(chunks), validate=True)
+                        return limits.bounded_image_from_bytes(raw, "Maya thumbnail")
+                    except Exception:
+                        # A partial chunk is expected until the last quoted part.
+                        continue
         elif ext == ".mb":
             with open(path, "rb") as f:
                 header_data = f.read(512 * 1024)

@@ -12,7 +12,7 @@ from PIL import Image
 
 from previewgen import limits
 from previewgen.config import MAX_SOURCE_FILE_BYTES, PreviewConfig
-from previewgen.renderers.mesh3d import _MESH_CACHE, _normalize_visuals, render_3d_mesh
+from previewgen.renderers.mesh3d import _MESH_CACHE, _combine_scene_meshes, _normalize_visuals, render_3d_mesh
 
 
 def _load_dxf(source_path: Path, target_dimension: int = 2400) -> Image.Image:
@@ -155,13 +155,10 @@ def _load_cad_solid(source_path: Path, config: PreviewConfig, target_dimension: 
             import trimesh
             mesh = trimesh.load(BytesIO(glb_bytes), file_type="glb")
             if isinstance(mesh, trimesh.Scene):
-                try:
-                    geom = mesh.to_geometry()
-                    mesh = trimesh.util.concatenate(list(geom.values())) if isinstance(geom, dict) else geom
-                except Exception:
-                    mesh = trimesh.util.concatenate(mesh.dump())
+                mesh = _combine_scene_meshes(mesh, trimesh)
+            else:
+                _normalize_visuals(mesh)
             limits.validate_loaded_mesh(mesh)
-            _normalize_visuals(mesh)
             _MESH_CACHE[key] = mesh
             if len(_MESH_CACHE) > 16:
                 _MESH_CACHE.pop(next(iter(_MESH_CACHE)))
