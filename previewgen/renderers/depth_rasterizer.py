@@ -38,6 +38,14 @@ def rasterize_depth_triangles(
     ):
         raise ValueError("Depth rasterizer canvas exceeds the 512-pixel per-side limit")
 
+    # Check cheap sequence lengths before NumPy conversion allocates an array.
+    # A hostile caller must not pass millions of triangles just to be rejected.
+    try:
+        if len(screen_triangles) > MAX_DEPTH_TRIANGLES:
+            raise ValueError("Depth rasterizer exceeds the 10,000-triangle limit")
+    except TypeError:
+        pass
+
     triangles = np.asarray(screen_triangles, dtype=np.float64)
     colors = np.asarray(face_colors)
     if triangles.ndim != 3 or triangles.shape[1:] != (3, 3):
