@@ -50,30 +50,47 @@ def _find_embedded_bmp(data: bytes) -> bytes | None:
 
 
 def extract_max_thumbnail(path: Path) -> Image.Image | None:
-    """Extract embedded viewport thumbnail from Autodesk 3ds Max (.max) OLE files."""
+    """Extract bounded thumbnails from 3ds Max OLE streams.
+
+    Query the OLE directory size *before* openstream(), because olefile may
+    materialize the entire stream when it constructs its stream object. Never
+    trust the reported size alone: cap the subsequent read as well.
+    """
     try:
         import olefile
+
         if not olefile.isOleFile(str(path)):
             return None
+        limit = previewgen_config.MAX_EMBEDDED_THUMBNAIL_BYTES
         with olefile.OleFileIO(str(path)) as ole:
             for sname in ole.listdir():
                 s_lower = "/".join(sname).lower()
-                if "thumbnail" in s_lower or "preview" in s_lower:
-                    data = ole.openstream(sname).read()
+                if "thumbnail" not in s_lower and "preview" not in s_lower:
+                    continue
+                if not 0 < ole.get_size(sname) <= limit:
+                    continue
+                data = ole.openstream(sname).read(limit + 1)
+                if len(data) > limit:
+                    continue
+                png_idx = data.find(b"\x89PNG\r\n\x1a\n")
+                if png_idx >= 0:
+                    return limits.bounded_image_from_bytes(data[png_idx:], "3ds Max thumbnail")
+                bmp = _find_embedded_bmp(data)
+                if bmp is not None:
+                    return limits.bounded_image_from_bytes(bmp, "3ds Max thumbnail")
+
+            summary = "\x05SummaryInformation"
+            if ole.exists(summary) and 0 < ole.get_size(summary) <= limit:
+                data = ole.openstream(summary).read(limit + 1)
+                if len(data) <= limit:
                     png_idx = data.find(b"\x89PNG\r\n\x1a\n")
                     if png_idx >= 0:
-                        return limits.bounded_image_from_bytes(data[png_idx:], "3ds Max thumbnail")
+                        return limits.bounded_image_from_bytes(
+                            data[png_idx:], "3ds Max thumbnail"
+                        )
                     bmp = _find_embedded_bmp(data)
                     if bmp is not None:
                         return limits.bounded_image_from_bytes(bmp, "3ds Max thumbnail")
-            if ole.exists("\x05SummaryInformation"):
-                stream = ole.openstream("\x05SummaryInformation").read()
-                png_idx = stream.find(b"\x89PNG\r\n\x1a\n")
-                if png_idx >= 0:
-                    return limits.bounded_image_from_bytes(stream[png_idx:], "3ds Max thumbnail")
-                bmp = _find_embedded_bmp(stream)
-                if bmp is not None:
-                    return limits.bounded_image_from_bytes(bmp, "3ds Max thumbnail")
         return None
     except Exception:
         return None
