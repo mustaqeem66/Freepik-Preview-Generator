@@ -4,7 +4,7 @@
 
 This ledger reconciles the nine source-level findings supplied in the audit. Findings were checked against source code, not claimed reproduced on all frozen desktop binaries.
 
-**GitHub handoff status (27 October 2026):** Code-fix PRs #95, #96, #98 and #99 are merged. PR #97 contains independent source regression tests and remains a draft awaiting local verification. No source fix is represented as a clean-machine packaged release certification.
+**GitHub handoff status (27 October 2026):** Source PRs #95, #96, #97, #98 and #99 are merged. The independent regression-test PR #97 merged, but local packaged Windows/Linux/macOS acceptance remains unverified. Follow-on PRs #100, #101, #103, #105, #106 and #107 have also merged for progress documentation, font fitting, synthetic smoke generation, alpha auto-frame, secure picker error guidance and native QA evidence infrastructure respectively. No source fix is represented as a clean-machine packaged release certification.
 
 | # | Finding | Source disposition | Pull request |
 |---|---|---|---|
