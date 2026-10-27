@@ -59,6 +59,8 @@ export interface PreviewState {
   outputFolder: string;
   sameFolder: boolean;
   invertTriangles: boolean;
+  autoFrame?: boolean;
+  frameMargin?: number;
   solidColor: string;
   logoPath: string;
   logoScale: number;

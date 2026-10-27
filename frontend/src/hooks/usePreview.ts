@@ -285,6 +285,8 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
     state.outlineColor,
     state.outlineThickness,
     state.invertTriangles,
+    state.autoFrame,
+    state.frameMargin,
   ]);
 
   return { previewUrl, previewSourcePath, previewMeta, isLoading, renderError };

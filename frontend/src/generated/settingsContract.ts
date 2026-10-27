@@ -8,6 +8,8 @@ export const SETTINGS_DEFAULTS = {
   "outputFolder": "",
   "sameFolder": false,
   "invertTriangles": true,
+  "autoFrame": false,
+  "frameMargin": 8,
   "solidColor": "#FFFFFF",
   "logoPath": "",
   "logoScale": 100,
@@ -61,6 +63,16 @@ export const SETTINGS_FIELDS: readonly SettingsField[] = [
   {
     "name": "invertTriangles",
     "type": "boolean"
+  },
+  {
+    "name": "autoFrame",
+    "type": "boolean"
+  },
+  {
+    "name": "frameMargin",
+    "type": "number",
+    "minimum": 0,
+    "maximum": 25
   },
   {
     "name": "solidColor",

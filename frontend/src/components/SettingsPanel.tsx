@@ -57,6 +57,13 @@ export function SettingsPanel({ state, onChange, onBrowseLogo, onBrowseFont, is3
         className="color-swatch" style={{ background: color }} aria-label={`Set background ${color}`}
         aria-pressed={state.solidColor.toUpperCase() === color} onClick={() => onChange({ solidColor: color })} />)}</div>
       <p className="muted">The checkerboard demonstrates transparency. JPG exports have an opaque background.</p>
+      <label className="check-row"><input type="checkbox" checked={state.autoFrame === true}
+        onChange={(e) => onChange({ autoFrame: e.target.checked })} />Auto-frame transparent subject</label>
+      {state.autoFrame === true && <>
+        <Slider label="Subject margin" min={0} max={25} value={state.frameMargin ?? 8} unit="%"
+          hints={["Tight", "Balanced", "Spacious"]} onChange={(frameMargin) => onChange({ frameMargin })} />
+        <p className="muted">Opt-in: centers the visible subject while retaining the original canvas size and aspect ratio. Can enlarge small artwork.</p>
+      </>}
     </section>
 
     {is3D && <section className="inspector-section">
