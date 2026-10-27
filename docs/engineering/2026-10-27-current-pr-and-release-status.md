@@ -1,5 +1,7 @@
 # PreviewGen Studio — Audit and Release Handoff, 27 October 2026
 
+> **Historical snapshot:** This document records the 27 October review. For current PR dispositions, additional #116–#127 engineering progress and open acceptance issues, read [the 28 October re-audit and release handoff](2026-10-28-re-audit-release-handoff.md). Do not use the older draft-PR counts below as today's GitHub status.
+
 ## Verified repository progress
 
 The two attached audit markdown files are byte-identical and describe an earlier source baseline. The GitHub repository is now ahead of that audit.
