@@ -57,6 +57,22 @@ def _validated_oracle(item: dict[str, Any], fixtures_dir: Path) -> dict[str, Any
     reviewer = raw.get("reviewedBy")
     maximum = raw.get("maxMeanAbsoluteError")
     version = item.get("sourceVersion")
+    source_app = item.get("sourceApp")
+    # Synthetic smoke inputs are valid parser tests, never source-application
+    # visual oracles. "reviewedBy" alone cannot turn a generated fixture
+    # into independent authoring-app evidence.
+    if (
+        not isinstance(source_app, str)
+        or not source_app.strip()
+        or source_app.strip().lower() in {"unknown", "none"}
+        or "synthetic" in source_app.casefold()
+        or "previewgen" in source_app.casefold()
+    ):
+        raise ValueError("oracle requires an identified independent source application")
+    if isinstance(version, str) and "synthetic" in version.casefold():
+        raise ValueError("synthetic sourceVersion cannot support an independent oracle")
+    if image == item.get("file"):
+        raise ValueError("oracle.image must be independent from the source fixture")
     if (not isinstance(image, str) or not image
             or Path(image).name != image or "/" in image or "\\" in image
             or image.startswith(".") or Path(image).suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp")):
