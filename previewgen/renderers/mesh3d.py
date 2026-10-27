@@ -136,6 +136,24 @@ def _normalize_visuals(mesh) -> None:
         return
 
 
+def _combine_scene_meshes(scene, trimesh):
+    """Apply each node's materials before combining potentially mixed visuals.
+
+    A late whole-scene conversion cannot recover TextureVisuals lost during
+    trimesh concatenation. dump() also applies node transforms to each mesh.
+    """
+    try:
+        parts = list(scene.dump())
+    except Exception:
+        geometry = scene.to_geometry()
+        parts = list(geometry.values()) if isinstance(geometry, dict) else [geometry]
+    if not parts:
+        raise ValueError("3D Scene contains no valid geometry")
+    for part in parts:
+        _normalize_visuals(part)
+    return trimesh.util.concatenate(parts) if len(parts) > 1 else parts[0]
+
+
 def render_3d_mesh(
     mesh,
     yaw_deg: float = 45.0,
@@ -356,16 +374,12 @@ def _load_3d(source_path: Path, config: PreviewConfig, target_dimension: int = 2
         if isinstance(loaded, trimesh.Scene):
             if len(loaded.geometry) == 0:
                 raise ValueError("3D Scene contains no valid geometry")
-            try:
-                geom = loaded.to_geometry()
-                mesh = trimesh.util.concatenate(list(geom.values())) if isinstance(geom, dict) else geom
-            except Exception:
-                mesh = trimesh.util.concatenate(loaded.dump())
+            mesh = _combine_scene_meshes(loaded, trimesh)
         else:
             mesh = loaded
+            _normalize_visuals(mesh)
 
         limits.validate_loaded_mesh(mesh)
-        _normalize_visuals(mesh)
 
         _MESH_CACHE[key] = mesh
         if len(_MESH_CACHE) > 16:
