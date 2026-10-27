@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import contextlib
 import io
+import math
 import re
 import sqlite3
 import struct
@@ -95,6 +96,62 @@ def _load_procreate_brush(source_path: Path) -> Image.Image:
             return _archive_image(zf, target)
     except Exception as exc:
         raise RuntimeError(f"Could not load Procreate brush '{source_path.name}': {exc}") from exc
+
+
+def _load_brushset_contact_sheet(
+    source_path: Path, target_dimension: int = 900
+) -> Image.Image:
+    """Opt-in preview of up to nine nested Procreate brush tips.
+
+    Every nested .brush passes through the existing bounded ZIP reader. One
+    invalid nested brush causes an explicit failure, not a misleading partial
+    success. No extra files are read beyond the selected outer .brushset.
+    """
+    from PIL import ImageDraw
+
+    dimension = max(240, min(2400, int(target_dimension)))
+    try:
+        with limits.open_zip_bounded(source_path) as archive:
+            names = sorted(
+                (name for name in archive.namelist() if name.lower().endswith(".brush")),
+                key=str.lower,
+            )
+            if not names:
+                raise ValueError("Brushset has no nested .brush tip archives")
+            # Limit both decoder count and temporary image allocations to nine.
+            tips = [_archive_image(archive, name) for name in names[:9]]
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not build brushset contact sheet for '{source_path.name}': {exc}"
+        ) from exc
+
+    columns = min(3, math.ceil(math.sqrt(len(tips))))
+    rows = (len(tips) + columns - 1) // columns
+    sheet = Image.new("RGBA", (dimension, dimension), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(sheet)
+    for index, tip in enumerate(tips):
+        col = index % columns
+        row = index // columns
+        x0 = col * dimension // columns
+        x1 = (col + 1) * dimension // columns
+        y0 = row * dimension // rows
+        y1 = (row + 1) * dimension // rows
+        cell_w, cell_h = x1 - x0, y1 - y0
+        pad = max(2, min(cell_w, cell_h) // 24)
+        tile = tip.convert("RGBA")
+        tile.thumbnail(
+            (max(1, cell_w - 2 * pad), max(1, cell_h - 2 * pad)),
+            Image.Resampling.LANCZOS,
+        )
+        dx = x0 + (cell_w - tile.width) // 2
+        dy = y0 + (cell_h - tile.height) // 2
+        sheet.alpha_composite(tile, (dx, dy))
+        if cell_w > 4 and cell_h > 4:
+            draw.rectangle(
+                (x0, y0, x1 - 1, y1 - 1),
+                outline=(130, 145, 160, 190), width=1,
+            )
+    return sheet
 
 
 def _load_clip(source_path: Path) -> Image.Image:

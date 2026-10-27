@@ -135,6 +135,7 @@ class PreviewConfig:
     opacity: float = 0.9                  # 0.0 to 1.0 (text opacity)
     auto_frame: bool = False               # off preserves historical exports
     animation_contact_sheet: bool = False  # GIF/WebP only, off keeps first frame
+    brushset_contact_sheet: bool = False    # .brushset only, existing first tip unchanged
     frame_margin: float = 0.08             # fraction per side, constrained 0.00–0.25
     invert_triangles: bool = True         # True: Left Solid, Right Transparent; False: Left Transparent, Right Solid
     solid_color: tuple[int, int, int] = (255, 255, 255)  # RGB of solid triangle
@@ -190,6 +191,7 @@ class PreviewConfig:
             "solidColor", "solid_color", "textColor", "text_color",
             "autoFrame", "auto_frame", "frameMargin", "frame_margin",
             "animationContactSheet", "animation_contact_sheet",
+            "brushsetContactSheet", "brushset_contact_sheet",
             "hasOutline", "has_outline", "outlineColor", "outline_color",
             "outlineThickness", "outline_thickness", "fontScale", "font_scale",
             "yaw", "pitch", "modelColor", "model_color",
@@ -354,6 +356,7 @@ class PreviewConfig:
             opacity=opacity,
             auto_frame=_safe_bool(mapping.get("autoFrame", mapping.get("auto_frame")), False, "autoFrame"),
             animation_contact_sheet=_safe_bool(mapping.get("animationContactSheet", mapping.get("animation_contact_sheet")), False, "animationContactSheet"),
+            brushset_contact_sheet=_safe_bool(mapping.get("brushsetContactSheet", mapping.get("brushset_contact_sheet")), False, "brushsetContactSheet"),
             frame_margin=_ratio("frameMargin", "frame_margin", 0.08, 0.0, 0.25),
             invert_triangles=_safe_bool(
                 mapping.get("invertTriangles", mapping.get("invert_triangles")), True, "invertTriangles"

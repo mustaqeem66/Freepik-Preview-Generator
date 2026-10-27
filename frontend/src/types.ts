@@ -61,6 +61,7 @@ export interface PreviewState {
   invertTriangles: boolean;
   autoFrame?: boolean;
   animationContactSheet?: boolean;
+  brushsetContactSheet?: boolean;
   frameMargin?: number;
   solidColor: string;
   logoPath: string;

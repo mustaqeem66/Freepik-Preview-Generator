@@ -41,6 +41,11 @@
       "default": false,
       "description": "Opt-in nine-frame maximum GIF/WebP contact-sheet preview and export; default remains first frame"
     },
+    "brushsetContactSheet": {
+      "type": "boolean",
+      "default": false,
+      "description": "Opt-in bounded Procreate brushset tip grid; defaults to embedded preview"
+    },
     "frameMargin": {
       "type": "number",
       "minimum": 0,
