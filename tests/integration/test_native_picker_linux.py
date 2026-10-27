@@ -23,6 +23,16 @@ from pathlib import Path
 
 import pytest
 
+try:
+    import gi
+
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk  # noqa: F401
+
+    has_gtk = True
+except (ImportError, ValueError):
+    has_gtk = False
+
 pytestmark = [
     pytest.mark.full_runtime,
     pytest.mark.skipif(sys.platform != "linux", reason="GTK chooser is the Linux native path"),
@@ -30,6 +40,7 @@ pytestmark = [
         not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
         reason="native file dialogs need a display",
     ),
+    pytest.mark.skipif(not has_gtk, reason="PyGObject Gtk bindings not installed"),
 ]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]

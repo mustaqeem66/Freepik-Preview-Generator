@@ -1,8 +1,8 @@
 """Opt-in auto-frame preserves source pixels and canvas size."""
 from __future__ import annotations
 
-from PIL import Image, ImageDraw
 import pytest
+from PIL import Image, ImageDraw
 
 from previewgen.config import PreviewConfig
 from previewgen.renderers.compose import _auto_frame_subject, compose_preview

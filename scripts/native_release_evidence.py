@@ -129,7 +129,14 @@ def validate_receipt(receipt: dict[str, Any], artifact: Path, evidence_dir: Path
             continue
         evidence = record.get("evidenceFile")
         digest = record.get("evidenceSha256")
-        if not isinstance(evidence, str) or not evidence or evidence.startswith(".") or Path(evidence).name != evidence or "/" in evidence or "\\" in evidence:
+        if (
+            not isinstance(evidence, str)
+            or not evidence
+            or evidence.startswith(".")
+            or Path(evidence).name != evidence
+            or "/" in evidence
+            or "\\" in evidence
+        ):
             failures.append(f"{name}: evidence filename must be a safe basename")
             continue
         if not isinstance(digest, str) or not SHA64.fullmatch(digest):

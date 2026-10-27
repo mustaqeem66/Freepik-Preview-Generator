@@ -1,8 +1,8 @@
 """Tiled watermark must preserve regular placement and reuse shared composition."""
 from __future__ import annotations
 
-from PIL import Image, ImageChops
 import pytest
+from PIL import Image, ImageChops
 
 from previewgen.config import PreviewConfig
 from previewgen.renderers.compose import compose_preview
@@ -12,7 +12,8 @@ pytestmark = pytest.mark.core
 
 def _colored_pixels(original: Image.Image, modified: Image.Image) -> int:
     diff = ImageChops.difference(original.convert("RGB"), modified.convert("RGB"))
-    return sum(1 for pixel in diff.getdata() if max(pixel) > 0)
+    pixels = getattr(diff, "get_flattened_data", diff.getdata)()
+    return sum(1 for pixel in pixels if max(pixel) > 0)
 
 
 def test_tiled_watermark_is_bounded_repeated_and_preserves_source():
