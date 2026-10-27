@@ -13,6 +13,7 @@ from PIL import Image
 MAX_DEPTH_DIMENSION = 512
 MAX_DEPTH_TRIANGLES = 10_000
 MAX_DEPTH_WORK_PIXELS = 8_000_000
+MAX_DEPTH_TEXTURE_DIMENSION = 2048
 
 
 def rasterize_depth_triangles(
@@ -20,6 +21,9 @@ def rasterize_depth_triangles(
     face_colors,
     width: int,
     height: int,
+    *,
+    vertex_uv=None,
+    texture: Image.Image | None = None,
 ) -> Image.Image:
     """Render fully opaque RGB triangles with interpolated orthographic depth.
 
@@ -29,7 +33,10 @@ def rasterize_depth_triangles(
 
     All allocations/work are bounded. Invalid coordinates, oversized output or
     an excessive total covered bounding-box area fail closed, not partially.
-    This kernel does not yet support UV textures, normals, transparency or PBR.
+    Optional UVs: (N, 3, 2), matching triangle vertices; use an already
+    decoded, fully opaque PIL texture with nearest-neighbour repeat sampling.
+    V=1 is image top, V=0 is image bottom. Face RGB tints texels.
+    Normals, alpha blending, perspective correction and PBR are NOT supported.
     """
     import numpy as np
 
@@ -60,11 +67,32 @@ def rasterize_depth_triangles(
     if np.any(colors < 0) or np.any(colors > 255):
         raise ValueError("Depth rasterizer RGB colors must be in the 0–255 range")
 
+    if (vertex_uv is None) != (texture is None):
+        raise ValueError("Depth rasterizer requires both texture and vertex UV coordinates")
+    uvs = None
+    texture_pixels = None
+    if texture is not None:
+        if not isinstance(texture, Image.Image):
+            raise ValueError("Depth rasterizer texture must be a PIL image")
+        tx_width, tx_height = texture.size
+        if not (1 <= tx_width <= MAX_DEPTH_TEXTURE_DIMENSION and
+                1 <= tx_height <= MAX_DEPTH_TEXTURE_DIMENSION):
+            raise ValueError("Depth rasterizer texture exceeds the 2048-pixel per-side limit")
+        uvs = np.asarray(vertex_uv, dtype=np.float64)
+        if uvs.shape != (face_count, 3, 2):
+            raise ValueError("Depth rasterizer vertex UV shape must be (N, 3, 2)")
+        if not np.isfinite(uvs).all() or np.any(np.abs(uvs) > 10_000):
+            raise ValueError("Depth rasterizer has non-finite or excessive vertex UV coordinates")
+        rgba_texture = texture.convert("RGBA")
+        if rgba_texture.getchannel("A").getextrema() != (255, 255):
+            raise ValueError("Depth rasterizer cannot interpret transparent textures")
+        texture_pixels = np.asarray(rgba_texture, dtype=np.uint8)
+
     output = np.zeros((height, width, 4), dtype=np.uint8)
     depth = np.full((height, width), -np.inf, dtype=np.float64)
     work = 0
 
-    for triangle, color in zip(triangles, colors):
+    for index, (triangle, color) in enumerate(zip(triangles, colors)):
         x0, y0, z0 = triangle[0]
         x1, y1, z1 = triangle[1]
         x2, y2, z2 = triangle[2]
@@ -103,7 +131,22 @@ def rasterize_depth_triangles(
         if nearest.any():
             existing[nearest] = pixel_depth[nearest]
             target = output[min_y:max_y + 1, min_x:max_x + 1]
-            target[nearest, :3] = np.asarray(color, dtype=np.uint8)
+            if texture_pixels is None:
+                target[nearest, :3] = np.asarray(color, dtype=np.uint8)
+            else:
+                # UVs interpolate at the SAME nearest-depth pixel positions.
+                # GL repeat addressing; coordinate v is bottom-up in texture.
+                uv = uvs[index]
+                u = np.mod(w0 * uv[0, 0] + w1 * uv[1, 0] + w2 * uv[2, 0], 1.0)
+                v = np.mod(w0 * uv[0, 1] + w1 * uv[1, 1] + w2 * uv[2, 1], 1.0)
+                tex_h, tex_w = texture_pixels.shape[:2]
+                tex_x = np.minimum(tex_w - 1, (u * tex_w).astype(np.int64))
+                tex_y = np.minimum(tex_h - 1, ((1.0 - v) * tex_h).astype(np.int64))
+                texels = texture_pixels[tex_y, tex_x, :3]
+                tint = np.asarray(color, dtype=np.float64) / 255.0
+                target[nearest, :3] = np.rint(
+                    texels[nearest].astype(np.float64) * tint
+                ).astype(np.uint8)
             target[nearest, 3] = 255
 
     return Image.fromarray(output, "RGBA")
