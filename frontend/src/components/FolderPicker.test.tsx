@@ -68,6 +68,15 @@ describe("FolderPicker Component", () => {
     expect(screen.getByRole("textbox", { name: "Output folder path" })).toBeInTheDocument();
   });
 
+  it("does not imply that a read-only source path accepts pasting", () => {
+    render(<FolderPicker inputFolder="" outputFolder="" sameFolder={false}
+      onBrowseInput={() => {}} onBrowseOutput={() => {}}
+      onToggleSameFolder={() => {}} />);
+    const input = screen.getByRole("textbox", { name: "Input folder path" });
+    expect(input).toHaveAttribute("readonly");
+    expect(input).toHaveAttribute("placeholder", "Choose a source folder…");
+  });
+
   it("disables both source selectors while a native picker is busy", () => {
     render(<FolderPicker inputFolder="" outputFolder="" sameFolder={false} disabled
       onBrowseInput={() => {}} onBrowseFiles={() => {}}
