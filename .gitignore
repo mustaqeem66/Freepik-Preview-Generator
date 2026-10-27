@@ -119,3 +119,6 @@ csp-webview-packaged-local.json
 
 # Deterministic scratch fixtures generated for local renderer smoke coverage
 local-fixtures/
+
+# Native QA receipts, redacted logs, and artifact evidence remain local
+local-native/
