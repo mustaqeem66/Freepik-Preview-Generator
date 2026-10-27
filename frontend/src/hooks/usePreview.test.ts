@@ -136,6 +136,23 @@ describe("usePreview concurrency", () => {
     expect(startPreview.mock.calls[1][1]).toMatchObject({ modelColor: "#FF0000" });
   });
 
+  it("requests a fresh preview for a contact-sheet setting change", async () => {
+    const startPreview = vi.fn(async (_path: string, _config: PreviewState) =>
+      ({ ok: true, operationId: "contacts", status: "queued" }));
+    const cancelPreview = vi.fn(async () => ({ ok: true }));
+    // @ts-expect-error mock window.pywebview
+    window.pywebview = { api: { start_preview: startPreview, cancel_preview: cancelPreview } };
+    const asset = { ...fileA, name: "sample.gif", path: "/sample.gif", ext: "GIF" };
+    const { rerender } = renderHook(
+      ({ state }: { state: PreviewState }) => usePreview(asset, state),
+      { initialProps: { state: baseState({ animationContactSheet: false }) } }
+    );
+    await waitFor(() => expect(startPreview).toHaveBeenCalledTimes(1));
+    rerender({ state: baseState({ animationContactSheet: true }) });
+    await waitFor(() => expect(startPreview).toHaveBeenCalledTimes(2));
+    expect(startPreview.mock.calls[1][1]).toMatchObject({ animationContactSheet: true });
+  });
+
   it("regenerates when only the placement preset changes", async () => {
     const startPreview = vi.fn(async (_path: string, _state: PreviewState) =>
       ({ ok: true, operationId: "position-preview", status: "queued" }));
