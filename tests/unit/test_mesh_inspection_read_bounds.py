@@ -60,7 +60,7 @@ def test_glb_non_json_binary_chunk_is_skipped_without_parsing(tmp_path: Path):
     document = json.dumps({"accessors": [{"count": 9}], "meshes": [
         {"primitives": [{"indices": 0}]}]}).encode("utf-8")
     source = tmp_path / "binary_then_json.glb"
-    source.write_bytes(_glb(_glb_chunk(b"BIN\\x00".replace(b"\\x00", b"\x00"), b"x" * 4096),
+    source.write_bytes(_glb(_glb_chunk(b"BIN\x00", b"x" * 4096),
                             _glb_chunk(b"JSON", document)))
     assert limits.estimate_mesh_complexity(source) == (3, 0)
 
