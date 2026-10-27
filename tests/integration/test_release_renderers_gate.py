@@ -54,6 +54,7 @@ MANDATORY_RENDERER_ENGINES = [
     "ezdxf",
     "cascadio",
     "matplotlib",
+    "fontTools",
     "collada",
     "lxml",
     "networkx",
@@ -62,7 +63,7 @@ MANDATORY_RENDERER_ENGINES = [
 # Mandatory engines pulled in transitively by the renderer stack (e.g. text and
 # composition, or trimesh's 3MF loader) rather than owning a format-specific
 # fixture of their own.
-SUPPORTING_RENDERER_ENGINES = {"matplotlib", "lxml", "networkx"}
+SUPPORTING_RENDERER_ENGINES = {"matplotlib", "fontTools", "lxml", "networkx"}
 
 
 @pytest.mark.core
