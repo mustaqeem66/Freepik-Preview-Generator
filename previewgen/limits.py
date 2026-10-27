@@ -20,7 +20,7 @@ import tempfile
 import zlib
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO, Iterator
 
 from PIL import Image, ImageOps
 
@@ -262,10 +262,27 @@ def validate_psd_limits(source_path: Path | str) -> None:
                 closer()
 
 
+# Pre-parse mesh limits must also cap a *single* input line: iterating raw
+# binary streams or calling readline() without a size bound can allocate hundreds
+# of megabytes even when the file contains only one unterminated line.
+MAX_MESH_INSPECTION_LINE_BYTES = 256 * 1024
+MAX_MESH_INSPECTION_JSON_BYTES = 64 * 1024 * 1024
+
+
+def _mesh_lines(stream: BinaryIO) -> Iterator[bytes]:
+    while True:
+        line = stream.readline(MAX_MESH_INSPECTION_LINE_BYTES + 1)
+        if not line:
+            return
+        if len(line) > MAX_MESH_INSPECTION_LINE_BYTES:
+            _exceeds("Mesh header/geometry line exceeds the pre-parse inspection limit")
+        yield line
+
+
 def _estimate_obj(path: Path) -> tuple[int, int]:
     faces = vertices = 0
     with open(path, "rb") as fh:
-        for line in fh:
+        for line in _mesh_lines(fh):
             if line[:2] == b"f ":
                 faces += 1
             elif line[:2] == b"v ":
@@ -283,7 +300,7 @@ def _estimate_stl(path: Path) -> tuple[int, int]:
             return triangle_count, triangle_count * 3
     faces = 0
     with open(path, "rb") as fh:
-        for line in fh:
+        for line in _mesh_lines(fh):
             if line.lstrip()[:5] == b"facet":
                 faces += 1
     return faces, faces * 3
@@ -293,9 +310,8 @@ def _estimate_ply(path: Path) -> tuple[int | None, int | None]:
     faces: int | None = None
     vertices: int | None = None
     with open(path, "rb") as fh:
-        for _ in range(2000):
-            line = fh.readline()
-            if not line:
+        for index, line in enumerate(_mesh_lines(fh)):
+            if index >= 2000:
                 break
             stripped = line.strip().lower()
             if stripped.startswith(b"element face"):
@@ -335,6 +351,7 @@ def _count_gltf_faces(document: dict) -> tuple[int, int]:
 
 def _estimate_glb(path: Path) -> tuple[int | None, int | None]:
     with open(path, "rb") as fh:
+        file_size = path.stat().st_size
         header = fh.read(12)
         if len(header) < 12:
             return None, None
@@ -346,11 +363,21 @@ def _estimate_glb(path: Path) -> tuple[int | None, int | None]:
             if len(chunk_header) < 8:
                 break
             chunk_length, chunk_type = struct.unpack("<I4s", chunk_header)
+            if chunk_length > file_size - fh.tell():
+                _exceeds("GLB chunk length exceeds actual file size")
+            if chunk_type != b"JSON":
+                # Mesh buffers can be hundreds of MB. The preflight inspector
+                # needs only the JSON metadata and must never buffer binary data.
+                fh.seek(chunk_length, 1)
+                continue
+            if chunk_length > MAX_MESH_INSPECTION_JSON_BYTES:
+                _exceeds("GLB JSON chunk exceeds pre-parse inspection limit")
             payload = fh.read(chunk_length)
-            if chunk_type == b"JSON":
-                with contextlib.suppress(json.JSONDecodeError, UnicodeDecodeError):
-                    document = json.loads(payload.decode("utf-8", "replace"))
-                    return _count_gltf_faces(document)
+            if len(payload) != chunk_length:
+                _exceeds("GLB JSON chunk exceeds actual file size")
+            with contextlib.suppress(json.JSONDecodeError, UnicodeDecodeError):
+                document = json.loads(payload.decode("utf-8", "replace"))
+                return _count_gltf_faces(document)
     return None, None
 
 
@@ -367,8 +394,14 @@ def estimate_mesh_complexity(source_path: Path | str) -> tuple[int | None, int |
     if ext == ".glb":
         return _estimate_glb(path)
     if ext == ".gltf":
-        with open(path, encoding="utf-8", errors="replace") as fh, contextlib.suppress(json.JSONDecodeError):
-            return _count_gltf_faces(json.load(fh))
+        if path.stat().st_size > MAX_MESH_INSPECTION_JSON_BYTES:
+            _exceeds("glTF JSON document exceeds pre-parse inspection limit")
+        with open(path, "rb") as fh:
+            payload = fh.read(MAX_MESH_INSPECTION_JSON_BYTES + 1)
+        if len(payload) > MAX_MESH_INSPECTION_JSON_BYTES:
+            _exceeds("glTF JSON document exceeds pre-parse inspection limit")
+        with contextlib.suppress(json.JSONDecodeError, UnicodeDecodeError):
+            return _count_gltf_faces(json.loads(payload.decode("utf-8")))
         return None, None
     return None, None
 
