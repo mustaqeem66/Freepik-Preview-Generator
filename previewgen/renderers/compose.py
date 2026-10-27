@@ -158,6 +158,40 @@ def _calculate_text_position(
     return x, y
 
 
+def _auto_frame_subject(original: Image.Image, margin: float = 0.08) -> Image.Image:
+    """Center visible alpha bounds in the *same-size* transparent canvas.
+
+    Explicitly opt-in; no changes to the source file. Bound enlargements to 4x
+    to avoid turning a tiny nontransparent speck into a memory-heavy bitmap.
+    """
+    canvas = original.convert("RGBA")
+    width, height = canvas.size
+    visible = canvas.getchannel("A").point(lambda alpha: 255 if alpha > 8 else 0).getbbox()
+    if visible is None or visible == (0, 0, width, height):
+        return canvas
+    left, top, right, bottom = visible
+    subject_width, subject_height = right - left, bottom - top
+    if subject_width < 1 or subject_height < 1:
+        return canvas
+    margin = max(0.0, min(0.25, float(margin)))
+    target_width = max(1, width - 2 * round(width * margin))
+    target_height = max(1, height - 2 * round(height * margin))
+    scale = min(target_width / subject_width, target_height / subject_height, 4.0)
+    scaled = canvas.crop(visible)
+    resized = (
+        scaled.resize(
+            (max(1, round(subject_width * scale)), max(1, round(subject_height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+        if abs(scale - 1) > 1e-6 else scaled
+    )
+    output = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    x = (width - resized.width) // 2
+    y = (height - resized.height) // 2
+    output.alpha_composite(resized, (x, y))
+    return output
+
+
 def compose_preview(
     source: Image.Image,
     config: PreviewConfig | None = None,
@@ -166,7 +200,7 @@ def compose_preview(
     opacity: float = 0.9,
     invert_triangles: bool = True,
 ) -> Image.Image:
-    """Composite preview without crop, trim, resize, rotation, or distortion."""
+    """Composite preview unchanged by default, or opt-in alpha subject framing."""
     if config is None:
         actual_text = text if text is not None else DEFAULT_TEXT
         config = PreviewConfig(
@@ -181,6 +215,8 @@ def compose_preview(
     alpha_min, alpha_max = original.getchannel("A").getextrema()
     if alpha_max == 0:
         raise ValueError("Image is completely transparent (empty canvas)")
+    if config.auto_frame:
+        original = _auto_frame_subject(original, config.frame_margin)
 
     bg = make_background(
         width,
