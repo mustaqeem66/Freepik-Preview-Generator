@@ -96,10 +96,11 @@
         "top-right",
         "center",
         "bottom-left",
-        "bottom-right"
+        "bottom-right",
+        "tiled"
       ],
       "default": "custom",
-      "description": "Watermark text placement: custom coordinates or object-aware preset"
+      "description": "Watermark text placement: custom coordinates, object-aware preset or tiled diagonal"
     },
     "textPosX": {
       "type": "number",

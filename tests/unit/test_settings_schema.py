@@ -59,6 +59,10 @@ def test_watermark_placement_schema_validates_presets():
     ))
 
 
+def test_tiled_watermark_is_explicit_canonical_position():
+    assert validate_settings({"schemaVersion": 2, "position": "tiled"}) == []
+
+
 def test_auto_frame_schema_bounds_and_default_off():
     assert validate_settings({"schemaVersion": 2, "autoFrame": True, "frameMargin": 12}) == []
     assert any("maximum" in error for error in validate_settings(

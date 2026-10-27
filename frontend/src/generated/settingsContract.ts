@@ -121,7 +121,8 @@ export const SETTINGS_FIELDS: readonly SettingsField[] = [
       "top-right",
       "center",
       "bottom-left",
-      "bottom-right"
+      "bottom-right",
+      "tiled"
     ]
   },
   {

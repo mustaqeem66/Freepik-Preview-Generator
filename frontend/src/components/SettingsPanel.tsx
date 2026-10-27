@@ -90,6 +90,7 @@ export function SettingsPanel({ state, onChange, onBrowseLogo, onBrowseFont, is3
           <option value="center">Center on artwork</option>
           <option value="bottom-left">Bottom left</option>
           <option value="bottom-right">Bottom right</option>
+          <option value="tiled">Tiled diagonal</option>
         </select>
       </label>
       <Color label="Text color" value={state.textColor} onChange={(textColor) => onChange({ textColor })} />

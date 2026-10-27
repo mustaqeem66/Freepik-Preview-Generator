@@ -158,6 +158,58 @@ def _calculate_text_position(
     return x, y
 
 
+def _tiled_watermark_layer(
+    size: tuple[int, int],
+    label: str,
+    font: Any,
+    bounds: tuple[int, int, int, int],
+    config: PreviewConfig,
+    stroke: int,
+) -> Image.Image:
+    """Bounded, diagonally rotated watermark stamps over the same-size canvas.
+
+    At most nine RGBA stamps are composited. The original artwork is not
+    mutated and no intermediate image exceeds the glyph or canvas dimensions.
+    """
+    width, height = size
+    left, top, right, bottom = bounds
+    padding = max(4, stroke + 4)
+    glyph = Image.new(
+        "RGBA", (max(1, right - left + padding * 2),
+                 max(1, bottom - top + padding * 2)), (0, 0, 0, 0)
+    )
+    alpha = round(255 * max(0.0, min(1.0, config.opacity)))
+    painter = ImageDraw.Draw(glyph)
+    painter.text(
+        (padding - left, padding - top),
+        label,
+        font=font,
+        fill=(*config.text_color, alpha),
+        stroke_width=stroke,
+        stroke_fill=(*config.outline_color, alpha),
+    )
+    stamp = glyph.rotate(25, expand=True, resample=Image.Resampling.BICUBIC)
+    layer = Image.new("RGBA", size, (0, 0, 0, 0))
+    columns = 3 if width >= 300 else 2
+    rows = 3 if height >= 300 else 2
+    for row in range(rows):
+        y = round((row + 0.5) * height / rows - stamp.height / 2)
+        for col in range(columns):
+            stagger = 0.25 if row % 2 else 0.0
+            x = round((col + 0.5 + stagger) * width / columns - stamp.width / 2)
+            x0 = max(0, x)
+            y0 = max(0, y)
+            x1 = min(width, x + stamp.width)
+            y1 = min(height, y + stamp.height)
+            if x0 >= x1 or y0 >= y1:
+                continue
+            # Use alpha compositing (not mask-based paste, which squares alpha)
+            # and crop negative/outside placements before calling Pillow.
+            clipped = stamp.crop((x0 - x, y0 - y, x1 - x, y1 - y))
+            layer.alpha_composite(clipped, (x0, y0))
+    return layer
+
+
 def _auto_frame_subject(original: Image.Image, margin: float = 0.08) -> Image.Image:
     """Center visible alpha bounds in the *same-size* transparent canvas.
 
@@ -276,6 +328,12 @@ def compose_preview(
         box = draw_calc.textbbox((0, 0), label, font=font, stroke_width=stroke)
         tw = box[2] - box[0]
         th = box[3] - box[1]
+
+        if config.position == "tiled":
+            tiled = _tiled_watermark_layer(
+                (width, height), label, font, box, config, stroke
+            )
+            return Image.alpha_composite(result, tiled).convert("RGB")
 
         # Freeform coordinates only apply when the caller chose "custom";
         # comparing the sliders to their default values instead let a stale

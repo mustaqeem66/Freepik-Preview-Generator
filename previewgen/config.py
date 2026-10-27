@@ -308,7 +308,7 @@ class PreviewConfig:
 
         # Allowed position presets
         raw_pos = str(mapping.get("position", "custom")).strip().lower()
-        valid_positions = {"top-left", "top-right", "center", "bottom-left", "bottom-right", "custom"}
+        valid_positions = {"top-left", "top-right", "center", "bottom-left", "bottom-right", "custom", "tiled"}
         position = raw_pos if raw_pos in valid_positions else "custom"
 
         # Overwrite policy
