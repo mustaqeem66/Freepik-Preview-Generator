@@ -59,6 +59,13 @@ def test_watermark_placement_schema_validates_presets():
     ))
 
 
+def test_auto_frame_schema_bounds_and_default_off():
+    assert validate_settings({"schemaVersion": 2, "autoFrame": True, "frameMargin": 12}) == []
+    assert any("maximum" in error for error in validate_settings(
+        {"schemaVersion": 2, "frameMargin": 50}
+    ))
+
+
 def test_sanitize_drops_unknown_and_invalid():
     clean = sanitize_settings(
         {"schemaVersion": 1, "text": "ok", "solidColor": "red", "junk": 1, "outlineThickness": 3}
