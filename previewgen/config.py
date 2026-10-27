@@ -133,6 +133,8 @@ class PreviewConfig:
     text: str = DEFAULT_TEXT
     position: str = "top-left"            # top-left, top-right, center, bottom-left, bottom-right, custom
     opacity: float = 0.9                  # 0.0 to 1.0 (text opacity)
+    auto_frame: bool = False               # off preserves historical exports
+    frame_margin: float = 0.08             # fraction per side, constrained 0.00–0.25
     invert_triangles: bool = True         # True: Left Solid, Right Transparent; False: Left Transparent, Right Solid
     solid_color: tuple[int, int, int] = (255, 255, 255)  # RGB of solid triangle
     text_color: tuple[int, int, int] = (255, 255, 255)   # RGB of text fill
@@ -185,6 +187,7 @@ class PreviewConfig:
         KNOWN_KEYS = {
             "text", "position", "opacity", "invertTriangles", "invert_triangles",
             "solidColor", "solid_color", "textColor", "text_color",
+            "autoFrame", "auto_frame", "frameMargin", "frame_margin",
             "hasOutline", "has_outline", "outlineColor", "outline_color",
             "outlineThickness", "outline_thickness", "fontScale", "font_scale",
             "yaw", "pitch", "modelColor", "model_color",
@@ -347,6 +350,8 @@ class PreviewConfig:
             text=text,
             position=position,
             opacity=opacity,
+            auto_frame=_safe_bool(mapping.get("autoFrame", mapping.get("auto_frame")), False, "autoFrame"),
+            frame_margin=_ratio("frameMargin", "frame_margin", 0.08, 0.0, 0.25),
             invert_triangles=_safe_bool(
                 mapping.get("invertTriangles", mapping.get("invert_triangles")), True, "invertTriangles"
             ),
