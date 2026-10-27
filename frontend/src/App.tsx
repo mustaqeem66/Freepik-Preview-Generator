@@ -23,6 +23,7 @@ import { DesktopTitlebar } from "./components/DesktopTitlebar";
 import { FileList } from "./components/FileList";
 import { ErrorNotice, NoticeMessage } from "./components/ErrorNotice";
 import { mergeSelectedAssets } from "./selectedAssets";
+import { describeNativePickerFailure } from "./permissionMessages";
 import type { FileInfo, LifecycleState, PyWebViewApi } from "./types";
 
 const LIFECYCLE_LABELS: Record<LifecycleState, string> = {
@@ -201,7 +202,7 @@ export default function App() {
       setState((previous) => ({ ...previous, [field]: path }));
     } catch (error) {
       showNotice({ id: "browse-error", type: "error", message: "Could not open the file picker",
-        details: error instanceof Error ? error.message : "Please paste the folder path instead." });
+        details: describeNativePickerFailure(error) });
     } finally {
       releasePickerLock();
     }
