@@ -94,7 +94,6 @@ def _preview_worker(job_queue: Any, result_queue: Any) -> None:  # pragma: no co
                 source_path = Path(source_spec)
 
             cfg = PreviewConfig.from_mapping(payload["config_dict"], mode="preview")
-            cfg.position = "custom"
 
             if payload.get("source_only") is True:
                 jpeg_bytes, orig_w, orig_h = source_preview_jpeg_bytes(
