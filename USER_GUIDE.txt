@@ -53,32 +53,32 @@ Why use clean single-format folders?
 3. STEP-BY-STEP USAGE GUIDE
 ================================================================================
 Step 1: Select Input Folder
-  - Click "Browse…" in Panel 1 (Folders) to select your asset folder.
-  - Alternatively, you can copy your folder path (e.g. D:\Transparent\Batch 1)
-    and paste it directly into the Input Folder box, then press Enter!
+  - Click "Choose Folder" in Source folder to authorize a directory with the
+    native operating-system picker.
+  - Or click "Browse Files…" to choose individual assets.
+  - The source path is read-only. Pasting paths bypasses file authorization
+    and is intentionally not supported.
 
 Step 2: Choose Output Destination
-  - By default, "Save preview JPGs in the same folder as input files" is checked.
-  - If you want a separate export directory, uncheck the box and click "Browse…".
-  - Click "Open" anytime to open the folder in Windows File Explorer.
+  - Use "Same as input" for a folder source, or click "Choose Output Folder".
+  - Selected files from multiple folders require a separate destination.
+  - Export destinations are authorized through the native picker.
 
 Step 3: Pick Diagonal Split Background & Colors
-  - Choose between "Left Solid / Right Transparent" or "Left Transparent / Right Solid".
-  - Click any preset color swatch (White, Off-White, Light Gray, Dark) or click
-    the color picker box to choose any custom brand color.
+  - Select "Solid left" or "Solid right" for the background split.
+  - Choose one of the preset colors or a custom solid color.
 
 Step 4: Add Logo & Watermark Text
-  - Click "Upload Logo / Icon…" to add your company logo (.png, .webp, .svg, .ico).
-  - Use the X and Y sliders to position the logo anywhere on the canvas.
-  - Enter your watermark text (defaults to "100% TRANSPARENT").
-  - Click "Browse Font File…" to load your brand font (.ttf, .otf, .woff).
-  - Adjust Font Scale, Opacity, and Outline Thickness.
+  - Click "Choose logo…" to add a supported image logo.
+  - Adjust the logo X/Y controls.
+  - Enter your watermark text; click "Choose font…" for a custom font.
+  - Adjust text color, opacity, font scale and outline.
 
 Step 5: Preview Your Files
-  - Use the "◀ Prev" and "Next ▶" buttons (or Left/Right arrow keys) to browse
-    assets in your folder in real-time.
+  - Select an item from the asset library, or use Left/Right arrow keys.
+  - For supported 3D meshes and CAD solids, drag the preview to orbit.
 
-Step 6: Click "Generate All JPG Previews"
+Step 6: Generate JPG Previews
   - The background multi-core worker will process all files.
   - Progress and preview counts will update live.
   - Once finished, click "Open Output Folder" to inspect your marketplace JPGs!
@@ -97,7 +97,7 @@ When viewing a 3D model (.glb, .gltf, .obj, .stl, .ply) or CAD solid (.step, .ig
     * Back            - Rear elevation view
 - Sliders: Fine-tune exact degrees with the Horizontal Yaw (0°–360°) and Vertical
   Pitch (-85° to +85°) sliders.
-- Color: Change the 3D model clay shade using the "Model Clay Shade" color swatches.
+- Color: Change the 3D model clay shade using the "Untextured model color" picker.
 
 ================================================================================
 5. TROUBLESHOOTING & COMMON ISSUES (FAQ)
@@ -109,12 +109,11 @@ A1: The shortcut is created by the installer, not at first launch. To add it:
     - Double-click "Install-Desktop-Icon.bat" in the app folder.
     - If it already exists, right-click the Desktop and select "Refresh".
 
-Q2: The "Browse…" button did not open a folder picker.
-A2: PreviewGen includes dual-mode folder selection:
-    1. Direct Path Pasting: You can type or paste your folder path directly into the
-       input text box (e.g. D:\Transparent\Batch 1) and press Enter.
-    2. PowerShell Fallback: PreviewGen automatically falls back to native Windows
-       FolderBrowserDialog if webview dialog reflection is blocked by system policies.
+Q2: Why can I not paste a folder path into the source field?
+A2: Source folders and files must be chosen through "Choose Folder" or
+    "Browse Files…". This grants local read authorization. Export locations
+    likewise require "Choose Output Folder". If no picker appears, look for a
+    native OS dialog behind the main window.
 
 Q3: When I click 3D files, it says "cannot convert float NaN to integer" or shows an error.
 A3: In v2.0.3+, degenerate triangles with zero area are automatically normalized
