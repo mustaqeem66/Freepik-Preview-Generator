@@ -11,7 +11,7 @@
 - The previous open draft **#115**, bounded multi-tip Procreate brushset contact sheets, is **MERGED** and needs no further merge.
 - Before this new development round, the GitHub open pull-request list was empty.
 - **PR #116 (new, draft):** secure, browser-local style presets with strict no-path/no-grant allowlist, UI save/apply/delete, size limits and frontend regression tests.
-- **PR #117 (new, draft):** independently testable, bounded NumPy depth-buffer rasterizer kernel; production 3D renderer unchanged pending independent visual proof.
+- **PR #117 (new, merged during this review):** independently testable, bounded NumPy depth-buffer rasterizer kernel; production 3D renderer unchanged pending independent visual proof. The merge does NOT establish a passing local/native test result.
 - This documentation PR is a separate milestone. PR state can change in parallel; recheck GitHub when local CI results are ready.
 
 ## 2. Original audit finding disposition
@@ -40,9 +40,9 @@ Additional merged work: **#101** font specimen text fitting; **#103** synthetic 
 
 **#116 local review:** checkout `feat/grant-safe-style-presets-20261028` and run `cd frontend && npm ci && npm run typecheck && npm test && npm run build`. Verify that saving/applying a style never changes or reauthorizes `logoPath`, `fontPath`, `inputFolder`, `outputFolder`, or the native export permission. Test corrupt/quota-denied storage and keep the UI user-facing rather than diagnostic-heavy.
 
-**#117 local review:** checkout `feat/bounded-software-zbuffer-proof-20261028` and run `python -m pytest tests/unit/test_depth_rasterizer.py -q`, `python -m ruff check .` and `python scripts/check_release_locally.py --mode full`. Confirm frontmost depth under reversed face order, interpolated occlusion crossing, invalid inputs and pixel-work limits. This is an isolated correctness building block; **do not certify production 3D fidelity** from these tests.
+**#117 merged-source local review:** checkout the current `main` at the exact merge SHA and run `python -m pytest tests/unit/test_depth_rasterizer.py -q`, `python -m ruff check .` and `python scripts/check_release_locally.py --mode full`. Confirm frontmost depth under reversed face order, interpolated occlusion crossing, invalid inputs and pixel-work limits. This is an isolated correctness building block; **do not certify production 3D fidelity** from these tests.
 
-Both PRs require the full local release suite at their exact checked-out commit before being marked ready or merged. For isolated work branches, use separate local checkouts; do not run their tests indiscriminately on `main` before merge.
+#116 requires the full frontend and native local checks at its exact PR head before it is ready to merge. #117 is already merged; run its targeted depth-kernel regressions and full release checks against the exact merged `main` SHA before claiming it validated. A source merge is never equivalent to evidence.
 
 ## 5. Existing local release commands and evidence
 
@@ -65,6 +65,6 @@ Use `scripts/native_release_evidence.py` with real binary checksums, redacted na
 
 ## 6. Verified vs unverified evidence
 
-**Verified in this continuation:** both audit uploads byte-identical; GitHub PR #103 and #115 merged; empty open-PR list at baseline; real source implementations of opt-in animation, brushset, alpha framing and tiled watermark; PR #116/#117 source branches and authored tests; isolated Python/NumPy pixel-depth ordering example (front color wins both draw orders and depth crossing). **Not executed:** full Python/frontend project tests, signed installer/native QA, independent source-application image oracle suite or macOS build verification. Source implementation maturity is not a release pass rate.
+**Verified in this continuation:** both audit uploads byte-identical; GitHub PR #103, #115 and #117 merged; empty open-PR list at baseline; real source implementations of opt-in animation, brushset, alpha framing and tiled watermark; PR #116/#117 source branches and authored tests; isolated Python/NumPy pixel-depth ordering example (front color wins both draw orders and depth crossing). **Not executed:** full Python/frontend project tests, signed installer/native QA, independent source-application image oracle suite or macOS build verification. Source implementation maturity is not a release pass rate.
 
 **PM decision:** Prioritize native #19/#59/#22 and real #60 oracles over claiming 100% from merged PRs. Keep seven release issues open until objective exact-commit/native evidence exists.
