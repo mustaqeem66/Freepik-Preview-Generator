@@ -4,6 +4,8 @@
 
 This ledger reconciles the nine source-level findings supplied in the audit. Findings were checked against source code, not claimed reproduced on all frozen desktop binaries.
 
+**GitHub handoff status (27 October 2026):** Code-fix PRs #95, #96, #98 and #99 are merged. PR #97 contains independent source regression tests and remains a draft awaiting local verification. No source fix is represented as a clean-machine packaged release certification.
+
 | # | Finding | Source disposition | Pull request |
 |---|---|---|---|
 | 1 | Changing untextured model color does not re-render | Add missing React effect dependency and regression | #95 |
@@ -14,7 +16,7 @@ This ledger reconciles the nine source-level findings supplied in the audit. Fin
 | 6 | Maya .ma thumbnail scanner consumes unbounded lines | Bounded ASCII prefix scanning and multiple quoted base64 chunks | #96–97 |
 | 7 | Multi-node scene visuals flattened too late | Normalize each scene component before concatenate, including CAD scenes | #96–97 |
 | 8 | Folder instructions encourage forbidden path pasting | Native picker-only placeholder, help instructions and UI tests | #95 |
-| 9 | Dead Help component; UI cannot select supported watermark presets | Delete intentionally unmounted diagnostics UI; wire watermark preset through schema, preview, batch and Inspector | Follow-up PR |
+| 9 | Dead Help component; UI cannot select supported watermark presets | Delete intentionally unmounted diagnostics UI; wire watermark preset through schema, preview, batch and Inspector | #99 |
 
 ## Product scope, not misrepresented as completed fixes
 
