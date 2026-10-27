@@ -116,3 +116,6 @@ renderer-matrix-local.json
 # Local-only CSP enforcement evidence from scripts/verify_csp_webview.py
 csp-webview-local.json
 csp-webview-packaged-local.json
+
+# Deterministic scratch fixtures generated for local renderer smoke coverage
+local-fixtures/
