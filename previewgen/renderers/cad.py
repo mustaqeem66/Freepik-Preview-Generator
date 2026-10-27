@@ -11,7 +11,7 @@ from pathlib import Path
 from PIL import Image
 
 from previewgen import limits
-from previewgen.config import MAX_SOURCE_FILE_BYTES, PreviewConfig
+from previewgen.config import MAX_EMBEDDED_THUMBNAIL_BYTES, MAX_SOURCE_FILE_BYTES, PreviewConfig
 from previewgen.renderers.mesh3d import _MESH_CACHE, _combine_scene_meshes, _mesh_cache_key, _normalize_visuals, render_3d_mesh
 
 
@@ -97,6 +97,10 @@ def extract_dwg_thumbnail(path: Path) -> Image.Image | None:
                     break
                 img_start, img_size = struct.unpack("<ii", data)
                 dir_pos = f.tell()
+                # DWG thumbnail directory entries are untrusted. Large sparse
+                # blobs must be rejected before any allocation or file read.
+                if not 0 < img_size <= MAX_EMBEDDED_THUMBNAIL_BYTES:
+                    continue
                 try:
                     if code == 2 and img_start > 0 and (img_start + img_size) <= file_end:
                         f.seek(img_start)
