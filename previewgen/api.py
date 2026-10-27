@@ -1204,7 +1204,6 @@ class DesktopApi:
         """Launch a batch with a stable per-run ID; never block the JS bridge."""
         try:
             cfg = PreviewConfig.from_mapping(config_dict, mode="strict-export")
-            cfg.position = "custom"
             source = Path(input_folder).resolve()
             output = Path(output_folder).resolve()
             if not source.is_dir():
@@ -1281,7 +1280,6 @@ class DesktopApi:
             if len(selected) > DISCOVERY_MAX_FILES:
                 return {"ok": False, "error": "Selected file limit exceeded"}
             cfg = PreviewConfig.from_mapping(config_dict, mode="strict-export")
-            cfg.position = "custom"
             op_id = f"batch_{uuid.uuid4().hex[:12]}"
             with self._batch_start_lock:
                 self._batch_operation_id = op_id

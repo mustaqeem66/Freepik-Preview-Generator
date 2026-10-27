@@ -136,6 +136,21 @@ describe("usePreview concurrency", () => {
     expect(startPreview.mock.calls[1][1]).toMatchObject({ modelColor: "#FF0000" });
   });
 
+  it("regenerates when only the placement preset changes", async () => {
+    const startPreview = vi.fn(async (_path: string, _state: PreviewState) =>
+      ({ ok: true, operationId: "position-preview", status: "queued" }));
+    // @ts-expect-error mock window.pywebview
+    window.pywebview = { api: { start_preview: startPreview, cancel_preview: vi.fn(async () => ({ ok: true })) } };
+    const { rerender } = renderHook(
+      ({ state }: { state: PreviewState }) => usePreview(fileA, state),
+      { initialProps: { state: baseState({ position: "custom" }) } }
+    );
+    await waitFor(() => expect(startPreview).toHaveBeenCalledTimes(1));
+    rerender({ state: baseState({ position: "center" }) });
+    await waitFor(() => expect(startPreview).toHaveBeenCalledTimes(2));
+    expect(startPreview.mock.calls[1][1].position).toBe("center");
+  });
+
   it("does not request a preview when there is no active file", async () => {
     const fakeApi = {
       render_preview: vi.fn(async () => ({ ok: true, value: null, error: null })),

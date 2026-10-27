@@ -51,6 +51,14 @@ def test_schema_rejects_invalid_payload(payload, fragment):
     assert any(fragment in e for e in errors), errors
 
 
+def test_watermark_placement_schema_validates_presets():
+    assert validate_settings({"schemaVersion": 2, "position": "center"}) == []
+    assert validate_settings({"schemaVersion": 2, "position": "bottom-right"}) == []
+    assert any("one of" in error for error in validate_settings(
+        {"schemaVersion": 2, "position": "diagonal-tiled"}
+    ))
+
+
 def test_sanitize_drops_unknown_and_invalid():
     clean = sanitize_settings(
         {"schemaVersion": 1, "text": "ok", "solidColor": "red", "junk": 1, "outlineThickness": 3}

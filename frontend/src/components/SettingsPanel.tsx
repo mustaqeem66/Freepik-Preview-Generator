@@ -74,15 +74,26 @@ export function SettingsPanel({ state, onChange, onBrowseLogo, onBrowseFont, is3
       <div className="section-heading"><Type size={16} /><h2>Watermark</h2></div>
       <label className="field-label">Text<input type="text" maxLength={100} value={state.text}
         placeholder="Leave empty for no text" onChange={(e) => onChange({ text: e.target.value })} /></label>
+      <label className="field-label">Watermark placement
+        <select aria-label="Watermark placement" value={state.position || "custom"}
+          onChange={(e) => onChange({ position: e.target.value as PreviewState["position"] })}>
+          <option value="custom">Custom X / Y</option>
+          <option value="top-left">Top left</option>
+          <option value="top-right">Top right</option>
+          <option value="center">Center on artwork</option>
+          <option value="bottom-left">Bottom left</option>
+          <option value="bottom-right">Bottom right</option>
+        </select>
+      </label>
       <Color label="Text color" value={state.textColor} onChange={(textColor) => onChange({ textColor })} />
       <Slider label="Text opacity" value={state.opacity} hints={["Subtle", "Balanced", "Opaque"]}
         onChange={(opacity) => onChange({ opacity })} />
       <Slider label="Font scale" value={state.fontScale} min={20} max={300}
         hints={["Smaller", "Standard", "Larger"]} onChange={(fontScale) => onChange({ fontScale })} />
-      <div className="paired-fields">
+      {(state.position || "custom") === "custom" && <div className="paired-fields">
         <Slider label="Text X" value={state.textPosX} onChange={(textPosX) => onChange({ textPosX })} />
         <Slider label="Text Y" value={state.textPosY} onChange={(textPosY) => onChange({ textPosY })} />
-      </div>
+      </div>}
       <label className="check-row"><input type="checkbox" checked={state.hasOutline}
         onChange={(e) => onChange({ hasOutline: e.target.checked })} />Outline</label>
       {state.hasOutline && <>

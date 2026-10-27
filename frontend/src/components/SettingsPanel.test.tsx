@@ -45,6 +45,19 @@ describe("SettingsPanel", () => {
     expect(onChange).toHaveBeenCalledWith({ opacity: 45 });
   });
 
+  it("offers backend-supported watermark placements and hides custom sliders for presets", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<SettingsPanel state={{ ...STATE, position: "custom" }}
+      onChange={onChange} onBrowseLogo={() => {}} onBrowseFont={() => {}} is3D={false} />);
+    const placement = screen.getByRole("combobox", { name: "Watermark placement" });
+    fireEvent.change(placement, { target: { value: "center" } });
+    expect(onChange).toHaveBeenCalledWith({ position: "center" });
+    rerender(<SettingsPanel state={{ ...STATE, position: "center" }}
+      onChange={onChange} onBrowseLogo={() => {}} onBrowseFont={() => {}} is3D={false} />);
+    expect(screen.queryByRole("slider", { name: "Text X" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("slider", { name: "Text Y" })).not.toBeInTheDocument();
+  });
+
   it("keeps the same accessible slider behavior in light and dark appearance", () => {
     const onChange = vi.fn();
     for (const theme of ["light", "dark"] as const) {
