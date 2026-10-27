@@ -122,6 +122,9 @@ def validate_receipt(receipt: dict[str, Any], artifact: Path, evidence_dir: Path
         failures.append(f"Missing gate: {missing}")
     for extra in sorted(set(gates) - required):
         failures.append(f"Unexpected gate: {extra}")
+    # Each gate must have its own independently inspectable file. Allowing one
+    # placeholder text file to satisfy every gate produces a misleading PASS.
+    seen_evidence: set[str] = set()
     for name in sorted(required & set(gates)):
         record = gates[name]
         if not isinstance(record, dict) or record.get("status") != "passed":
@@ -139,11 +142,20 @@ def validate_receipt(receipt: dict[str, Any], artifact: Path, evidence_dir: Path
         ):
             failures.append(f"{name}: evidence filename must be a safe basename")
             continue
+        if evidence.casefold() in seen_evidence:
+            failures.append(f"{name}: evidence file is reused by another gate")
+            continue
+        seen_evidence.add(evidence.casefold())
         if not isinstance(digest, str) or not SHA64.fullmatch(digest):
             failures.append(f"{name}: missing SHA-256 of independent evidence")
             continue
         path = evidence_dir / evidence
-        if not path.is_file() or file_sha256(path) != digest.lower():
+        # A locally planted symlink could point outside the QA evidence folder
+        # while still using a safe-looking relative name.
+        if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+            failures.append(f"{name}: evidence missing, empty or symbolic link")
+            continue
+        if file_sha256(path) != digest.lower():
             failures.append(f"{name}: evidence missing or digest mismatch")
     return failures
 
