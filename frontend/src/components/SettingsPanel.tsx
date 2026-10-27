@@ -1,6 +1,7 @@
 import { type CSSProperties } from "react";
 import { Box, Image as ImageIcon, Palette, Type, X } from "lucide-react";
 import { PreviewState } from "../types";
+import { StylePresetManager } from "./StylePresetManager";
 
 interface SettingsPanelProps {
   state: PreviewState;
@@ -137,6 +138,7 @@ export function SettingsPanel({ state, onChange, onBrowseLogo, onBrowseFont, is3
         </div>
       </>}
     </section>
+    <StylePresetManager state={state} onChange={onChange} />
     <section className="inspector-section">
       <div className="section-heading"><h2>Desktop notifications</h2></div>
       <label className="check-row"><input type="checkbox" checked={state.desktopNotifications}
