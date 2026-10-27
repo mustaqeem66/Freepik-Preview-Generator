@@ -76,6 +76,19 @@
       "default": "100% TRANSPARENT",
       "description": "Banner text (max 100 chars)"
     },
+    "position": {
+      "type": "string",
+      "enum": [
+        "custom",
+        "top-left",
+        "top-right",
+        "center",
+        "bottom-left",
+        "bottom-right"
+      ],
+      "default": "custom",
+      "description": "Watermark text placement: custom coordinates or object-aware preset"
+    },
     "textPosX": {
       "type": "number",
       "minimum": 0,
