@@ -54,12 +54,20 @@ def rasterize_depth_triangles(
         pass
 
     triangles = np.asarray(screen_triangles, dtype=np.float64)
-    colors = np.asarray(face_colors)
     if triangles.ndim != 3 or triangles.shape[1:] != (3, 3):
         raise ValueError("Expected projected triangle array shape (N, 3, 3)")
     face_count = len(triangles)
     if face_count > MAX_DEPTH_TRIANGLES:
         raise ValueError("Depth rasterizer exceeds the 10,000-triangle limit")
+    # Reject grossly oversized or mismatched color sequences BEFORE NumPy
+    # materializes them. A 1-face mesh must not require decoding millions of
+    # unrelated color entries from a malformed importer.
+    try:
+        if len(face_colors) != face_count:
+            raise ValueError("Expected one RGB triplet per projected triangle")
+    except TypeError:
+        pass
+    colors = np.asarray(face_colors)
     if colors.shape != (face_count, 3) or not np.issubdtype(colors.dtype, np.number):
         raise ValueError("Expected one RGB triplet per projected triangle")
     if not np.isfinite(triangles).all() or not np.isfinite(colors).all():
@@ -78,6 +86,12 @@ def rasterize_depth_triangles(
         if not (1 <= tx_width <= MAX_DEPTH_TEXTURE_DIMENSION and
                 1 <= tx_height <= MAX_DEPTH_TEXTURE_DIMENSION):
             raise ValueError("Depth rasterizer texture exceeds the 2048-pixel per-side limit")
+        # Check the face count without allocating a huge UV tensor first.
+        try:
+            if len(vertex_uv) != face_count:
+                raise ValueError("Depth rasterizer vertex UV shape must be (N, 3, 2)")
+        except TypeError:
+            pass
         uvs = np.asarray(vertex_uv, dtype=np.float64)
         if uvs.shape != (face_count, 3, 2):
             raise ValueError("Depth rasterizer vertex UV shape must be (N, 3, 2)")
