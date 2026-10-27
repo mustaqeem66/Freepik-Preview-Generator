@@ -25,7 +25,7 @@ Until every required native gate has human-reviewed evidence, the verifier retur
 
 Common checks on every platform: native file picker grants and revoked sources; explicit denied sibling/symlink/ZIP access; protected exports and nonmutation; ZIP/3D/CAD/creator previews with cancellation; multi-folder Add Files and batch reports; native bridge and CSP rejection; independent visual renderer oracles; light/dark and keyboard/accessibility checks.
 
-Windows additionally: setup/upgrade/repair/uninstall, portable startup, 300-second idle and freeze diagnostics, 100/125/150/200% scaling, signing truth. Linux: AppImage and GTK/WebKit smoke. macOS: DMG/Cocoa and signing/notarization verification.
+Windows additionally: setup/upgrade/repair/uninstall, portable startup, 300-second idle and freeze diagnostics, 100/125/150/200% scaling, and **independently verified Authenticode signing**. An unsigned development binary can be tested, but the stable Windows release signing gate must remain pending/failed, not marked passed by an explicit 'untrusted' exception. Linux: AppImage and GTK/WebKit smoke. macOS: DMG/Cocoa and signing/notarization verification.
 
 **Sensitive data:** evidence files and receipts remain local unless deliberately reviewed and sanitized. Never commit dumps, user documents, path inventories, private keys or machine-identifying logs. The reporter records basenames and digests, not source artwork. Signing, independent renderer fidelity and native runtime security still need real evidence from the user's devices.
 

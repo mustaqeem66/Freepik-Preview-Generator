@@ -67,6 +67,16 @@ def test_absolute_or_parent_evidence_paths_are_denied(tmp_path: Path):
     assert any("safe basename" in error for error in errors)
 
 
+def test_windows_requires_signature_proof_not_unsigned_exception(tmp_path: Path):
+    binary = tmp_path / "PreviewGen-Setup.exe"
+    binary.write_bytes(b"test binary")
+    receipt = start_receipt("windows", SOURCE_SHA, binary)
+    required = set(receipt["gates"])
+    assert "windows_authenticode_signature_verified_for_release" in required
+    assert not any("untrusted_status" in name for name in required)
+    assert validate_receipt(receipt, binary, tmp_path)
+
+
 def test_command_line_check_fails_with_pending_results(tmp_path: Path):
     artifact = tmp_path / "artifact.AppImage"
     artifact.write_bytes(b"fake AppImage")
