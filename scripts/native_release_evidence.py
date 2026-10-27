@@ -35,7 +35,7 @@ PLATFORM_GATES: dict[str, tuple[str, ...]] = {
         "installed_setup_upgrade_repair_and_uninstall",
         "idle_300_seconds_and_freeze_diagnostic",
         "dpi_100_125_150_200_and_webview2_runtime",
-        "windows_authenticode_signing_or_explicit_untrusted_status",
+        "windows_authenticode_signature_verified_for_release",
     ),
     "linux": (
         "appimage_startup_and_exit",
@@ -101,6 +101,10 @@ def validate_receipt(receipt: dict[str, Any], artifact: Path, evidence_dir: Path
         return failures + [str(exc)]
     if not isinstance(receipt.get("reviewer"), str) or not receipt["reviewer"].strip():
         failures.append("Human native QA reviewer has not signed the receipt")
+    # An unsigned developer build can be useful for smoke tests, but it must
+    # NEVER be represented as a signed release acceptance receipt. The exact
+    # Windows Authenticode (or macOS codesign/notarization) gate must have
+    # independently checked evidence before a complete receipt can pass.
     record = receipt.get("artifact")
     if not isinstance(record, dict):
         failures.append("Missing packaged binary metadata")
