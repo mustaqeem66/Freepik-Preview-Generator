@@ -19,12 +19,16 @@ import json
 import shutil
 import sqlite3
 import struct
+import time
 import zipfile
 from pathlib import Path
+import sys
 
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 BASE_FIXTURES = ROOT / "tests" / "fixtures"
 SAMPLE_MANIFEST = BASE_FIXTURES / "renderer-samples.json"
 MANIFEST_NAME = "renderer-samples.json"
@@ -40,9 +44,9 @@ def _art() -> Image.Image:
     return image
 
 
-def _image_bytes(image: Image.Image, format_name: str) -> bytes:
+def _image_bytes(image: Image.Image, format_name: str, **metadata: object) -> bytes:
     out = io.BytesIO()
-    image.save(out, format=format_name)
+    image.save(out, format=format_name, **metadata)
     return out.getvalue()
 
 
@@ -50,7 +54,10 @@ def _zip_bytes(*items: tuple[str, bytes]) -> bytes:
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, payload in items:
-            archive.writestr(name, payload)
+            # ZipFile.writestr(name, ...) would embed the current wall clock.
+            member = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            member.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(member, payload)
     return out.getvalue()
 
 
@@ -131,7 +138,11 @@ def synthetic_samples() -> dict[str, bytes]:
         "synthetic.f3d": _zip_bytes(("Thumbnail/preview.png", png)),
         "synthetic.indd": b"IN_DESIGN_SYNTHETIC_XMP " + xmp,
         "synthetic.abr": abr,
-        "synthetic.ai": _image_bytes(art.convert("RGB"), "PDF"),
+        "synthetic.ai": _image_bytes(
+            art.convert("RGB"), "PDF",
+            creationDate=time.gmtime(0), modDate=time.gmtime(0),
+            title="Synthetic PDF-compatible Illustrator smoke",
+        ),
     }
 
 
