@@ -76,3 +76,46 @@ def test_work_and_face_count_budget_fail_closed():
             np.tile(huge, (50, 1, 1)),
             np.tile(np.array([[5, 5, 5]]), (50, 1)), 512, 512
         )
+
+
+def test_excess_color_records_fail_before_numpy_materialization():
+    class HugeColors:
+        def __len__(self):
+            return 1_000_000
+
+        def __array__(self, *args, **kwargs):
+            raise AssertionError("Untrusted colors must not be materialized")
+
+    with pytest.raises(ValueError, match="one RGB triplet"):
+        rasterize_depth_triangles(
+            [_triangle(0.2)], HugeColors(), 32, 32
+        )
+
+
+def test_excess_uv_records_fail_before_numpy_materialization():
+    from PIL import Image
+
+    class HugeUvs:
+        def __len__(self):
+            return 1_000_000
+
+        def __array__(self, *args, **kwargs):
+            raise AssertionError("Untrusted UVs must not be materialized")
+
+    with pytest.raises(ValueError, match="UV shape"):
+        rasterize_depth_triangles(
+            [_triangle(0.2)], [[255, 255, 255]], 32, 32,
+            vertex_uv=HugeUvs(), texture=Image.new("RGB", (4, 4), "white"),
+        )
+
+
+def test_color_and_uv_face_count_match_still_render():
+    from PIL import Image
+
+    triangle = _triangle(0.2)
+    image = rasterize_depth_triangles(
+        [triangle], [[255, 255, 255]], 32, 32,
+        vertex_uv=[[[0.0, 0.0], [0.9, 0.0], [0.0, 0.9]]],
+        texture=Image.new("RGB", (4, 4), (20, 70, 120)),
+    )
+    assert image.getpixel((7, 7)) == (20, 70, 120, 255)
