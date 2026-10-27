@@ -265,6 +265,7 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
   }, [
     activeFile,
     state.text,
+    state.position,
     state.opacity,
     state.textColor,
     state.fontPath,
