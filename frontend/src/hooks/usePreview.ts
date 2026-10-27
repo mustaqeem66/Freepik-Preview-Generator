@@ -286,6 +286,7 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
     state.outlineThickness,
     state.invertTriangles,
     state.autoFrame,
+    state.animationContactSheet,
     state.frameMargin,
   ]);
 
