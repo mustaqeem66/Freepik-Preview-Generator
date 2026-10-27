@@ -75,6 +75,20 @@ describe("SettingsPanel", () => {
     expect(screen.queryByRole("slider", { name: "Text Y" })).not.toBeInTheDocument();
   });
 
+  it("offers optional tiled diagonal watermarking without custom coordinates", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<SettingsPanel state={{ ...STATE, position: "custom" }}
+      onChange={onChange} onBrowseLogo={() => {}} onBrowseFont={() => {}} is3D={false} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Watermark placement" }),
+      { target: { value: "tiled" } });
+    expect(onChange).toHaveBeenCalledWith({ position: "tiled" });
+    rerender(<SettingsPanel state={{ ...STATE, position: "tiled" }}
+      onChange={onChange} onBrowseLogo={() => {}} onBrowseFont={() => {}} is3D={false} />);
+    expect(screen.queryByRole("slider", { name: "Text X" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("slider", { name: "Text Y" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Tiled diagonal" })).toBeInTheDocument();
+  });
+
   it("keeps the same accessible slider behavior in light and dark appearance", () => {
     const onChange = vi.fn();
     for (const theme of ["light", "dark"] as const) {
