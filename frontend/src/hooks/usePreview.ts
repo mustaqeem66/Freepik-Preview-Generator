@@ -279,6 +279,7 @@ export function usePreview(activeFile: FileInfo | undefined, state: PreviewState
     state.logoPosY,
     state.yaw,
     state.pitch,
+    state.modelColor,
     state.hasOutline,
     state.outlineColor,
     state.outlineThickness,
