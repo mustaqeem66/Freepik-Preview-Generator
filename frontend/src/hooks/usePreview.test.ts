@@ -121,7 +121,7 @@ describe("usePreview concurrency", () => {
   });
 
   it("regenerates the current 3D preview when only the untextured model color changes", async () => {
-    const startPreview = vi.fn(async () => ({ ok: true, operationId: "preview-color", status: "queued" }));
+    const startPreview = vi.fn(async (_path: string, _state: PreviewState) => ({ ok: true, operationId: "preview-color", status: "queued" }));
     const cancelPreview = vi.fn(async () => ({ ok: true }));
     // @ts-expect-error mock window.pywebview
     window.pywebview = { api: { start_preview: startPreview, cancel_preview: cancelPreview } };
