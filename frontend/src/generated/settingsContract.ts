@@ -15,6 +15,7 @@ export const SETTINGS_DEFAULTS = {
   "logoPosX": 88,
   "logoPosY": 5,
   "text": "100% TRANSPARENT",
+  "position": "custom",
   "textPosX": 5,
   "textPosY": 5,
   "textColor": "#FFFFFF",
@@ -98,6 +99,18 @@ export const SETTINGS_FIELDS: readonly SettingsField[] = [
     "name": "text",
     "type": "string",
     "maxLength": 100
+  },
+  {
+    "name": "position",
+    "type": "string",
+    "enum": [
+      "custom",
+      "top-left",
+      "top-right",
+      "center",
+      "bottom-left",
+      "bottom-right"
+    ]
   },
   {
     "name": "textPosX",
