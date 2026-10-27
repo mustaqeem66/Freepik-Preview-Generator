@@ -66,6 +66,7 @@ export interface PreviewState {
   logoPosX: number;
   logoPosY: number;
   text: string;
+  position?: "custom" | "top-left" | "top-right" | "center" | "bottom-left" | "bottom-right";
   textPosX: number;
   textPosY: number;
   textColor: string;
