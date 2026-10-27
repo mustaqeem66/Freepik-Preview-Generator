@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { defaultState } from "./hooks/useSettings";
+import type { StylePreset } from "./brandPresets";
 import {
   MAX_STYLE_PRESETS, parseStylePresets, putStylePreset, safeStylePatch,
   STYLE_PRESET_STORAGE_KEY, readStylePresets, writeStylePresets,
@@ -50,7 +51,7 @@ describe("grant-safe style presets", () => {
   });
 
   it("limits to eight, rejects bad names and overwrites same-name styles", () => {
-    let presets = [];
+    let presets: StylePreset[] = [];
     for (let i = 0; i < MAX_STYLE_PRESETS; i++) {
       presets = putStylePreset(presets, `Brand ${i}`, defaultState);
     }
