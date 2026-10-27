@@ -31,6 +31,18 @@
       "default": true,
       "description": "Invert diagonal split direction"
     },
+    "autoFrame": {
+      "type": "boolean",
+      "default": false,
+      "description": "Opt-in transparent subject normalization without changing output canvas dimensions"
+    },
+    "frameMargin": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 25,
+      "default": 8,
+      "description": "Target empty margin at each canvas edge, in percent"
+    },
     "solidColor": {
       "type": "string",
       "pattern": "^#[0-9A-Fa-f]{6}$",
