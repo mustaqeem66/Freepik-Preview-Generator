@@ -12,6 +12,7 @@ from PIL import Image
 from previewgen import config as previewgen_config
 from previewgen import limits
 from previewgen.config import PreviewConfig
+from previewgen.renderers.animation import animated_contact_sheet
 from previewgen.renderers.cad import _load_cad_solid, _load_dwg, _load_dxf
 from previewgen.renderers.creator import (
     _load_abr,
@@ -123,31 +124,37 @@ def load_source_image(
         )
     # Standard raster formats (.png, .webp, .tif, .tiff)
     with Image.open(source_path) as img:
-        if getattr(img, "is_animated", False):
-            img.seek(0)
-        img.load()
-        from PIL import ImageOps
-        img = ImageOps.exif_transpose(img) or img
-
-        if img.mode in ("I;16", "I;16L", "I;16B", "I;16N"):
-            import numpy as np
-            arr = (np.array(img, dtype=np.float32) / 256.0).clip(0, 255).astype(np.uint8)
-            result = Image.fromarray(arr).convert("RGBA")
-        elif img.mode in ("I", "F"):
-            import numpy as np
-            # The numeric range of a 32-bit integer or float raster depends on
-            # the writer: an 8-bit scan arrives as mode "I" with 0..255 values
-            # and a normalized float image tops out at 1.0. Scaling by a fixed
-            # divisor rendered both almost pure black.
-            arr = np.array(img, dtype=np.float64)
-            peak = float(arr.max(initial=0.0))
-            if peak > 255.0 or (img.mode == "F" and peak > 0.0):
-                arr = arr * (255.0 / peak)
-            result = Image.fromarray(arr.clip(0, 255).astype(np.uint8), mode="L").convert("RGBA")
-        elif img.mode in ("CMYK", "YCbCr"):
-            result = img.convert("RGB").convert("RGBA")
+        if (
+            config is not None and config.animation_contact_sheet
+            and ext in (".gif", ".webp") and getattr(img, "n_frames", 1) > 1
+        ):
+            result = animated_contact_sheet(img)
         else:
-            result = img.convert("RGBA")
+            if getattr(img, "is_animated", False):
+                img.seek(0)
+            img.load()
+            from PIL import ImageOps
+            img = ImageOps.exif_transpose(img) or img
+    
+            if img.mode in ("I;16", "I;16L", "I;16B", "I;16N"):
+                import numpy as np
+                arr = (np.array(img, dtype=np.float32) / 256.0).clip(0, 255).astype(np.uint8)
+                result = Image.fromarray(arr).convert("RGBA")
+            elif img.mode in ("I", "F"):
+                import numpy as np
+                # The numeric range of a 32-bit integer or float raster depends on
+                # the writer: an 8-bit scan arrives as mode "I" with 0..255 values
+                # and a normalized float image tops out at 1.0. Scaling by a fixed
+                # divisor rendered both almost pure black.
+                arr = np.array(img, dtype=np.float64)
+                peak = float(arr.max(initial=0.0))
+                if peak > 255.0 or (img.mode == "F" and peak > 0.0):
+                    arr = arr * (255.0 / peak)
+                result = Image.fromarray(arr.clip(0, 255).astype(np.uint8), mode="L").convert("RGBA")
+            elif img.mode in ("CMYK", "YCbCr"):
+                result = img.convert("RGB").convert("RGBA")
+            else:
+                result = img.convert("RGBA")
 
     # Raster assets are never upscaled - only ever downscaled to the target.
     if target_dimension is not None:

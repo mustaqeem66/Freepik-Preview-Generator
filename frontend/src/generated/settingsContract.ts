@@ -9,6 +9,7 @@ export const SETTINGS_DEFAULTS = {
   "sameFolder": false,
   "invertTriangles": true,
   "autoFrame": false,
+  "animationContactSheet": false,
   "frameMargin": 8,
   "solidColor": "#FFFFFF",
   "logoPath": "",
@@ -66,6 +67,10 @@ export const SETTINGS_FIELDS: readonly SettingsField[] = [
   },
   {
     "name": "autoFrame",
+    "type": "boolean"
+  },
+  {
+    "name": "animationContactSheet",
     "type": "boolean"
   },
   {

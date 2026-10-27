@@ -60,6 +60,7 @@ export interface PreviewState {
   sameFolder: boolean;
   invertTriangles: boolean;
   autoFrame?: boolean;
+  animationContactSheet?: boolean;
   frameMargin?: number;
   solidColor: string;
   logoPath: string;

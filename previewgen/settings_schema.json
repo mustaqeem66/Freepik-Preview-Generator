@@ -36,6 +36,11 @@
       "default": false,
       "description": "Opt-in transparent subject normalization without changing output canvas dimensions"
     },
+    "animationContactSheet": {
+      "type": "boolean",
+      "default": false,
+      "description": "Opt-in nine-frame maximum GIF/WebP contact-sheet preview and export; default remains first frame"
+    },
     "frameMargin": {
       "type": "number",
       "minimum": 0,
