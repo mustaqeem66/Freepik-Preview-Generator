@@ -26,6 +26,23 @@ describe("SettingsPanel", () => {
     expect(screen.getByRole("heading", { name: /brand logo/i })).toBeInTheDocument();
   });
 
+  it("enables opt-in subject framing without changing existing defaults", () => {
+    const onChange = vi.fn();
+    const ui = render(<SettingsPanel state={{ ...STATE, autoFrame: false, frameMargin: 8 }}
+      onChange={onChange} onBrowseLogo={() => {}} onBrowseFont={() => {}} is3D={false} />);
+    const checkbox = screen.getByRole("checkbox", { name: "Auto-frame transparent subject" });
+    expect(checkbox).not.toBeChecked();
+    expect(screen.queryByRole("slider", { name: "Subject margin" })).not.toBeInTheDocument();
+    fireEvent.click(checkbox);
+    expect(onChange).toHaveBeenCalledWith({ autoFrame: true });
+
+    ui.rerender(<SettingsPanel state={{ ...STATE, autoFrame: true, frameMargin: 8 }}
+      onChange={onChange} onBrowseLogo={() => {}} onBrowseFont={() => {}} is3D={false} />);
+    const slider = screen.getByRole("slider", { name: "Subject margin" });
+    fireEvent.change(slider, { target: { value: "12" } });
+    expect(onChange).toHaveBeenCalledWith({ frameMargin: 12 });
+  });
+
   it("shows the camera section only for 3D assets", () => {
     renderPanel(false);
     expect(screen.queryByText(/3d camera/i)).not.toBeInTheDocument();
