@@ -43,6 +43,19 @@ describe("SettingsPanel", () => {
     expect(onChange).toHaveBeenCalledWith({ frameMargin: 12 });
   });
 
+  it("exposes a default-off animated contact sheet without affecting other controls", () => {
+    const onChange = vi.fn();
+    const panel = render(<SettingsPanel state={{ ...STATE, animationContactSheet: false }}
+      onChange={onChange} onBrowseLogo={() => {}} onBrowseFont={() => {}} is3D={false} />);
+    const toggle = screen.getByRole("checkbox", { name: "Animated GIF/WebP contact sheet" });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    expect(onChange).toHaveBeenCalledWith({ animationContactSheet: true });
+    panel.rerender(<SettingsPanel state={{ ...STATE, animationContactSheet: true }}
+      onChange={onChange} onBrowseLogo={() => {}} onBrowseFont={() => {}} is3D={false} />);
+    expect(screen.getByText(/Shows up to nine GIF\/WebP frames/)).toBeInTheDocument();
+  });
+
   it("shows the camera section only for 3D assets", () => {
     renderPanel(false);
     expect(screen.queryByText(/3d camera/i)).not.toBeInTheDocument();
