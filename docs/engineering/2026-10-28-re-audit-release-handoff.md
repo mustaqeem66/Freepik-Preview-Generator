@@ -6,9 +6,9 @@
 
 - **#103: MERGED.** Its original conflicts have been resolved. Owner does not need to open the conflicts page or cherry-pick it.
 - **All pull requests through #125: merged** at the time of this re-audit. Do not remerge closed items or leave obsolete Dependabot PRs open.
-- **#126, open draft:** pre-parse mesh line/GLB/glTF input memory hardening. Local focus: `tests/unit/test_mesh_inspection_read_bounds.py` + `tests/unit/test_resource_limits.py`.
-- **#127, open draft:** strict independent evidence files in native release receipt. Local focus: `tests/unit/test_native_release_evidence.py`.
-- These draft branches are independent and both target `main`; neither authorizes a stable release. Live PR statuses can change after this report. Review **each** on its own checked-out commit. Keep drafts until local results have been recorded and native relevance reviewed.
+- **#126, MERGED:** pre-parse mesh line/GLB/glTF input memory hardening. Focused local tests still required: `tests/unit/test_mesh_inspection_read_bounds.py` + `tests/unit/test_resource_limits.py`.
+- **#127, MERGED:** strict independent evidence files in native release receipt. Focused local tests still required: `tests/unit/test_native_release_evidence.py`.
+- **#128, MERGED:** this reconciled audit and PR disposition document. At this snapshot there are **zero open PRs**. None of these merges authorizes a stable release; exact-commit local and packaged-native acceptance is still outstanding.
 
 ## Source implementation progress since the original audit
 
@@ -42,18 +42,15 @@ Additional merged contributions: #100 and later progress plans; #101 font auto-f
 | [#60](https://github.com/mustaqeem66/Freepik-Preview-Generator/issues/60) | Licensed independently approved authoring-app/version examples and visual oracles for CAD/3D/proprietary formats; strict oracle gate | P1 |
 | [#23](https://github.com/mustaqeem66/Freepik-Preview-Generator/issues/23) | Product, premium UX/accessibility, release tracking umbrella. Close last | Tracker |
 
-## Exact local test sequence for proposed new PRs
+## Exact local test sequence for latest merged engineering fixes
 
-Do not combine pending PR source with `main` implicitly; first run each focused suite on its own branch.
+Both source PRs have merged into `main`. Run focused tests on the exact merged revision, not on outdated draft branches.
 
 ```bash
 git fetch origin
-git switch --track origin/fix/bounded-mesh-inspection-20261028
-python -m pytest tests/unit/test_mesh_inspection_read_bounds.py tests/unit/test_resource_limits.py -q
-
 git switch main
-git switch --track origin/fix/native-evidence-unique-file-security-20261028
-python -m pytest tests/unit/test_native_release_evidence.py -q
+git pull --ff-only
+python -m pytest tests/unit/test_mesh_inspection_read_bounds.py tests/unit/test_resource_limits.py tests/unit/test_native_release_evidence.py -q
 ```
 
 After review and integration onto a single fixed `main` commit, run:
