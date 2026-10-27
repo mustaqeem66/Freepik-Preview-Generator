@@ -60,6 +60,9 @@ export function SettingsPanel({ state, onChange, onBrowseLogo, onBrowseFont, is3
       <label className="check-row"><input type="checkbox" checked={state.animationContactSheet === true}
         onChange={(event) => onChange({ animationContactSheet: event.target.checked })} />Animated GIF/WebP contact sheet</label>
       {state.animationContactSheet === true && <p className="muted">Shows up to nine GIF/WebP frames in one canvas. Other formats and single-frame images are unchanged.</p>}
+      <label className="check-row"><input type="checkbox" checked={state.brushsetContactSheet === true}
+        onChange={(event) => onChange({ brushsetContactSheet: event.target.checked })} />Procreate brushset contact sheet</label>
+      {state.brushsetContactSheet === true && <p className="muted">Opt-in: previews up to nine tips from a selected .brushset.</p>}
       <label className="check-row"><input type="checkbox" checked={state.autoFrame === true}
         onChange={(e) => onChange({ autoFrame: e.target.checked })} />Auto-frame transparent subject</label>
       {state.autoFrame === true && <>

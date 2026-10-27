@@ -56,6 +56,19 @@ describe("SettingsPanel", () => {
     expect(screen.getByText(/Shows up to nine GIF\/WebP frames/)).toBeInTheDocument();
   });
 
+  it("offers a default-off Procreate brushset contact-sheet setting", () => {
+    const onChange = vi.fn();
+    const ui = render(<SettingsPanel state={{ ...STATE, brushsetContactSheet: false }}
+      onChange={onChange} onBrowseLogo={() => {}} onBrowseFont={() => {}} is3D={false} />);
+    const toggle = screen.getByRole("checkbox", { name: "Procreate brushset contact sheet" });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    expect(onChange).toHaveBeenCalledWith({ brushsetContactSheet: true });
+    ui.rerender(<SettingsPanel state={{ ...STATE, brushsetContactSheet: true }}
+      onChange={onChange} onBrowseLogo={() => {}} onBrowseFont={() => {}} is3D={false} />);
+    expect(screen.getByText(/previews up to nine tips/)).toBeInTheDocument();
+  });
+
   it("shows the camera section only for 3D assets", () => {
     renderPanel(false);
     expect(screen.queryByText(/3d camera/i)).not.toBeInTheDocument();

@@ -10,6 +10,7 @@ export const SETTINGS_DEFAULTS = {
   "invertTriangles": true,
   "autoFrame": false,
   "animationContactSheet": false,
+  "brushsetContactSheet": false,
   "frameMargin": 8,
   "solidColor": "#FFFFFF",
   "logoPath": "",
@@ -71,6 +72,10 @@ export const SETTINGS_FIELDS: readonly SettingsField[] = [
   },
   {
     "name": "animationContactSheet",
+    "type": "boolean"
+  },
+  {
+    "name": "brushsetContactSheet",
     "type": "boolean"
   },
   {

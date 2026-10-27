@@ -22,6 +22,7 @@ from previewgen.renderers.creator import (
     _load_kra,
     _load_procreate,
     _load_procreate_brush,
+    _load_brushset_contact_sheet,
 )
 from previewgen.renderers.font import _load_font
 from previewgen.renderers.mesh3d import _load_3d
@@ -69,6 +70,11 @@ def load_source_image(
 
     if ext == ".procreate":
         return _load_procreate(source_path)
+
+    if ext == ".brushset" and config is not None and config.brushset_contact_sheet:
+        return _load_brushset_contact_sheet(
+            source_path, target_dimension=target_dimension or max_dimension or 900
+        )
 
     if ext in (".brush", ".brushset"):
         return _load_procreate_brush(source_path)
