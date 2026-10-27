@@ -34,6 +34,7 @@ PREVIEWGEN_PREFIXES: tuple[str, ...] = (
     "previewgen_probe_",
     "previewgen_dim_",
     "previewgen_export_",
+    "previewgen_nested_brush_",
 )
 
 

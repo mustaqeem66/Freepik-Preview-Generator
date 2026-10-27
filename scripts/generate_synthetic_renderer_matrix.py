@@ -17,12 +17,11 @@ import gzip
 import io
 import json
 import shutil
-import sqlite3
 import struct
+import sys
 import time
 import zipfile
 from pathlib import Path
-import sys
 
 from PIL import Image
 

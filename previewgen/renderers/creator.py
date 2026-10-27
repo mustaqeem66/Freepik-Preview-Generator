@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import base64
 import contextlib
-import io
 import math
 import re
 import sqlite3

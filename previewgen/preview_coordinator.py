@@ -85,7 +85,8 @@ def _preview_worker(job_queue: Any, result_queue: Any) -> None:  # pragma: no co
                     limits.extract_zip_member_bounded(zf, entry_name, target_file)
                 source_path = target_file
                 from previewgen.renderers.mesh3d import (
-                    _ARCHIVE_SOURCE_CACHE_KEY, _archive_mesh_cache_key,
+                    _ARCHIVE_SOURCE_CACHE_KEY,
+                    _archive_mesh_cache_key,
                 )
                 archive_cache_token = _ARCHIVE_SOURCE_CACHE_KEY.set(
                     _archive_mesh_cache_key(zip_path, member)

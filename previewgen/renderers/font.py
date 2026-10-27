@@ -114,8 +114,9 @@ def _load_font(source_path: Path, target_dimension: int = 2400) -> Image.Image:
         raise ValueError(f"Could not load the selected font '{source_path.name}'") from exc
 
     font_name = source_path.stem.replace("-", " ").replace("_", " ").title()
-    left = card_x + int(W * 0.05)
-    right = card_x + card_w - int(W * 0.05)
+    inner_margin = round(W * 0.10)
+    left = inner_margin
+    right = W - inner_margin
 
     def specimen_text(y: int, value: str, font: ImageFont.FreeTypeFont,
                       color: tuple[int, int, int, int]) -> None:
@@ -132,8 +133,8 @@ def _load_font(source_path: Path, target_dimension: int = 2400) -> Image.Image:
     # Subtle horizontal divider
     draw.line(
         [
-            (card_x + int(W * 0.05), card_y + int(H * 0.18)),
-            (card_x + card_w - int(W * 0.05), card_y + int(H * 0.18)),
+            (left, card_y + int(H * 0.18)),
+            (right, card_y + int(H * 0.18)),
         ],
         fill=(226, 232, 240, 255),
         width=int(W * 0.002),
@@ -159,8 +160,8 @@ def _load_font(source_path: Path, target_dimension: int = 2400) -> Image.Image:
     # Subtle horizontal divider
     draw.line(
         [
-            (card_x + int(W * 0.05), card_y + int(H * 0.77)),
-            (card_x + card_w - int(W * 0.05), card_y + int(H * 0.77)),
+            (left, card_y + int(H * 0.77)),
+            (right, card_y + int(H * 0.77)),
         ],
         fill=(226, 232, 240, 255),
         width=int(W * 0.002),

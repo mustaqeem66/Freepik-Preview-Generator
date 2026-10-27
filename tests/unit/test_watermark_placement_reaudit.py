@@ -1,11 +1,11 @@
 """Render contract: preset placement is honored rather than overridden."""
 from __future__ import annotations
 
-from PIL import Image, ImageDraw
 import pytest
+from PIL import Image, ImageDraw
 
 from previewgen.config import PreviewConfig
-from previewgen.renderers.compose import compose_preview, _calculate_text_position
+from previewgen.renderers.compose import _calculate_text_position, compose_preview
 
 pytestmark = pytest.mark.core
 

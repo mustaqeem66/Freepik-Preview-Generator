@@ -12,7 +12,13 @@ from PIL import Image
 
 from previewgen import limits
 from previewgen.config import MAX_EMBEDDED_THUMBNAIL_BYTES, MAX_SOURCE_FILE_BYTES, PreviewConfig
-from previewgen.renderers.mesh3d import _MESH_CACHE, _combine_scene_meshes, _mesh_cache_key, _normalize_visuals, render_3d_mesh
+from previewgen.renderers.mesh3d import (
+    _MESH_CACHE,
+    _combine_scene_meshes,
+    _mesh_cache_key,
+    _normalize_visuals,
+    render_3d_mesh,
+)
 
 
 def _load_dxf(source_path: Path, target_dimension: int = 2400) -> Image.Image:

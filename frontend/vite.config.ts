@@ -1,5 +1,5 @@
 import { defineConfig, type Plugin } from "vite";
-import { injectProductionCsp } from "./security/csp";
+import { injectProductionCsp } from "./security/csp.ts";
 import react from "@vitejs/plugin-react";
 
 // Keep the native desktop CSP out of Vite dev mode (HMR requires its own

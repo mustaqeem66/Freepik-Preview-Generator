@@ -162,7 +162,7 @@ def _tiled_watermark_layer(
     size: tuple[int, int],
     label: str,
     font: Any,
-    bounds: tuple[int, int, int, int],
+    bounds: tuple[float, float, float, float] | tuple[int, int, int, int],
     config: PreviewConfig,
     stroke: int,
 ) -> Image.Image:
@@ -172,7 +172,7 @@ def _tiled_watermark_layer(
     mutated and no intermediate image exceeds the glyph or canvas dimensions.
     """
     width, height = size
-    left, top, right, bottom = bounds
+    left, top, right, bottom = round(bounds[0]), round(bounds[1]), round(bounds[2]), round(bounds[3])
     padding = max(4, stroke + 4)
     glyph = Image.new(
         "RGBA", (max(1, right - left + padding * 2),

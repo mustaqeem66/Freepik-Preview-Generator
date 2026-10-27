@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from scripts.generate_synthetic_renderer_matrix import BASE_FIXTURES, generate
 from scripts.audit_renderer_matrix import inspect_inventory
+from scripts.generate_synthetic_renderer_matrix import BASE_FIXTURES, generate
 
 pytestmark = pytest.mark.core
 
