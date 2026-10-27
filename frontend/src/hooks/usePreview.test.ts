@@ -151,6 +151,25 @@ describe("usePreview concurrency", () => {
     expect(startPreview.mock.calls[1][1].position).toBe("center");
   });
 
+  it("regenerates live preview when framing changes without another slider update", async () => {
+    const startPreview = vi.fn(async (_path: string, _config: PreviewState) =>
+      ({ ok: true, operationId: "framed", status: "queued" }));
+    const cancelPreview = vi.fn(async () => ({ ok: true }));
+    // @ts-expect-error mock window.pywebview
+    window.pywebview = { api: { start_preview: startPreview, cancel_preview: cancelPreview } };
+    const { rerender } = renderHook(
+      ({ state }: { state: PreviewState }) => usePreview(fileA, state),
+      { initialProps: { state: baseState({ autoFrame: false, frameMargin: 8 }) } }
+    );
+    await waitFor(() => expect(startPreview).toHaveBeenCalledTimes(1));
+    rerender({ state: baseState({ autoFrame: true, frameMargin: 8 }) });
+    await waitFor(() => expect(startPreview).toHaveBeenCalledTimes(2));
+    expect(startPreview.mock.calls[1][1]).toMatchObject({ autoFrame: true });
+    rerender({ state: baseState({ autoFrame: true, frameMargin: 12 }) });
+    await waitFor(() => expect(startPreview).toHaveBeenCalledTimes(3));
+    expect(startPreview.mock.calls[2][1]).toMatchObject({ frameMargin: 12 });
+  });
+
   it("does not request a preview when there is no active file", async () => {
     const fakeApi = {
       render_preview: vi.fn(async () => ({ ok: true, value: null, error: null })),
