@@ -12,7 +12,7 @@ from PIL import Image
 
 from previewgen import limits
 from previewgen.config import MAX_SOURCE_FILE_BYTES, PreviewConfig
-from previewgen.renderers.mesh3d import _MESH_CACHE, _combine_scene_meshes, _normalize_visuals, render_3d_mesh
+from previewgen.renderers.mesh3d import _MESH_CACHE, _combine_scene_meshes, _mesh_cache_key, _normalize_visuals, render_3d_mesh
 
 
 def _load_dxf(source_path: Path, target_dimension: int = 2400) -> Image.Image:
@@ -135,8 +135,7 @@ def _load_cad_solid(source_path: Path, config: PreviewConfig, target_dimension: 
     """Convert universal CAD solids (.step, .stp, .iges, .igs) into 3D meshes for 360° orbit preview."""
     try:
         source_path = Path(source_path).resolve()
-        mtime = source_path.stat().st_mtime if source_path.exists() else 0.0
-        key = (str(source_path), mtime)
+        key = _mesh_cache_key(source_path)
         if key in _MESH_CACHE:
             mesh = _MESH_CACHE[key]
         else:

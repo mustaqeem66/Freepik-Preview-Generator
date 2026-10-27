@@ -6,6 +6,7 @@ Software-renders triangle meshes (.obj, .glb, .gltf, .stl, .ply, .3mf, .dae,
 from __future__ import annotations
 
 import os
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,33 @@ from previewgen import limits, proc
 from previewgen.config import PreviewConfig
 from previewgen.renderers.proprietary import extract_blend_thumbnail
 
-_MESH_CACHE: dict[tuple[str, float], Any] = {}
+# Archive assets are extracted to new temporary paths for each preview. During a
+# warm worker session, cache by the verified archive/member identity instead.
+# This context is reset after every worker job, including failures/cancellation.
+_MESH_CACHE: dict[tuple[str, int, int, int], Any] = {}
+_ARCHIVE_SOURCE_CACHE_KEY: ContextVar[tuple[str, int, int, int] | None] = ContextVar(
+    "previewgen_archive_mesh_cache_key", default=None
+)
+
+
+def _mesh_cache_key(source_path: Path) -> tuple[str, int, int, int]:
+    archived = _ARCHIVE_SOURCE_CACHE_KEY.get()
+    if archived is not None:
+        return archived
+    source_path = source_path.resolve()
+    stat = source_path.stat()
+    return (str(source_path), stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
+
+
+def _archive_mesh_cache_key(archive_path: Path, member: Any) -> tuple[str, int, int, int]:
+    """Bind a cached mesh to the archive and exact selected ZIP member."""
+    source = archive_path.resolve()
+    stat = source.stat()
+    identity = (
+        f"zip://{source.as_posix()}?entry={member.filename}"
+        f"#crc={member.CRC}&size={member.file_size}&offset={member.header_offset}"
+    )
+    return identity, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size
 
 # STL and 3MF (and CAD kernels) store geometry Z-up; glTF/OBJ/DAE are Y-up.
 _Z_UP_EXTENSIONS = frozenset({".stl", ".3mf"})
@@ -365,8 +392,7 @@ def _load_3d(source_path: Path, config: PreviewConfig, target_dimension: int = 2
         ) from exc
 
     source_path = Path(source_path).resolve()
-    mtime = source_path.stat().st_mtime if source_path.exists() else 0.0
-    key = (str(source_path), mtime)
+    key = _mesh_cache_key(source_path)
     if key in _MESH_CACHE:
         mesh = _MESH_CACHE[key]
     else:

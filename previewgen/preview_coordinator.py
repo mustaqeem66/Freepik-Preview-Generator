@@ -66,6 +66,7 @@ def _preview_worker(job_queue: Any, result_queue: Any) -> None:  # pragma: no co
             return
         job_id, payload = job
         extracted_temp: Path | None = None
+        archive_cache_token = None
         try:
             from previewgen import limits
 
@@ -80,8 +81,15 @@ def _preview_worker(job_queue: Any, result_queue: Any) -> None:  # pragma: no co
                 extracted_temp = Path(tempfile.mkdtemp(prefix="previewgen_worker_zip_"))
                 target_file = extracted_temp / Path(entry_name).name
                 with limits.open_zip_bounded(zip_path) as zf:
+                    member = zf.getinfo(entry_name)
                     limits.extract_zip_member_bounded(zf, entry_name, target_file)
                 source_path = target_file
+                from previewgen.renderers.mesh3d import (
+                    _ARCHIVE_SOURCE_CACHE_KEY, _archive_mesh_cache_key,
+                )
+                archive_cache_token = _ARCHIVE_SOURCE_CACHE_KEY.set(
+                    _archive_mesh_cache_key(zip_path, member)
+                )
             else:
                 source_path = Path(source_spec)
 
@@ -112,6 +120,9 @@ def _preview_worker(job_queue: Any, result_queue: Any) -> None:  # pragma: no co
                     "error_type": type(exc).__name__,
                 })
         finally:
+            if archive_cache_token is not None:
+                from previewgen.renderers.mesh3d import _ARCHIVE_SOURCE_CACHE_KEY
+                _ARCHIVE_SOURCE_CACHE_KEY.reset(archive_cache_token)
             if extracted_temp and extracted_temp.exists():
                 safe_rmtree(extracted_temp, "child worker zip temp")
 
