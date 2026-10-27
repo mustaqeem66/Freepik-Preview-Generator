@@ -132,6 +132,44 @@ def test_oracle_requires_declared_authoring_application_version(tmp_path):
         inspect_inventory(_manifest(approved, source_version=""), tmp_path)
 
 
+@pytest.mark.parametrize("source_app,source_version", [
+    ("PreviewGen deterministic synthetic smoke", "synthetic-v1"),
+    ("ExampleCAD", "synthetic-v1; not real"),
+    ("synthetic test input", "1.0"),
+    ("PreviewGen Studio", "2.1"),
+    ("unknown", "2026"),
+    ("", "2026"),
+])
+def test_synthetic_or_unknown_provenance_cannot_be_certified(
+    tmp_path, source_app: str, source_version: str
+):
+    source = tmp_path / "part.png"
+    reference = tmp_path / "approved.png"
+    _gradient(source)
+    _gradient(reference)
+    manifest = _manifest(reference, source_version=source_version)
+    manifest["samples"][0]["sourceApp"] = source_app
+    with pytest.raises(ValueError, match="independent|synthetic"):
+        inspect_inventory(manifest, tmp_path)
+
+
+def test_source_fixture_cannot_be_its_own_approved_oracle(tmp_path):
+    source = tmp_path / "part.png"
+    _gradient(source)
+    manifest = _manifest(source)
+    with pytest.raises(ValueError, match="independent from the source"):
+        inspect_inventory(manifest, tmp_path)
+
+
+def test_named_independent_source_app_can_still_have_reviewed_oracle(tmp_path):
+    source = tmp_path / "part.png"
+    reference = tmp_path / "approved.png"
+    _gradient(source)
+    _gradient(reference)
+    report = inspect_inventory(_manifest(reference), tmp_path)
+    assert report["samples"][0]["oracle"]["reviewedBy"] == "Design QA"
+
+
 def test_require_oracles_never_certifies_smoke_only_render(tmp_path, monkeypatch):
     from previewgen import renderer_process
 
