@@ -77,6 +77,7 @@ def test_registry_or_version_mismatch_refused(tmp_path: Path):
 
 def test_official_npm_view_uses_exact_version_and_registry(monkeypatch):
     calls: list[list[str]] = []
+    monkeypatch.setattr(repair.shutil, "which", lambda name: r"C:\\Program Files\\nodejs\\npm.cmd")
 
     def fake_run(command, *, check, capture_output, text, timeout):
         calls.append(command)
@@ -86,14 +87,27 @@ def test_official_npm_view_uses_exact_version_and_registry(monkeypatch):
     monkeypatch.setattr(repair.subprocess, "run", fake_run)
     assert repair.official_integrity() == GOOD
     assert calls[0] == [
-        "npm", "view", "lenis@1.3.27", "dist.integrity", "--json",
+        r"C:\\Program Files\\nodejs\\npm.cmd", "view", "lenis@1.3.27", "dist.integrity", "--json",
         "--registry=https://registry.npmjs.org",
     ]
 
 
 def test_npm_registry_failure_is_not_hidden(monkeypatch):
+    monkeypatch.setattr(repair.shutil, "which", lambda name: "/usr/bin/npm")
+
     def failed(*_args, **_kwargs):
         raise subprocess.CalledProcessError(1, "npm view")
     monkeypatch.setattr(repair.subprocess, "run", failed)
     with pytest.raises(RuntimeError, match="No lockfile changes"):
+        repair.official_integrity()
+
+
+def test_missing_npm_cli_fails_without_spawning_any_process(monkeypatch):
+    monkeypatch.setattr(repair.shutil, "which", lambda name: None)
+
+    def never_spawn(*_args, **_kwargs):
+        raise AssertionError("must not invoke subprocess without npm CLI")
+
+    monkeypatch.setattr(repair.subprocess, "run", never_spawn)
+    with pytest.raises(RuntimeError, match="npm CLI not found on PATH"):
         repair.official_integrity()
