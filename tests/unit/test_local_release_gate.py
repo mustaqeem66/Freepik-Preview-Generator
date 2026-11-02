@@ -100,3 +100,48 @@ def test_fail_fast_stops_remaining_checks_but_reports_unexecuted_count(tmp_path:
 def test_plan_rejects_empty_selection(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         release.plan_checks(tmp_path, backend=False, frontend=False)
+
+
+def test_security_audit_is_explicit_opt_in_and_scans_all_lockfiles(tmp_path: Path) -> None:
+    normal = release.plan_checks(tmp_path, python="py", npm="npm")
+    assert not any(check.name.startswith("security-") for check in normal)
+
+    checks = release.plan_checks(tmp_path, security_audit=True, python="py", npm="npm")
+    audits = [check for check in checks if check.name.startswith("security-")]
+    assert len(audits) == 4
+    assert [check.name for check in audits] == [
+        "security-pip-audit-requirements-lock.txt",
+        "security-pip-audit-requirements-dev-lock.txt",
+        "security-pip-audit-requirements-linux-gui-lock.txt",
+        "security-npm-audit",
+    ]
+    assert all(check.argv[1:4] == ("-m", "pip_audit", "--require-hashes") for check in audits[:3])
+    assert all(check.cwd == tmp_path for check in audits[:3])
+    assert audits[-1].argv == (
+        "npm", "audit", "--package-lock-only", "--audit-level=low", "--include=dev"
+    )
+    assert audits[-1].cwd == tmp_path / "frontend"
+
+
+def test_security_audit_respects_target_selection(tmp_path: Path) -> None:
+    backend = release.plan_checks(tmp_path, frontend=False, security_audit=True, python="py")
+    assert sum(check.name.startswith("security-pip-audit") for check in backend) == 3
+    assert all(check.name != "security-npm-audit" for check in backend)
+
+    frontend = release.plan_checks(tmp_path, backend=False, security_audit=True, npm="npm")
+    assert sum(check.name == "security-npm-audit" for check in frontend) == 1
+    assert all(not check.name.startswith("security-pip-audit") for check in frontend)
+
+
+def test_vulnerability_audit_failure_blocks_local_release(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "frontend" / "node_modules").mkdir(parents=True)
+    def pretend_subprocess(argv, *, cwd, env, check):
+        return SimpleNamespace(returncode=1 if "audit" in argv or "pip_audit" in argv else 0)
+
+    monkeypatch.setattr(release.subprocess, "run", pretend_subprocess)
+    checks = release.plan_checks(tmp_path, frontend=False, security_audit=True, python="py")
+    report = tmp_path / "audit-fail.json"
+    assert release.run_checks(checks, root=tmp_path, report=report) == 1
+    data = json.loads(report.read_text())
+    assert data["summary"]["failed"] == 3
+    assert data["summary"]["completed"] == len(checks)
