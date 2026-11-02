@@ -122,3 +122,7 @@ local-fixtures/
 
 # Native QA receipts, redacted logs, and artifact evidence remain local
 local-native/
+
+# Local authenticated Dependabot inventories (do not commit security alert snapshots)
+dependabot-open-alerts.md
+dependabot-open-alerts.json
