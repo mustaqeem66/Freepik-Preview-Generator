@@ -11,6 +11,7 @@ import base64
 import binascii
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -51,9 +52,19 @@ def _load_target(lock_path: Path, manifest_path: Path) -> tuple[dict, dict]:
     return lock, pkg
 
 
+def npm_executable() -> str:
+    """Resolve npm or npm.cmd on Windows; avoid assuming npm is an .exe."""
+    executable = shutil.which("npm")
+    if executable is None:
+        raise RuntimeError(
+            "npm CLI not found on PATH. Install Node.js/npm before applying the official SRI."
+        )
+    return executable
+
+
 def official_integrity() -> str:
     command = [
-        "npm", "view", f"lenis@{VERSION}", "dist.integrity", "--json",
+        npm_executable(), "view", f"lenis@{VERSION}", "dist.integrity", "--json",
         f"--registry={REGISTRY}",
     ]
     try:
