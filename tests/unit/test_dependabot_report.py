@@ -12,7 +12,11 @@ def _alert(number, severity="high", state="open"):
     return {
         "number": number,
         "state": state,
-        "dependency": {"package": {"name": "example", "ecosystem": "pip"}, "manifest_path": "requirements-lock.txt", "scope": "runtime"},
+        "dependency": {
+            "package": {"name": "example", "ecosystem": "pip"},
+            "manifest_path": "requirements-lock.txt",
+            "scope": "runtime",
+        },
         "security_advisory": {"severity": severity, "ghsa_id": f"GHSA-test-{number}"},
         "security_vulnerability": {"vulnerable_version_range": "<2", "first_patched_version": {"identifier": "2.0"}},
     }
@@ -44,7 +48,10 @@ def test_malformed_alerts_fail_closed():
 
 
 def test_command_uses_only_specific_read_only_endpoint():
-    assert gh_command("owner/repo") == ["gh", "api", "--paginate", "--slurp", "repos/owner/repo/dependabot/alerts?state=open&per_page=100"]
+    assert gh_command("owner/repo") == [
+        "gh", "api", "--paginate", "--slurp",
+        "repos/owner/repo/dependabot/alerts?state=open&per_page=100",
+    ]
     with pytest.raises(ValueError):
         gh_command("owner/repo;rm -rf /tmp")
 
