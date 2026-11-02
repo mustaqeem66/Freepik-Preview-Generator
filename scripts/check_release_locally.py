@@ -6,6 +6,7 @@ Examples, from the repository root:
     python scripts/check_release_locally.py --mode full
     python scripts/check_release_locally.py --frontend-only
     python scripts/check_release_locally.py --npm-ci
+    python scripts/check_release_locally.py --mode full --npm-ci --security-audit
 
 By default this command never installs packages or uploads results.
 It records only command labels, argv, status and duration in a local JSON file.
@@ -43,6 +44,7 @@ def plan_checks(
     backend: bool = True,
     frontend: bool = True,
     npm_ci: bool = False,
+    security_audit: bool = False,
     python: str | None = None,
     npm: str = "npm",
 ) -> list[Check]:
@@ -76,6 +78,25 @@ def plan_checks(
                   root, require_bundle=True),
             Check("frontend-studio-design", (py, "scripts/verify_studio_bundle.py"), root),
         ))
+
+    if security_audit:
+        # Opt-in online advisory checks. Read-only: no installs, fixes or alert dismissals.
+        if backend:
+            for lock in (
+                "requirements-lock.txt",
+                "requirements-dev-lock.txt",
+                "requirements-linux-gui-lock.txt",
+            ):
+                checks.append(Check(
+                    f"security-pip-audit-{lock}",
+                    (py, "-m", "pip_audit", "--require-hashes", "-r", lock), root,
+                ))
+        if frontend:
+            checks.append(Check(
+                "security-npm-audit",
+                (npm, "audit", "--package-lock-only", "--audit-level=low", "--include=dev"),
+                frontend_dir,
+            ))
 
     return checks
 
@@ -158,6 +179,11 @@ def main(argv: list[str] | None = None) -> int:
         "--npm-ci", action="store_true",
         help="Opt into npm ci, which may access the network; default is no installation.",
     )
+    parser.add_argument(
+        "--security-audit", action="store_true",
+        help="Opt into registry-backed pip-audit for every Python lock and npm audit "
+             "including dev dependencies. Requires pip-audit installed; no fixes applied.",
+    )
     parser.add_argument("--fail-fast", action="store_true")
     parser.add_argument(
         "--report", type=Path, default=Path("local-check-report.json"),
@@ -170,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     checks = plan_checks(
         ROOT, mode=args.mode, backend=not args.frontend_only,
         frontend=not args.backend_only, npm_ci=args.npm_ci,
-        npm=npm,
+        security_audit=args.security_audit, npm=npm,
     )
     report = args.report if args.report.is_absolute() else ROOT / args.report
     return run_checks(checks, root=ROOT, report=report, fail_fast=args.fail_fast)
