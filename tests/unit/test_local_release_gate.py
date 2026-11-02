@@ -108,15 +108,17 @@ def test_security_audit_is_explicit_opt_in_and_scans_all_lockfiles(tmp_path: Pat
 
     checks = release.plan_checks(tmp_path, security_audit=True, python="py", npm="npm")
     audits = [check for check in checks if check.name.startswith("security-")]
-    assert len(audits) == 4
+    assert len(audits) == 5
     assert [check.name for check in audits] == [
+        "security-lock-integrity",
         "security-pip-audit-requirements-lock.txt",
         "security-pip-audit-requirements-dev-lock.txt",
         "security-pip-audit-requirements-linux-gui-lock.txt",
         "security-npm-audit",
     ]
-    assert all(check.argv[1:4] == ("-m", "pip_audit", "--require-hashes") for check in audits[:3])
-    assert all(check.cwd == tmp_path for check in audits[:3])
+    assert audits[0].argv == ("py", "scripts/verify_dependency_locks.py")
+    assert all(check.argv[1:4] == ("-m", "pip_audit", "--require-hashes") for check in audits[1:4])
+    assert all(check.cwd == tmp_path for check in audits[:4])
     assert audits[-1].argv == (
         "npm", "audit", "--package-lock-only", "--audit-level=low", "--include=dev"
     )
@@ -131,6 +133,7 @@ def test_security_audit_respects_target_selection(tmp_path: Path) -> None:
     frontend = release.plan_checks(tmp_path, backend=False, security_audit=True, npm="npm")
     assert sum(check.name == "security-npm-audit" for check in frontend) == 1
     assert all(not check.name.startswith("security-pip-audit") for check in frontend)
+    assert any(check.name == "security-lock-integrity" for check in frontend)
 
 
 def test_vulnerability_audit_failure_blocks_local_release(tmp_path: Path, monkeypatch) -> None:
