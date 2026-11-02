@@ -80,6 +80,11 @@ def plan_checks(
         ))
 
     if security_audit:
+        # First verify checked-in lock consistency offline. This guards against
+        # partial fixes and missing npm artifact hashes before network scanners.
+        checks.append(Check(
+            "security-lock-integrity", (py, "scripts/verify_dependency_locks.py"), root,
+        ))
         # Opt-in online advisory checks. Read-only: no installs, fixes or alert dismissals.
         if backend:
             for lock in (
