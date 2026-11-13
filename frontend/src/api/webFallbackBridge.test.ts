@@ -100,6 +100,28 @@ describe("unprivileged browser demo", () => {
     expect(clickSpy).toHaveBeenCalledOnce();
   });
 
+  it("limits cumulative browser picker files and bytes across multiple selections", () => {
+    const bridge = new WebFallbackBridge();
+    const privateApi = bridge as unknown as {
+      importFiles: (files: File[]) => { files: { path: string }[]; rejected: string[] };
+    };
+    const lightFile = new File(["a"], "sample.png", { type: "image/png" });
+    // Importing twice must respect an aggregate cap, not 500 per picker call.
+    expect(privateApi.importFiles(Array.from({ length: 350 }, () => lightFile)).files).toHaveLength(350);
+    const second = privateApi.importFiles(Array.from({ length: 200 }, () => lightFile));
+    expect(second.files).toHaveLength(150);
+    expect(second.rejected).toHaveLength(50);
+
+    const fresh = new WebFallbackBridge();
+    const secondApi = fresh as unknown as typeof privateApi;
+    // Lightweight File-shaped objects test aggregate bytes without allocating
+    // hundreds of megabytes in the test process.
+    const largeFile = { name: "large.png", size: 25 * 1024 * 1024 } as File;
+    const memoryLimited = secondApi.importFiles(Array.from({ length: 12 }, () => largeFile));
+    expect(memoryLimited.files).toHaveLength(10);
+    expect(memoryLimited.rejected).toHaveLength(2);
+  });
+
   it("sanitizes browser storage and never persists native file paths", async () => {
     localStorage.setItem("previewgen.browserDemo.v1", JSON.stringify({
       inputFolder: "/untrusted/input", outputFolder: "/private/output",
