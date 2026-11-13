@@ -464,7 +464,7 @@ export class WebFallbackBridge implements PyWebViewApi {
       return { ok: false, value: null, error: "Unknown browser asset" };
     }
     const resizable = sample?.ext === "SVG" || sample?.ext === "OTF" || sample?.ext === "GLB";
-    return result({
+    return result<AssetProbe | null>({
       kind: resizable ? "procedural" : "raster",
       resizable: !!resizable,
       nativeWidth: null, nativeHeight: null,
@@ -488,7 +488,7 @@ export class WebFallbackBridge implements PyWebViewApi {
     }
     const width = Math.floor(clamp(requestedWidth || 850, 128, MAX_PREVIEW_DIMENSION));
     const height = Math.floor(clamp(requestedHeight || 850, 128, MAX_PREVIEW_DIMENSION));
-    return result({
+    return result<CalculatedDimensions | null>({
       width, height, longest: Math.max(width, height), aspect: width / height,
       kind: "procedural", resizable: true, nativeWidth: null, nativeHeight: null,
       maxDimension: MAX_PREVIEW_DIMENSION, upscaleCapped: false,
