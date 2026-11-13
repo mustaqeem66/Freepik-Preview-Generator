@@ -106,6 +106,14 @@ def plan_checks(
     return checks
 
 
+def frontend_deps_available(root: Path) -> bool:
+    """Recognize both legacy frontend and npm-workspace-hoisted installs."""
+    return any(
+        (path / "node_modules").is_dir()
+        for path in (root / "frontend", root)
+    )
+
+
 def run_checks(
     checks: list[Check], *, root: Path, report: Path, fail_fast: bool = False
 ) -> int:
@@ -116,11 +124,12 @@ def run_checks(
 
     if (
         any(check.name.startswith("frontend-") for check in checks)
-        and not (root / "frontend" / "node_modules").is_dir()
+        and not frontend_deps_available(root)
         and not any(check.name == "frontend-install" for check in checks)
     ):
         print(
-                "NOTICE: frontend/node_modules missing. Run 'cd frontend && npm ci' "
+                "NOTICE: npm dependencies missing from root/frontend node_modules. "
+                "Run 'cd frontend && npm ci' "
                 "or add --npm-ci to permit local dependency installation.",
                 flush=True,
             )
