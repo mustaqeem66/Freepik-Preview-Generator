@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { useBackend } from "./useBackend";
 import { ApiBridge } from "../api/bridge";
+import { WebFallbackBridge } from "../api/webFallbackBridge";
 
 describe("useBackend hook", () => {
   beforeEach(() => {
@@ -206,6 +207,7 @@ describe("useBackend hook", () => {
       canProbe: true,
       canPreview: true,
       canGenerate: true,
+      canBatchGenerate: true,
       canSaveSettings: true,
       canOpenReport: true,
     });
@@ -225,9 +227,24 @@ describe("useBackend hook", () => {
       canProbe: true,
       canPreview: false,
       canGenerate: false,
+      canBatchGenerate: false,
       canSaveSettings: true,
       canOpenReport: true,
     });
+  });
+
+  it("permits browser JPEG exports but not native batch generation or folder opening", async () => {
+    const browser = new WebFallbackBridge();
+    const spy = vi.spyOn(ApiBridge, "getApi").mockResolvedValue(browser);
+    const { result } = renderHook(() => useBackend());
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.isBrowserDemo).toBe(true);
+    expect(result.current.capabilities.canPreview).toBe(true);
+    expect(result.current.capabilities.canGenerate).toBe(true);
+    expect(result.current.capabilities.canBatchGenerate).toBe(false);
+    expect(result.current.capabilities.canOpenReport).toBe(false);
+    expect(result.current.capabilities.canBrowse).toBe(true);
+    spy.mockRestore();
   });
 
   it("reports no capabilities while disconnected", () => {
@@ -240,6 +257,7 @@ describe("useBackend hook", () => {
       canProbe: false,
       canPreview: false,
       canGenerate: false,
+      canBatchGenerate: false,
       canSaveSettings: false,
       canOpenReport: false,
     });

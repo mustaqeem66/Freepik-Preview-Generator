@@ -16,6 +16,8 @@ export interface BackendCapabilities {
   canProbe: boolean;
   canPreview: boolean;
   canGenerate: boolean;
+  /** Batch generation is a native-only operation, unlike single browser JPEG export. */
+  canBatchGenerate: boolean;
   canSaveSettings: boolean;
   canOpenReport: boolean;
 }
@@ -183,9 +185,10 @@ export function useBackend(): BackendState {
     canScan: hasApi,
     canProbe: hasApi,
     canSaveSettings: hasApi,
-    canOpenReport: hasApi,
+    canOpenReport: hasApi && !isBrowserDemo,
     canPreview: isReady,
     canGenerate: isReady,
+    canBatchGenerate: isReady && !isBrowserDemo,
   };
 
   return { status, isConnected, isBrowserDemo, hasApi, isReady, isConnecting, capabilities, retry };
