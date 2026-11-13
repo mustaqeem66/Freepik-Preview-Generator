@@ -1,5 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { WebFallbackBridge, isWebFallbackApi } from "./webFallbackBridge";
+import { SETTINGS_DEFAULTS } from "../generated/settingsContract";
+import type { PreviewState } from "../types";
 
 describe("unprivileged browser demo", () => {
   beforeEach(() => {
@@ -8,6 +10,7 @@ describe("unprivileged browser demo", () => {
   });
   afterEach(() => {
     delete window.__onScanFinished;
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -58,6 +61,43 @@ describe("unprivileged browser demo", () => {
     await vi.runAllTimersAsync();
     expect(finished.mock.calls[0][1].status).toBe("cancelled");
     expect(finished.mock.calls[0][1].files).toEqual([]);
+  });
+
+  it("renders rectangular exports without stretching the sample artwork", async () => {
+    const bridge = new WebFallbackBridge();
+    const ctx = {
+      fillRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
+      closePath: vi.fn(), fill: vi.fn(), fillText: vi.fn(), roundRect: vi.fn(),
+      save: vi.fn(), translate: vi.fn(), restore: vi.fn(),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx as never);
+    const access = bridge as unknown as {
+      draw: (path: string, state: PreviewState, width: number,
+        sourceOnly: boolean, height: number) => Promise<HTMLCanvasElement>;
+    };
+    const state = { ...SETTINGS_DEFAULTS, text: "" } as PreviewState;
+    const canvas = await access.draw("browser-demo://samples/glass.png", state, 900, false, 450);
+    expect([canvas.width, canvas.height]).toEqual([900, 450]);
+    expect(ctx.translate).toHaveBeenCalledWith(225, 0);
+    expect(ctx.restore).toHaveBeenCalledOnce();
+  });
+
+  it("downloads the independently requested width and height", async () => {
+    const bridge = new WebFallbackBridge();
+    const state = { ...SETTINGS_DEFAULTS, outputWidth: 1000, outputHeight: 500 } as PreviewState;
+    const exposed = bridge as unknown as {
+      render: (path: string, state: PreviewState, width: number,
+        sourceOnly: boolean, height: number) => Promise<string>;
+    };
+    const renderSpy = vi.spyOn(exposed, "render").mockResolvedValue("blob:preview-demo");
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const response = await bridge.export_preview("browser-demo://samples/glass.png", state);
+    expect(response.ok).toBe(true);
+    expect(response.value).toMatchObject({ width: 1000, height: 500 });
+    expect(renderSpy).toHaveBeenCalledWith(
+      "browser-demo://samples/glass.png", state, 1000, false, 500,
+    );
+    expect(clickSpy).toHaveBeenCalledOnce();
   });
 
   it("keeps browser settings local and does not restore filesystem grants", async () => {
