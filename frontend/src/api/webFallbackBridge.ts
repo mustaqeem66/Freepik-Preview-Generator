@@ -13,6 +13,8 @@ import { SETTINGS_DEFAULTS, SETTINGS_FIELDS } from "../generated/settingsContrac
 
 const DEMO_FOLDER = "browser-demo://samples";
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_BROWSER_FILES = 500;
+const MAX_TOTAL_BROWSER_BYTES = 256 * 1024 * 1024;
 const MAX_PREVIEW_DIMENSION = 1600;
 const SUPPORTED_BROWSER_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "gif", "svg"]);
 const SAMPLES: FileInfo[] = [
@@ -244,17 +246,26 @@ export class WebFallbackBridge implements PyWebViewApi {
   private importFiles(files: File[]): { files: FileInfo[]; rejected: string[] } {
     const added: FileInfo[] = [];
     const rejected: string[] = [];
-    for (const file of files.slice(0, 500)) {
+    // Multiple picker operations must not bypass the in-memory limits.
+    // Sum the existing selection before admitting another batch of uploads.
+    let retainedBytes = Array.from(this.files.values())
+      .reduce((total, item) => total + item.size, 0);
+    for (const file of files.slice(0, MAX_BROWSER_FILES)) {
       const ext = file.name.split(".").pop()?.toLowerCase() || "";
-      if (!SUPPORTED_BROWSER_EXTENSIONS.has(ext) || !file.size || file.size > MAX_FILE_BYTES) {
+      if (!SUPPORTED_BROWSER_EXTENSIONS.has(ext) || !file.size || file.size > MAX_FILE_BYTES ||
+          this.files.size >= MAX_BROWSER_FILES ||
+          retainedBytes + file.size > MAX_TOTAL_BROWSER_BYTES) {
         rejected.push(file.name);
         continue;
       }
       const info = fileInfo(file, ++this.serial);
       this.files.set(info.path, file);
+      retainedBytes += file.size;
       added.push(info);
     }
-    if (files.length > 500) rejected.push(`${files.length - 500} additional files (browser limit)`);
+    if (files.length > MAX_BROWSER_FILES) {
+      rejected.push(`${files.length - MAX_BROWSER_FILES} additional files (browser limit)`);
+    }
     return { files: added, rejected };
   }
 
