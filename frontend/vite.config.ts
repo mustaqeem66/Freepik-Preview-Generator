@@ -25,7 +25,19 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    port: 5173,
+    // Cloud/browser previews need a reachable interface, not loopback-only.
+    host: "0.0.0.0",
+    port: 3000,
+    strictPort: true,
+    // Restrict custom proxy hostnames to explicit trusted values rather than
+    // disabling Vite's DNS-rebinding protection with allowedHosts: true.
+    allowedHosts: process.env.PREVIEWGEN_ALLOWED_HOSTS?.split(",")
+      .map((host) => host.trim()).filter(Boolean) ?? [],
+  },
+  preview: {
+    host: "0.0.0.0",
+    port: 3000,
+    strictPort: true,
   },
   // @ts-expect-error vitest config extension
   test: {
