@@ -11,7 +11,7 @@ const MAX_STORED_BYTES = 16_384;
 export const STYLE_FIELDS = [
   "invertTriangles", "solidColor", "autoFrame", "frameMargin",
   "text", "position", "textPosX", "textPosY", "textColor",
-  "fontScale", "hasOutline", "outlineColor", "outlineThickness",
+  "fontSampleText", "fontScale", "hasOutline", "outlineColor", "outlineThickness",
   "opacity", "logoScale", "logoOpacity", "logoPosX", "logoPosY",
   "modelColor", "yaw", "pitch", "outputWidth", "outputHeight",
 ] as const satisfies readonly (keyof PreviewState)[];
