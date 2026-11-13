@@ -14,6 +14,11 @@ from PIL import Image, ImageDraw
 
 from previewgen import limits, proc
 from previewgen.config import PreviewConfig
+from previewgen.renderers.depth_rasterizer import (
+    MAX_DEPTH_DIMENSION,
+    MAX_DEPTH_TRIANGLES,
+    rasterize_depth_triangles,
+)
 from previewgen.renderers.proprietary import extract_blend_thumbnail
 
 # Archive assets are extracted to new temporary paths for each preview. During a
@@ -292,6 +297,28 @@ def render_3d_mesh(
     base_colors = face_colors[vis_order].astype(float) if face_colors is not None else default_base
     lit_colors = np.clip(intensity[:, None] * base_colors, 0, 255).astype(np.uint8)
     ordered_pts = pts_2d[faces[vis_order]]  # shape: (N, 3, 2)
+
+    # Prefer exact per-pixel visibility for bounded, small previews. On large
+    # images/dense meshes retain the established painter/subpixel fallback.
+    # The rasterizer validates its own total pixel-work budget before drawing.
+    if (
+        W <= MAX_DEPTH_DIMENSION
+        and H <= MAX_DEPTH_DIMENSION
+        and len(vis_order) <= MAX_DEPTH_TRIANGLES
+    ):
+        depth_triangles = np.concatenate(
+            (ordered_pts, z[faces[vis_order], None]), axis=2
+        )
+        try:
+            depth_image = rasterize_depth_triangles(depth_triangles, lit_colors, W, H)
+            if depth_image.getbbox() is not None:
+                return depth_image
+        except ValueError as exc:
+            # A valid mesh with oversized projected triangle bounds must still
+            # render using the bounded painter path. Unexpected malformed
+            # geometry is not silently reclassified as an admissible fallback.
+            if "pixel-work budget" not in str(exc):
+                raise
 
     result_img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
 
