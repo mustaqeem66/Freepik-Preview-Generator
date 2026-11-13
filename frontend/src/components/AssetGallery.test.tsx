@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { Profiler } from "react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AssetGallery } from "./AssetGallery";
 import { FileList } from "./FileList";
 import { ApiBridge, bridgeEvents } from "../api/bridge";
@@ -48,11 +49,34 @@ describe("Asset gallery", () => {
     await waitFor(() => expect(requested.length).toBeGreaterThan(0));
     expect(requested[0].length).toBeLessThanOrEqual(16);
     expect(requested[0].length).toBeLessThan(20000);
-    bridgeEvents.emit("thumbnail.ready", {
+    act(() => bridgeEvents.emit("thumbnail.ready", {
       path: "/art/0.png", url: "http://127.0.0.1:4567/token/1.jpg",
-    });
+    }));
     await waitFor(() => expect(document.querySelector(".gallery-art img")?.getAttribute("src"))
       .toBe("http://127.0.0.1:4567/token/1.jpg"));
+  });
+
+  it("does not rerender on repeated identical thumbnail events", () => {
+    vi.spyOn(ApiBridge, "getApi").mockResolvedValue(undefined);
+    const onRender = vi.fn();
+    render(<Profiler id="gallery" onRender={onRender}>
+      <AssetGallery files={makeFiles(2)} matchedIndices={null}
+        activeIndex={0} onSelect={() => {}} height={260} enabled />
+    </Profiler>);
+    act(() => bridgeEvents.emit("thumbnail.ready", {
+      path: "/art/0.png", url: "/preview/0.jpg",
+    }));
+    expect(document.querySelector(".gallery-art img")?.getAttribute("src")).toBe("/preview/0.jpg");
+    const commits = onRender.mock.calls.length;
+    act(() => bridgeEvents.emit("thumbnail.ready", {
+      path: "/art/0.png", url: "/preview/0.jpg",
+    }));
+    expect(onRender).toHaveBeenCalledTimes(commits);
+
+    act(() => bridgeEvents.emit("thumbnail.failed", { path: "/art/0.png" }));
+    const failedCommits = onRender.mock.calls.length;
+    act(() => bridgeEvents.emit("thumbnail.failed", { path: "/art/0.png" }));
+    expect(onRender).toHaveBeenCalledTimes(failedCommits);
   });
 
   it("keeps searching and selection when switching between list and gallery", () => {

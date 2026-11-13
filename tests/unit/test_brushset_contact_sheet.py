@@ -5,8 +5,8 @@ import io
 import zipfile
 from pathlib import Path
 
-from PIL import Image
 import pytest
+from PIL import Image
 
 from previewgen.config import PreviewConfig
 from previewgen.renderers.creator import _load_brushset_contact_sheet
@@ -44,7 +44,7 @@ def test_four_nested_brush_tips_are_visible_in_synthetic_contact_sheet(tmp_path:
     )
     assert sheet.size == (400, 400)
     assert path.read_bytes() == original
-    for point, expected in zip([(100, 100), (300, 100), (100, 300), (300, 300)], colors):
+    for point, expected in zip([(100, 100), (300, 100), (100, 300), (300, 300)], colors, strict=True):
         assert sheet.getpixel(point)[:3] == expected
 
 

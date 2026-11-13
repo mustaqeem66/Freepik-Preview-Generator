@@ -12,6 +12,25 @@ const MAX_VISIBLE = 16;
 function keepVisible(old: Record<string, string>, paths: Iterable<string>): Record<string, string> {
   const next: Record<string, string> = {};
   for (const path of paths) if (old[path]) next[path] = old[path];
+  const keys = Object.keys(old);
+  // Keep React state stable when the visible thumbnail set did not change.
+  return keys.length === Object.keys(next).length && keys.every((key) => next[key] === old[key])
+    ? old : next;
+}
+
+function mergeVisible(
+  old: Record<string, string>, paths: Iterable<string>, incoming: Record<string, string>
+): Record<string, string> {
+  const visible = keepVisible(old, paths);
+  let next = visible;
+  for (const path of paths) {
+    const url = incoming[path];
+    // Only accept thumbnails for the requested visible set.
+    if (url && next[path] !== url) {
+      if (next === visible) next = { ...visible };
+      next[path] = url;
+    }
+  }
   return next;
 }
 
@@ -63,11 +82,16 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
           next.delete(path);
           return next;
         });
-        setImages((old) => ({ ...old, [path]: url }));
+        setImages((old) => old[path] === url ? old : { ...old, [path]: url });
       }
     });
     const unFailed = bridgeEvents.subscribe("thumbnail.failed", ({ path }) => {
-      if (wantedRef.current.has(path)) setFailed((old) => new Set(old).add(path));
+      if (wantedRef.current.has(path)) setFailed((old) => {
+        if (old.has(path)) return old;
+        const next = new Set(old);
+        next.add(path);
+        return next;
+      });
     });
     return () => { unReady(); unFailed(); };
   }, []);
@@ -76,7 +100,10 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
     const wanted: string[] = JSON.parse(pathsKey) as string[];
     wantedRef.current = new Set(wanted);
     setImages((old) => keepVisible(old, wanted));
-    setFailed((old) => new Set([...old].filter((p) => wantedRef.current.has(p))));
+    setFailed((old) => {
+      const next = new Set([...old].filter((p) => wantedRef.current.has(p)));
+      return next.size === old.size ? old : next;
+    });
     const generation = ++generationRef.current;
     // Debounce fast wheel navigation. Only the latest visible set reaches Python.
     const timer = window.setTimeout(async () => {
@@ -87,7 +114,7 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
         const response = await api.request_thumbnails(wanted);
         if (generation !== generationRef.current || !response?.ok || !response.value) return;
         const cached = response.value;
-        setImages((old) => ({ ...keepVisible(old, wanted), ...cached }));
+        setImages((old) => mergeVisible(old, wanted, cached));
       } catch {
         // Gallery falls back to format tiles while the backend is unavailable.
       }
@@ -107,12 +134,7 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
         if (!result.ok || !result.value) return;
         const returned = result.value;
         setImages((old) => {
-          const current = wantedRef.current;
-          const visible = keepVisible(old, current);
-          for (const [path, url] of Object.entries(returned)) {
-            if (current.has(path)) visible[path] = url;
-          }
-          return visible;
+          return mergeVisible(old, wantedRef.current, returned);
         });
       } catch { /* The icon placeholder remains available offline. */ }
     }, 60_000);
@@ -191,7 +213,12 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
                 <span className="gallery-art" aria-hidden="true">
                   {image && !imageFailed
                     ? <img src={image} loading="lazy" decoding="async"
-                        onError={() => setFailed((old) => new Set(old).add(file.path))} alt="" />
+                        onError={() => setFailed((old) => {
+                          if (old.has(file.path)) return old;
+                          const next = new Set(old);
+                          next.add(file.path);
+                          return next;
+                        })} alt="" />
                     : imageFailed ? <ImageOff size={23} strokeWidth={1.4}/> :
                       <FileImage size={23} strokeWidth={1.4}/>}
                 </span>

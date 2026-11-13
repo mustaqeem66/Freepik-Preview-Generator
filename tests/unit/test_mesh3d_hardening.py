@@ -180,3 +180,55 @@ def test_backfacing_mesh_renders_two_sided():
     mesh.face_normals = np.tile([0.0, 0.0, -1.0], (len(mesh.faces), 1))
     image = render_3d_mesh(mesh, target_dimension=64)
     assert np.asarray(image)[:, :, 3].any()
+
+
+def test_bounded_mesh_preview_uses_depth_buffer_for_crossing_triangles():
+    from previewgen.renderers.mesh3d import render_3d_mesh
+
+    # Same projected triangles, but red crosses through the blue flat face.
+    # Average-depth sorting alone would make the blue face win everywhere.
+    vertices = np.array([
+        [-1., -1., -0.8], [1., -1., 0.8], [-1., 1., -0.8],
+        [-1., -1., 0.0], [1., -1., 0.0], [-1., 1., 0.0],
+    ])
+    mesh = SimpleNamespace(
+        vertices=vertices,
+        faces=np.array([[0, 1, 2], [3, 4, 5]], dtype=np.int64),
+        face_normals=np.array([[0., 0., 1.], [0., 0., 1.]]),
+        visual=SimpleNamespace(
+            defined=True,
+            face_colors=np.array([[240, 20, 20, 255], [20, 20, 240, 255]], dtype=np.uint8),
+        ),
+    )
+    image = render_3d_mesh(mesh, yaw_deg=0, pitch_deg=0, target_dimension=128)
+    colors = list(image.getdata())
+    assert any(r > b * 2 and a == 255 for r, g, b, a in colors)
+    assert any(b > r * 2 and a == 255 for r, g, b, a in colors)
+
+
+def test_depth_budget_rejection_keeps_painter_fallback(monkeypatch):
+    from previewgen.renderers import mesh3d
+
+    mesh = _uv_sphere(nu=8, nv=5)
+    attempted = []
+
+    def over_budget(*args, **kwargs):
+        attempted.append(True)
+        raise ValueError("Depth rasterizer pixel-work budget exceeded")
+
+    monkeypatch.setattr(mesh3d, "rasterize_depth_triangles", over_budget)
+    image = mesh3d.render_3d_mesh(mesh, target_dimension=128)
+    assert attempted == [True]
+    assert image.getbbox() is not None
+
+
+def test_large_canvas_avoids_bounded_depth_kernel(monkeypatch):
+    from previewgen.renderers import mesh3d
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Large canvases must keep the painter renderer")
+
+    monkeypatch.setattr(mesh3d, "rasterize_depth_triangles", unexpected)
+    image = mesh3d.render_3d_mesh(_uv_sphere(nu=8, nv=5), target_dimension=600)
+    assert image.size == (600, 600)
+    assert image.getbbox() is not None
