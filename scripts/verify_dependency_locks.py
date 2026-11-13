@@ -100,6 +100,64 @@ def npm_issues(manifest_path: Path, lock_path: Path) -> list[str]:
     return problems
 
 
+
+def expected_workspace_lock(root_manifest: dict, frontend_manifest: dict, frontend_lock: dict) -> dict:
+    """Derive the root npm workspace lock from the canonical frontend lock.
+
+    The canonical frontend/package-lock.json is retained for desktop builds;
+    npm ci in a nested workspace resolves its workspace-root lock instead.
+    Only the two virtual workspace entries are introduced. Registry artifacts
+    and their integrity digests must match the canonical frontend lock exactly.
+    """
+    if root_manifest.get("private") is not True or root_manifest.get("workspaces") != ["frontend"]:
+        raise ValueError("root package must declare private frontend workspace")
+    if root_manifest.get("version") != frontend_manifest.get("version"):
+        raise ValueError("root and frontend package versions differ")
+    packages = frontend_lock.get("packages")
+    if not isinstance(packages, dict) or not isinstance(packages.get(""), dict):
+        raise ValueError("frontend npm lock lacks root package metadata")
+    if packages[""].get("version") != frontend_manifest.get("version"):
+        raise ValueError("frontend lock root version differs from package.json")
+    if frontend_lock.get("lockfileVersion") != 3:
+        raise ValueError("frontend npm lockfileVersion must be 3")
+    if any(not path.startswith("node_modules/") for path in packages if path):
+        raise ValueError("frontend lock contains unexpected non-registry workspace entries")
+    return {
+        "name": root_manifest["name"],
+        "version": root_manifest["version"],
+        "lockfileVersion": 3,
+        "requires": True,
+        "packages": {
+            "": {
+                "name": root_manifest["name"],
+                "version": root_manifest["version"],
+                "workspaces": ["frontend"],
+            },
+            "frontend": packages[""],
+            "node_modules/frontend": {"resolved": "frontend", "link": True},
+            **{path: entry for path, entry in packages.items() if path},
+        },
+    }
+
+
+def workspace_lock_issues(root: Path) -> list[str]:
+    """Reject missing or stale root lock metadata before npm ci runs."""
+    try:
+        root_manifest = json.loads((root / "package.json").read_text(encoding="utf-8"))
+        frontend_manifest = json.loads((root / "frontend/package.json").read_text(encoding="utf-8"))
+        frontend_lock = json.loads((root / "frontend/package-lock.json").read_text(encoding="utf-8"))
+        root_lock = json.loads((root / "package-lock.json").read_text(encoding="utf-8"))
+        expected = expected_workspace_lock(root_manifest, frontend_manifest, frontend_lock)
+    except (OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
+        return [f"root workspace lock unavailable or invalid ({type(exc).__name__}): {exc}"]
+    if root_lock != expected:
+        return [
+            "root package-lock.json disagrees with frontend/package-lock.json; "
+            "run python scripts/sync_root_workspace_lock.py"
+        ]
+    return []
+
+
 def check_locks(root: Path) -> list[str]:
     problems: list[str] = []
     versions: dict[str, dict[str, str]] = {}
@@ -129,6 +187,7 @@ def check_locks(root: Path) -> list[str]:
         problems.extend(npm_issues(root / "frontend/package.json", root / "frontend/package-lock.json"))
     except (OSError, UnicodeError, ValueError, TypeError, json.JSONDecodeError) as exc:
         problems.append(f"frontend: invalid npm lock or manifest ({type(exc).__name__})")
+    problems.extend(workspace_lock_issues(root))
     return problems
 
 
