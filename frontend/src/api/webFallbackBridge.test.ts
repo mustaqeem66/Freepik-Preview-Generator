@@ -100,6 +100,31 @@ describe("unprivileged browser demo", () => {
     expect(clickSpy).toHaveBeenCalledOnce();
   });
 
+  it("caps cumulative retained browser uploads across repeated file picks", async () => {
+    const bridge = new WebFallbackBridge();
+    const privateApi = bridge as unknown as {
+      importFiles: (files: File[]) => { files: { path: string }[]; rejected: string[] };
+    };
+    const light = new File(["a"], "sample.png", { type: "image/png" });
+    const first = privateApi.importFiles(Array.from({ length: 350 }, () => light));
+    expect(first.files).toHaveLength(350);
+    const second = privateApi.importFiles(Array.from({ length: 200 }, () => light));
+    expect(second.files).toHaveLength(150);
+    expect(second.rejected).toHaveLength(50);
+
+    // File metadata can be simulated without allocating 300 MB of file data.
+    const big = { name: "big.png", size: 25 * 1024 * 1024 } as File;
+    const fresh = new WebFallbackBridge() as unknown as typeof privateApi;
+    const memory = fresh.importFiles(Array.from({ length: 12 }, () => big));
+    expect(memory.files).toHaveLength(10);
+    expect(memory.rejected).toHaveLength(2);
+
+    // Clear should reset both quotas.
+    const cleared = await bridge.clear_selected_files();
+    expect(cleared.ok).toBe(true);
+    expect(privateApi.importFiles([light]).files).toHaveLength(1);
+  });
+
   it("sanitizes browser storage and never persists native file paths", async () => {
     localStorage.setItem("previewgen.browserDemo.v1", JSON.stringify({
       inputFolder: "/untrusted/input", outputFolder: "/private/output",
