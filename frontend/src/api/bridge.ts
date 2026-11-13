@@ -120,6 +120,10 @@ export class ApiBridge {
     if (this.cachedApi) {
       return this.cachedApi;
     }
+    // Once a browser demo has started, do not wait for a non-existent native
+    // bridge on every slider adjustment. A newly injected native API still
+    // takes precedence above this branch.
+    if (this.browserDemo && !window.pywebview) return this.browserDemo;
 
     const deadline = Date.now() + maxWaitMs;
 
