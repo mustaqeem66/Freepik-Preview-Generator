@@ -9,20 +9,19 @@ from pathlib import Path
 
 from PIL import Image
 
-from previewgen import config as previewgen_config
-from previewgen import limits
+from previewgen import config as previewgen_config, limits
 from previewgen.config import PreviewConfig
 from previewgen.renderers.animation import animated_contact_sheet
 from previewgen.renderers.cad import _load_cad_solid, _load_dwg, _load_dxf
 from previewgen.renderers.creator import (
     _load_abr,
     _load_affinity,
+    _load_brushset_contact_sheet,
     _load_clip,
     _load_indd,
     _load_kra,
     _load_procreate,
     _load_procreate_brush,
-    _load_brushset_contact_sheet,
 )
 from previewgen.renderers.font import _load_font
 from previewgen.renderers.mesh3d import _load_3d
@@ -145,7 +144,7 @@ def load_source_image(
             img.load()
             from PIL import ImageOps
             img = ImageOps.exif_transpose(img) or img
-    
+
             if img.mode in ("I;16", "I;16L", "I;16B", "I;16N"):
                 import numpy as np
                 arr = (np.array(img, dtype=np.float32) / 256.0).clip(0, 255).astype(np.uint8)
