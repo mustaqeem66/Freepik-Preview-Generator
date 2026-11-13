@@ -159,6 +159,7 @@ class PreviewConfig:
     logo_pos_y: float = 0.05              # Logo vertical position (0.0 to 1.0)
     # Custom Font Support
     font_path: str = ""                   # Path to custom .ttf/.otf font file
+    font_sample_text: str = "The quick brown fox jumps over the lazy dog."
     overwrite_policy: str = "rename"      # rename, skip, overwrite
     # Export resolution (longest edge, in pixels). 0 = native / renderer default.
     # Resizable assets (vector / re-rendered formats) may scale up to
@@ -199,6 +200,7 @@ class PreviewConfig:
             "logoPath", "logo_path", "logoScale", "logo_scale",
             "logoOpacity", "logo_opacity", "logoPosX", "logo_pos_x",
             "logoPosY", "logo_pos_y", "fontPath", "font_path",
+            "fontSampleText", "font_sample_text",
             "overwritePolicy", "overwrite_policy", "theme", "inputFolder", "outputFolder", "sameFolder",
             "desktopNotifications",
             "outputWidth", "output_width", "outputHeight", "output_height",
@@ -310,6 +312,21 @@ class PreviewConfig:
         raw_text = mapping.get("text", DEFAULT_TEXT)
         text = str(raw_text)[:100] if raw_text is not None else DEFAULT_TEXT
 
+        # Font card captions must be finite, printable and bounded before Pillow
+        # measures glyphs. This applies to both previews and strict exports.
+        raw_font_sample = mapping.get(
+            "fontSampleText", mapping.get("font_sample_text", "The quick brown fox jumps over the lazy dog.")
+        )
+        if not isinstance(raw_font_sample, str):
+            if is_strict:
+                raise ValueError("fontSampleText must be a string")
+            raw_font_sample = "The quick brown fox jumps over the lazy dog."
+        if is_strict and (len(raw_font_sample) > 120 or not raw_font_sample.isprintable()):
+            raise ValueError("fontSampleText must be printable and at most 120 characters")
+        font_sample_text = "".join(ch if ch.isprintable() else " " for ch in raw_font_sample).strip()[:120]
+        if not font_sample_text:
+            font_sample_text = "The quick brown fox jumps over the lazy dog."
+
         # Allowed position presets
         raw_pos = str(mapping.get("position", "custom")).strip().lower()
         valid_positions = {"top-left", "top-right", "center", "bottom-left", "bottom-right", "custom", "tiled"}
@@ -388,6 +405,7 @@ class PreviewConfig:
             logo_pos_x=logo_pos_x,
             logo_pos_y=logo_pos_y,
             font_path=font_path,
+            font_sample_text=font_sample_text,
             overwrite_policy=overwrite_policy,
             output_width=_safe_int(
                 mapping.get("outputWidth", mapping.get("output_width")), 0, 0, MAX_EXPORT_DIMENSION, "outputWidth"
