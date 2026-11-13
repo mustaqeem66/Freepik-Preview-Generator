@@ -100,6 +100,37 @@ describe("unprivileged browser demo", () => {
     expect(clickSpy).toHaveBeenCalledOnce();
   });
 
+  it("sanitizes browser storage and never persists native file paths", async () => {
+    localStorage.setItem("previewgen.browserDemo.v1", JSON.stringify({
+      inputFolder: "/untrusted/input", outputFolder: "/private/output",
+      logoPath: "/private/logo.svg", fontPath: "/private/font.otf",
+      theme: "neon", solidColor: "red", outputWidth: 1_000_000,
+      text: "Studio",
+    }));
+    const bridge = new WebFallbackBridge();
+    const initial = (await bridge.get_initial_state()).value;
+    expect(initial.inputFolder).toBe("browser-demo://samples");
+    expect(initial.outputFolder).toBe("Browser Downloads");
+    expect(initial.logoPath).toBe("");
+    expect(initial.fontPath).toBe("");
+    expect(initial.theme).toBe("light");
+    expect(initial.solidColor).toBe("#FFFFFF");
+    expect(initial.outputWidth).toBe(8192);
+    expect(initial.text).toBe("Studio");
+
+    const saved = await bridge.save_settings({
+      ...SETTINGS_DEFAULTS,
+      inputFolder: "/secret", outputFolder: "/secret", logoPath: "/logo.svg",
+      fontPath: "/font.otf",
+    } as PreviewState);
+    expect(saved.ok).toBe(true);
+    const stored = JSON.parse(localStorage.getItem("previewgen.browserDemo.v1") || "{}");
+    expect(stored.inputFolder).toBeUndefined();
+    expect(stored.outputFolder).toBeUndefined();
+    expect(stored.logoPath).toBeUndefined();
+    expect(stored.fontPath).toBeUndefined();
+  });
+
   it("keeps browser settings local and does not restore filesystem grants", async () => {
     const bridge = new WebFallbackBridge();
     const initial = (await bridge.get_initial_state()).value;
