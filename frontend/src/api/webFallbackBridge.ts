@@ -272,7 +272,7 @@ export class WebFallbackBridge implements PyWebViewApi {
   async browse_logo(): Promise<string> { return ""; }
   async browse_font(): Promise<string> { return ""; }
 
-  async open_folder(): Promise<{ ok: boolean; value: boolean | null; error: string | null }> {
+  async open_folder(_path: string): Promise<{ ok: boolean; value: boolean | null; error: string | null }> {
     return { ok: false, value: null, error: "Browser mode cannot open local folders" };
   }
 
@@ -520,12 +520,16 @@ export class WebFallbackBridge implements PyWebViewApi {
     }
   }
 
-  async start_batch(): Promise<{ ok: boolean; error?: string }> {
+  async start_batch(
+    _inputFolder: string, _outputFolder: string, _config: PreviewState
+  ): Promise<{ ok: boolean; error?: string }> {
     return { ok: false, error: "Batch exports require PreviewGen Desktop. Browser demo supports one JPEG download at a time." };
   }
 
-  async start_batch_files(): Promise<{ ok: boolean; error?: string }> {
-    return this.start_batch();
+  async start_batch_files(
+    _files: string[], _outputFolder: string, _config: PreviewState
+  ): Promise<{ ok: boolean; error?: string }> {
+    return { ok: false, error: "Batch exports require PreviewGen Desktop. Browser demo supports one JPEG download at a time." };
   }
 
   async cancel_batch(): Promise<{ ok: boolean }> { return { ok: true }; }
