@@ -95,7 +95,11 @@ def load_source_image(
         return _load_abr(source_path)
 
     if ext in (".ttf", ".otf", ".woff", ".woff2"):
-        return _load_font(source_path, target_dimension=target_dimension or max_dimension or 2400)
+        return _load_font(
+            source_path,
+            target_dimension=target_dimension or max_dimension or 2400,
+            sample_text=(config.font_sample_text if config is not None else PreviewConfig().font_sample_text),
+        )
 
     if ext == ".psd":
         return _load_psd(source_path)
