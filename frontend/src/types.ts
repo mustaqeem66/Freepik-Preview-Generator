@@ -75,6 +75,8 @@ export interface PreviewState {
   textPosY: number;
   textColor: string;
   fontPath: string;
+  /** Editable phrase displayed on .ttf/.otf/.woff/.woff2 specimen cards. */
+  fontSampleText?: string;
   fontScale: number;
   hasOutline: boolean;
   outlineColor: string;

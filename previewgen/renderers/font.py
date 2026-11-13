@@ -12,6 +12,8 @@ from pathlib import Path
 from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFont
 
+DEFAULT_FONT_SAMPLE_TEXT = "The quick brown fox jumps over the lazy dog."
+
 
 def load_typeface(source_path: Path, size: int) -> ImageFont.FreeTypeFont:
     """Load the selected face, including decoded WOFF containers; never substitute."""
@@ -79,7 +81,11 @@ def _fit_line(
     return text[:accepted] + suffix, best
 
 
-def _load_font(source_path: Path, target_dimension: int = 2400) -> Image.Image:
+def _load_font(
+    source_path: Path,
+    target_dimension: int = 2400,
+    sample_text: str = DEFAULT_FONT_SAMPLE_TEXT,
+) -> Image.Image:
     """Render a high-resolution typography specimen card for font files."""
     W, H = target_dimension, target_dimension
     ext = source_path.suffix.lower()
@@ -169,7 +175,7 @@ def _load_font(source_path: Path, target_dimension: int = 2400) -> Image.Image:
 
     # 5. Classic Pangram
     specimen_text(card_y + int(H * 0.82),
-                  "The quick brown fox jumps over the lazy dog.",
+                  sample_text,
                   font_pangram, (15, 23, 42, 255))
 
     return img

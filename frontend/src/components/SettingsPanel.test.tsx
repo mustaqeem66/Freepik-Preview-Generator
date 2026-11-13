@@ -69,6 +69,17 @@ describe("SettingsPanel", () => {
     expect(screen.getByText(/previews up to nine tips/)).toBeInTheDocument();
   });
 
+  it("offers a bounded editable font specimen phrase", () => {
+    const onChange = vi.fn();
+    render(<SettingsPanel state={{ ...STATE, fontSampleText: "Studio Demo" }}
+      onChange={onChange} onBrowseLogo={() => {}} onBrowseFont={() => {}} is3D={false} />);
+    const phrase = screen.getByRole("textbox", { name: "Font specimen phrase" }) as HTMLInputElement;
+    expect(phrase).toHaveValue("Studio Demo");
+    expect(phrase.maxLength).toBe(120);
+    fireEvent.change(phrase, { target: { value: "Freepik Brand" } });
+    expect(onChange).toHaveBeenCalledWith({ fontSampleText: "Freepik Brand" });
+  });
+
   it("shows the camera section only for 3D assets", () => {
     renderPanel(false);
     expect(screen.queryByText(/3d camera/i)).not.toBeInTheDocument();

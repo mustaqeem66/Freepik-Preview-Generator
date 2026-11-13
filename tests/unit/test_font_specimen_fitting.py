@@ -56,3 +56,33 @@ def test_extreme_label_is_bounded_and_indicated():
     assert text.endswith("...")
     assert len(text) < 2000
     assert draw.textbbox((0, 0), text, font=face)[2] <= 200
+
+
+
+def test_custom_font_specimen_phrase_is_rendered(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(font_renderer, "load_typeface", lambda _path, size: _font(size))
+    values = []
+    original_text = ImageDraw.ImageDraw.text
+
+    def capture(self, xy, value, *args, **kwargs):
+        values.append(value)
+        return original_text(self, xy, value, *args, **kwargs)
+
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", capture)
+    image = font_renderer._load_font(
+        tmp_path / "brand.otf", target_dimension=850, sample_text="Preview Studio Brand"
+    )
+    assert image.getbbox() is not None
+    assert "Preview Studio Brand" in values
+    assert "The quick brown fox jumps over the lazy dog." not in values
+
+
+def test_font_sample_text_config_sanitization_and_strict_bounds():
+    from previewgen.config import PreviewConfig
+
+    assert PreviewConfig.from_mapping({"fontSampleText": "Hello\nWorld"}).font_sample_text == "Hello World"
+    assert PreviewConfig.from_mapping({"fontSampleText": "X" * 300}).font_sample_text == "X" * 120
+    with pytest.raises(ValueError, match="fontSampleText"):
+        PreviewConfig.from_mapping({"fontSampleText": "X" * 121}, mode="strict-export")
+    with pytest.raises(ValueError, match="fontSampleText"):
+        PreviewConfig.from_mapping({"fontSampleText": "Line\nBreak"}, mode="strict-export")
