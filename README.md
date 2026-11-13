@@ -331,6 +331,27 @@ page reloads. On native desktop startup, the real `window.pywebview.api` always
 takes priority, and automated Vitest bridge tests never enable the browser demo.
 Never treat the browser demo as proof that desktop image-renderer parity is certified.
 
+### Dependency lock maintenance (npm workspaces)
+
+The desktop frontend remains the canonical npm dependency manifest under
+`frontend/package.json` and `frontend/package-lock.json`. Because the root
+`package.json` declares an npm workspace for the cloud preview, **npm ci
+resolves its lockfile from the repository root**, even when invoked from
+`frontend/`. Both lockfiles are therefore committed intentionally.
+
+After making a trusted dependency update to the frontend lock, regenerate the
+workspace lock **offline**, then verify the two locks and all artifact hashes:
+
+```bash
+python scripts/sync_root_workspace_lock.py
+python scripts/verify_dependency_locks.py
+cd frontend && npm ci
+```
+
+Do not copy or fabricate integrity digests. Verify new artifact hashes against
+the official npm registry; commit both lockfiles in the same dependency PR.
+The integrity checker is structural, not a substitute for a live advisory audit.
+
 ### 💻 Run locally
 
 CI uses **Python 3.12.8** and **Node.js 24.15.0**.
