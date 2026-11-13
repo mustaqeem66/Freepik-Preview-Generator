@@ -81,7 +81,7 @@ export default function App() {
   const widthBudget = viewportWidth - (viewportWidth > 1100 ? 36 : 20) - 16;
   const actualLibraryWidth = Math.min(libraryWidth, Math.max(200, widthBudget - inspectorWidth - 292));
   const actualInspectorWidth = Math.min(inspectorWidth, Math.max(260, widthBudget - actualLibraryWidth - 292));
-  const { status, capabilities, retry } = useBackend();
+  const { status, capabilities, retry, isBrowserDemo } = useBackend();
   const [notices, setNotices] = useState<NoticeMessage[]>([]);
   const showNotice = useCallback((notice: NoticeMessage) => {
     setNotices((previous) => [...previous.filter((item) => item.id !== notice.id), notice]);
@@ -374,6 +374,11 @@ export default function App() {
           {state.theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}</button>
       </div>
     </header>
+    {isBrowserDemo && <div className="connection-banner" role="status">
+      Browser demo — four synthetic example assets and your own PNG/JPEG/WebP/GIF/SVG files
+      render through HTML Canvas. No native folders, Python format decoders, or batch exports
+      are available. Single JPGs download through your browser.
+    </div>}
     {status !== "ready" && <div className="connection-banner" role="status">
       <span>{status === "connecting" ? "Connecting to the desktop backend…" : status === "degraded"
         ? "The backend is connected but not ready to render." : "Desktop backend disconnected. File and export actions are unavailable."}</span>
