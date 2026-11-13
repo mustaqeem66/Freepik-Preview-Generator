@@ -7,8 +7,8 @@ import sys
 import types
 from pathlib import Path
 
-from PIL import Image
 import pytest
+from PIL import Image
 
 from previewgen.config import MAX_EMBEDDED_THUMBNAIL_BYTES
 from previewgen.renderers.cad import extract_dwg_thumbnail

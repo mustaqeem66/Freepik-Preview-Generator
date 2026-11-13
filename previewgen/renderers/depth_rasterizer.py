@@ -106,7 +106,7 @@ def rasterize_depth_triangles(
     depth = np.full((height, width), -np.inf, dtype=np.float64)
     work = 0
 
-    for index, (triangle, color) in enumerate(zip(triangles, colors)):
+    for index, (triangle, color) in enumerate(zip(triangles, colors, strict=True)):
         x0, y0, z0 = triangle[0]
         x1, y1, z1 = triangle[1]
         x2, y2, z2 = triangle[2]

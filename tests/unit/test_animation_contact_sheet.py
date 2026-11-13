@@ -35,9 +35,9 @@ def test_four_frame_gif_centers_are_distinct_and_default_stays_first(tmp_path: P
         sheet = animated_contact_sheet(source)
         assert source.size == before_size
     assert sheet.size == (120, 120)
-    for point, expected in zip([(30, 30), (90, 30), (30, 90), (90, 90)], colors):
+    for point, expected in zip([(30, 30), (90, 30), (30, 90), (90, 90)], colors, strict=True):
         actual = sheet.getpixel(point)[:3]
-        assert all(abs(a - b) <= 5 for a, b in zip(actual, expected)), (point, actual, expected)
+        assert all(abs(a - b) <= 5 for a, b in zip(actual, expected, strict=True)), (point, actual, expected)
 
     loaded = load_source_image(path, config=config)
     assert loaded.tobytes() == sheet.tobytes()
