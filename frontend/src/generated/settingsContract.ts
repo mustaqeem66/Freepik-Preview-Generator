@@ -24,6 +24,7 @@ export const SETTINGS_DEFAULTS = {
   "textPosY": 5,
   "textColor": "#FFFFFF",
   "fontPath": "",
+  "fontSampleText": "The quick brown fox jumps over the lazy dog.",
   "fontScale": 100,
   "hasOutline": true,
   "outlineColor": "#000000",
@@ -155,6 +156,11 @@ export const SETTINGS_FIELDS: readonly SettingsField[] = [
   {
     "name": "fontPath",
     "type": "string"
+  },
+  {
+    "name": "fontSampleText",
+    "type": "string",
+    "maxLength": 120
   },
   {
     "name": "fontScale",
