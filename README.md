@@ -300,6 +300,30 @@ flowchart LR
     EXPORT --> FILES
 ```
 
+### Browser-only demo (no native filesystem permissions)
+
+You can inspect the React studio in an ordinary web browser:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Without pywebview, the studio switches to a clearly labeled **browser demo** after the
+normal native bridge handshake expires. It provides four **synthetic** demonstration
+assets (SVG icon, illustrative 3D prism, illustrative font specimen and PNG UI card),
+supports the browser's selected PNG/JPEG/WebP/GIF/SVG files through HTML Canvas,
+and can download a **single JPEG** through your browser. These example illustrations
+do **not** parse real GLB or OTF data.
+
+The browser mode **cannot** open arbitrary local paths, decode native CAD/creator
+formats through Python, access the desktop settings/log folders, or run batch
+exports. Browser-selected files remain in memory only and are cleared when the
+page reloads. On native desktop startup, the real `window.pywebview.api` always
+takes priority, and automated Vitest bridge tests never enable the browser demo.
+Never treat the browser demo as proof that desktop image-renderer parity is certified.
+
 ### 💻 Run locally
 
 CI uses **Python 3.12.8** and **Node.js 24.15.0**.

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ApiBridge } from "../api/bridge";
+import { isWebFallbackApi } from "../api/webFallbackBridge";
 
 export type BackendStatus = "connecting" | "connected" | "ready" | "degraded" | "disconnected";
 
@@ -22,6 +23,7 @@ export interface BackendCapabilities {
 export interface BackendState {
   status: BackendStatus;
   isConnected: boolean;
+  isBrowserDemo: boolean;
   hasApi: boolean;
   isReady: boolean;
   isConnecting: boolean;
@@ -41,6 +43,7 @@ const RETRY_DELAY_BASE = 1000; // 1 second base delay
 
 export function useBackend(): BackendState {
   const [status, setStatus] = useState<BackendStatus>("connecting");
+  const [isBrowserDemo, setIsBrowserDemo] = useState(false);
   const retryCountRef = useRef(0);
   const retryTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
@@ -65,11 +68,13 @@ export function useBackend(): BackendState {
       const api = await ApiBridge.getApi(4000);
       if (!isLatest()) return { success: false, accepted: false };
       if (!api) {
+        setIsBrowserDemo(false);
         setStatus("disconnected");
         return { success: false, accepted: true };
       }
 
       try {
+        if (isLatest()) setIsBrowserDemo(isWebFallbackApi(api));
         if (api.frontend_ready) {
           const res = await api.frontend_ready();
           if (!isLatest()) return { success: false, accepted: false };
@@ -183,5 +188,5 @@ export function useBackend(): BackendState {
     canGenerate: isReady,
   };
 
-  return { status, isConnected, hasApi, isReady, isConnecting, capabilities, retry };
+  return { status, isConnected, isBrowserDemo, hasApi, isReady, isConnecting, capabilities, retry };
 }

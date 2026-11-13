@@ -1,4 +1,5 @@
 import type { AssetProbe, BatchSummary, PyWebViewApi, ScanFolderResult } from "../types";
+import { WebFallbackBridge } from "./webFallbackBridge";
 
 export type BridgeEventMap = {
   "scan.progress": { scanId: string; count: number };
@@ -104,6 +105,7 @@ export class BridgeEventRegistry {
 export const bridgeEvents = new BridgeEventRegistry();
 export class ApiBridge {
   private static cachedApi: PyWebViewApi | null = null;
+  private static browserDemo: WebFallbackBridge | null = null;
 
   static async getApi(maxWaitMs: number = 3000): Promise<PyWebViewApi | undefined> {
     // pywebview rebuilds window.pywebview.api whenever the page reloads, so a
@@ -118,6 +120,10 @@ export class ApiBridge {
     if (this.cachedApi) {
       return this.cachedApi;
     }
+    // Once a browser demo has started, do not wait for a non-existent native
+    // bridge on every slider adjustment. A newly injected native API still
+    // takes precedence above this branch.
+    if (this.browserDemo && !window.pywebview) return this.browserDemo;
 
     const deadline = Date.now() + maxWaitMs;
 
@@ -132,10 +138,22 @@ export class ApiBridge {
         window.setTimeout(resolve, 50);
       });
     }
+    // Never substitute a synthetic bridge for the privileged desktop runtime.
+    // In web-only development, expose a clearly labeled in-memory canvas demo
+    // after giving pywebview the full requested handshake window.
+    if (
+      import.meta.env.MODE !== "test"
+      && (window.location.protocol === "http:" || window.location.protocol === "https:")
+      && !window.pywebview
+    ) {
+      this.browserDemo ??= new WebFallbackBridge();
+      return this.browserDemo;
+    }
     return undefined;
   }
 
   static clearCache(): void {
     this.cachedApi = null;
+    this.browserDemo = null;
   }
 }
