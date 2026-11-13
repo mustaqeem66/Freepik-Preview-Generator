@@ -305,47 +305,57 @@ export class WebFallbackBridge implements PyWebViewApi {
     return { ok: true, cancelled: !!scan };
   }
 
-  private async draw(path: string, state: PreviewState, size: number, sourceOnly = false): Promise<HTMLCanvasElement> {
+  private async draw(
+    path: string, state: PreviewState, width: number,
+    sourceOnly = false, height: number = width
+  ): Promise<HTMLCanvasElement> {
     if (!SAMPLES.some((item) => item.path === path) && !this.files.has(path)) {
       throw new Error("This asset was not selected in the browser demo");
     }
     const canvas = document.createElement("canvas");
-    const dimension = Math.floor(clamp(size, 128, MAX_PREVIEW_DIMENSION));
-    canvas.width = dimension;
-    canvas.height = dimension;
+    const canvasWidth = Math.floor(clamp(width, 128, MAX_PREVIEW_DIMENSION));
+    const canvasHeight = Math.floor(clamp(height, 128, MAX_PREVIEW_DIMENSION));
+    // All sample illustrations use a square coordinate space, but are drawn
+    // without stretching into a potentially rectangular export canvas.
+    const dimension = Math.min(canvasWidth, canvasHeight);
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Browser canvas rendering is unavailable");
 
     if (!sourceOnly) {
       const tile = Math.max(12, Math.round(dimension / 32));
-      for (let y = 0; y < dimension; y += tile) {
-        for (let x = 0; x < dimension; x += tile) {
+      for (let y = 0; y < canvasHeight; y += tile) {
+        for (let x = 0; x < canvasWidth; x += tile) {
           ctx.fillStyle = (Math.floor(x / tile) + Math.floor(y / tile)) % 2 ? "#edf0f4" : "#d0d6df";
           ctx.fillRect(x, y, tile, tile);
         }
       }
       ctx.beginPath();
       if (state.invertTriangles) {
-        ctx.moveTo(0, 0); ctx.lineTo(dimension, 0); ctx.lineTo(0, dimension);
+        ctx.moveTo(0, 0); ctx.lineTo(canvasWidth, 0); ctx.lineTo(0, canvasHeight);
       } else {
-        ctx.moveTo(dimension, dimension); ctx.lineTo(dimension, 0); ctx.lineTo(0, dimension);
+        ctx.moveTo(canvasWidth, canvasHeight); ctx.lineTo(canvasWidth, 0); ctx.lineTo(0, canvasHeight);
       }
       ctx.closePath();
       ctx.fillStyle = safeColor(state.solidColor, "#FFFFFF");
       ctx.fill();
     } else {
       ctx.fillStyle = "#f6f8fc";
-      ctx.fillRect(0, 0, dimension, dimension);
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
     }
     const source = this.files.get(path);
     if (source) {
       const img = await imageFromFile(source);
-      const factor = Math.min(dimension * .7 / Math.max(1, img.naturalWidth),
-        dimension * .7 / Math.max(1, img.naturalHeight));
+      const factor = Math.min(canvasWidth * .7 / Math.max(1, img.naturalWidth),
+        canvasHeight * .7 / Math.max(1, img.naturalHeight));
       const w = img.naturalWidth * factor, h = img.naturalHeight * factor;
-      ctx.drawImage(img, (dimension - w) / 2, (dimension - h) / 2, w, h);
+      ctx.drawImage(img, (canvasWidth - w) / 2, (canvasHeight - h) / 2, w, h);
     } else {
+      ctx.save();
+      ctx.translate((canvasWidth - dimension) / 2, (canvasHeight - dimension) / 2);
       drawSample(ctx, path, dimension, state);
+      ctx.restore();
     }
 
     if (!sourceOnly && state.text) {
@@ -366,25 +376,28 @@ export class WebFallbackBridge implements PyWebViewApi {
         "custom": [clamp(state.textPosX, 0, 100) / 100, clamp(state.textPosY, 0, 100) / 100],
       };
       const paint = (x: number, y: number) => {
-        ctx.textAlign = x >= dimension * .66 ? "right" : x <= dimension * .33 ? "left" : "center";
-        if (state.hasOutline) ctx.strokeText(watermark, x, y, dimension * .89);
-        ctx.fillText(watermark, x, y, dimension * .89);
+        ctx.textAlign = x >= canvasWidth * .66 ? "right" : x <= canvasWidth * .33 ? "left" : "center";
+        if (state.hasOutline) ctx.strokeText(watermark, x, y, canvasWidth * .89);
+        ctx.fillText(watermark, x, y, canvasWidth * .89);
       };
       if (position === "tiled") {
-        for (let y = dimension * .16; y < dimension; y += dimension * .24) {
-          for (let x = dimension * .17; x < dimension; x += dimension * .38) paint(x, y);
+        for (let y = dimension * .16; y < canvasHeight; y += dimension * .24) {
+          for (let x = dimension * .17; x < canvasWidth; x += dimension * .38) paint(x, y);
         }
       } else {
         const [x, y] = locations[position] ?? locations.custom;
-        paint(dimension * x, dimension * y);
+        paint(canvasWidth * x, canvasHeight * y);
       }
       ctx.globalAlpha = 1;
     }
     return canvas;
   }
 
-  private async render(path: string, state: PreviewState, size: number, sourceOnly = false): Promise<string> {
-    return URL.createObjectURL(await canvasBlob(await this.draw(path, state, size, sourceOnly)));
+  private async render(
+    path: string, state: PreviewState, width: number, sourceOnly = false,
+    height: number = width
+  ): Promise<string> {
+    return URL.createObjectURL(await canvasBlob(await this.draw(path, state, width, sourceOnly, height)));
   }
 
   async render_preview(path: string, state: PreviewState): Promise<ApiResponse<RenderPreviewData | null>> {
@@ -497,8 +510,9 @@ export class WebFallbackBridge implements PyWebViewApi {
 
   async export_preview(path: string, state: PreviewState): Promise<ApiResponse<ExportResult | null>> {
     try {
-      const size = state.outputWidth || state.outputHeight || 1200;
-      const url = await this.render(path, state, size);
+      const width = Math.floor(clamp(state.outputWidth || state.outputHeight || 1200, 128, MAX_PREVIEW_DIMENSION));
+      const height = Math.floor(clamp(state.outputHeight || state.outputWidth || 1200, 128, MAX_PREVIEW_DIMENSION));
+      const url = await this.render(path, state, width, false, height);
       const name = [...SAMPLES, ...Array.from(this.files.keys()).map((key) => ({
         path: key, name: decodeURIComponent(key.split("/").at(-1) || "preview.png"),
       }))].find((x) => x.path === path)?.name || "preview";
@@ -512,8 +526,8 @@ export class WebFallbackBridge implements PyWebViewApi {
       window.setTimeout(() => URL.revokeObjectURL(url), 2000);
       return result({
         path: `Browser Downloads/${filename}`,
-        width: Math.floor(clamp(size, 128, MAX_PREVIEW_DIMENSION)),
-        height: Math.floor(clamp(size, 128, MAX_PREVIEW_DIMENSION)),
+        width,
+        height,
       });
     } catch (error) {
       return { ok: false, value: null, error: error instanceof Error ? error.message : "JPEG download failed" };
