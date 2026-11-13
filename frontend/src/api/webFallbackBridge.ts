@@ -109,7 +109,8 @@ function drawSample(ctx: CanvasRenderingContext2D, path: string, size: number, s
     ctx.fillText("Aa", middle, size * .38);
     ctx.font = `${size * .045}px sans-serif`;
     ctx.fillText("ABCDEFGHIJKLMNOPQRSTUVWXYZ", middle, size * .53, size * .72);
-    ctx.fillText((state.fontSampleText || "The quick brown fox jumps over the lazy dog.").slice(0, 120),
+    ctx.fillText((((state as PreviewState & { fontSampleText?: string }).fontSampleText) ||
+      "The quick brown fox jumps over the lazy dog.").slice(0, 120),
       middle, size * .66, size * .75);
     return;
   }
@@ -157,6 +158,7 @@ export class WebFallbackBridge implements PyWebViewApi {
   private scans = new Map<string, { cancelled: boolean; complete: boolean }>();
   private previewUrls = new Map<string, string>();
   private thumbnailUrls = new Map<string, string>();
+  private comparisonUrls = new Map<string, string>();
   private serial = 0;
   private settings: Partial<PreviewState> = {};
 
@@ -433,10 +435,24 @@ export class WebFallbackBridge implements PyWebViewApi {
   }
 
   async request_source_comparison(path: string): Promise<ApiResponse<Record<string, string> | null>> {
-    if (!path) return result({});
+    if (!path) {
+      for (const url of this.comparisonUrls.values()) URL.revokeObjectURL(url);
+      this.comparisonUrls.clear();
+      return result({});
+    }
     try {
-      // One-shot blob URL; the browser owns these transient previews, not the Python server.
-      return result({ [path]: await this.render(path, SETTINGS_DEFAULTS as unknown as PreviewState, 650, true) });
+      for (const [otherPath, url] of this.comparisonUrls) {
+        if (otherPath !== path) {
+          URL.revokeObjectURL(url);
+          this.comparisonUrls.delete(otherPath);
+        }
+      }
+      let url = this.comparisonUrls.get(path);
+      if (!url) {
+        url = await this.render(path, SETTINGS_DEFAULTS as unknown as PreviewState, 650, true);
+        this.comparisonUrls.set(path, url);
+      }
+      return result({ [path]: url });
     } catch (error) {
       return { ok: false, value: null, error: error instanceof Error ? error.message : "Source unavailable" };
     }
