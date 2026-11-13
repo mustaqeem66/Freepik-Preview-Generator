@@ -115,6 +115,12 @@ export function SettingsPanel({ state, onChange, onBrowseLogo, onBrowseFont, is3
         <Color label="Outline color" value={state.outlineColor} onChange={(outlineColor) => onChange({ outlineColor })} />
         <Slider label="Outline thickness" value={state.outlineThickness} min={1} max={10} unit="" onChange={(outlineThickness) => onChange({ outlineThickness })} />
       </>}
+      <label className="field-label">Font specimen phrase
+        <input type="text" maxLength={120}
+          value={state.fontSampleText ?? "The quick brown fox jumps over the lazy dog."}
+          onChange={(e) => onChange({ fontSampleText: e.target.value })} />
+      </label>
+      <p className="muted">Used when previewing a font file (.ttf, .otf, .woff, .woff2).</p>
       <div className="file-control"><span className="path-hint" title={state.fontPath}>{state.fontPath.split(/[\\/]/).pop() || "System font"}</span>
         <button type="button" className="button" onClick={onBrowseFont}>Choose font…</button>
         {state.fontPath && <button type="button" className="icon-button" aria-label="Remove custom font" onClick={() => onChange({ fontPath: "" })}><X size={14} /></button>}
