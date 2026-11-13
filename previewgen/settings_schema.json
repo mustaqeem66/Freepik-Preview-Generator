@@ -137,6 +137,12 @@
       "default": "",
       "description": "Custom font file path"
     },
+    "fontSampleText": {
+      "type": "string",
+      "maxLength": 120,
+      "default": "The quick brown fox jumps over the lazy dog.",
+      "description": "Custom phrase shown on font specimen cards"
+    },
     "fontScale": {
       "type": "number",
       "minimum": 20,
