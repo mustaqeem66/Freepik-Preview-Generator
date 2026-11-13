@@ -42,6 +42,33 @@ function fileInfo(file: File, id: number): FileInfo {
   };
 }
 
+// Browser settings must not persist or reauthorize local file paths. These
+// restrictions are separate from (and less privileged than) native pickers.
+const PRIVATE_PATH_FIELDS = new Set(["inputFolder", "outputFolder", "logoPath", "fontPath", "sameFolder"]);
+
+function sanitizeBrowserSettings(raw: unknown): Partial<PreviewState> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const incoming = raw as Record<string, unknown>;
+  const clean: Record<string, unknown> = {};
+  for (const field of SETTINGS_FIELDS) {
+    if (PRIVATE_PATH_FIELDS.has(field.name)) continue;
+    const value = incoming[field.name];
+    if (field.type === "string") {
+      if (typeof value !== "string") continue;
+      if (field.enum && !field.enum.includes(value)) continue;
+      if (field.pattern && !new RegExp(field.pattern).test(value)) continue;
+      clean[field.name] = field.maxLength ? value.slice(0, field.maxLength) : value;
+    } else if (field.type === "boolean") {
+      if (typeof value === "boolean") clean[field.name] = value;
+    } else if (field.type === "number" || field.type === "integer") {
+      if (typeof value !== "number" || !Number.isFinite(value)) continue;
+      const bounded = clamp(value, field.minimum ?? -Number.MAX_VALUE, field.maximum ?? Number.MAX_VALUE);
+      clean[field.name] = field.type === "integer" ? Math.round(bounded) : bounded;
+    }
+  }
+  return clean as Partial<PreviewState>;
+}
+
 function drawSample(ctx: CanvasRenderingContext2D, path: string, size: number, state: PreviewState): void {
   const middle = size / 2;
   if (path.endsWith("aurora.svg")) {
@@ -164,21 +191,9 @@ export class WebFallbackBridge implements PyWebViewApi {
 
   constructor() {
     try {
-      const raw = JSON.parse(window.localStorage.getItem("previewgen.browserDemo.v1") || "{}");
-      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-        const entries = raw as Record<string, unknown>;
-        const allowed = Object.fromEntries(SETTINGS_FIELDS.map((x) => [x.name, x]));
-        for (const [key, value] of Object.entries(entries)) {
-          const field = allowed[key];
-          if (!field) continue;
-          if ((field.type === "string" && typeof value === "string" &&
-               (!field.maxLength || value.length <= field.maxLength)) ||
-              (field.type === "boolean" && typeof value === "boolean") ||
-              ((field.type === "number" || field.type === "integer") &&
-               typeof value === "number" && Number.isFinite(value))) {
-            (this.settings as Record<string, unknown>)[key] = value;
-          }
-        }
+      const stored = window.localStorage.getItem("previewgen.browserDemo.v1");
+      if (stored && stored.length <= 32_768) {
+        this.settings = sanitizeBrowserSettings(JSON.parse(stored));
       }
     } catch {
       // Browser storage is optional and never represents native permission.
@@ -196,13 +211,9 @@ export class WebFallbackBridge implements PyWebViewApi {
   }
 
   async save_settings(state: PreviewState & { revision?: number }): Promise<ApiResponse<boolean>> {
-    // Persist only schema-known keys; native file grants never come from storage.
-    const snapshot: Record<string, unknown> = {};
-    for (const field of SETTINGS_FIELDS) {
-      const value = (state as unknown as Record<string, unknown>)[field.name];
-      if (value !== undefined) snapshot[field.name] = value;
-    }
-    this.settings = snapshot as Partial<PreviewState>;
+    // Never persist native path/grant metadata, even if a caller supplies it.
+    const snapshot = sanitizeBrowserSettings(state);
+    this.settings = snapshot;
     try { window.localStorage.setItem("previewgen.browserDemo.v1", JSON.stringify(snapshot)); }
     catch { return { ok: false, value: false, error: "Browser storage unavailable" }; }
     return result(true);
@@ -265,6 +276,8 @@ export class WebFallbackBridge implements PyWebViewApi {
     this.files.clear();
     this.folderFiles.clear();
     this.clearThumbnails();
+    for (const url of this.comparisonUrls.values()) URL.revokeObjectURL(url);
+    this.comparisonUrls.clear();
     return result(removed);
   }
 
