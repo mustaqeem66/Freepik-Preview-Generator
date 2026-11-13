@@ -1,0 +1,16 @@
+{
+  "name": "previewgen-cloud-preview",
+  "version": "2.1.2",
+  "private": true,
+  "description": "Root entrypoint for browser preview only; frontend/package.json remains canonical.",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "vite frontend --config frontend/vite.config.ts --host 0.0.0.0 --port 3000 --strictPort",
+    "build": "vite build frontend --config frontend/vite.config.ts",
+    "test": "vitest run --root frontend --config frontend/vite.config.ts",
+    "typecheck": "tsc --project frontend/tsconfig.json --noEmit",
+    "lint": "npm run typecheck"
+  }
+}

@@ -1,3 +1,0 @@
-# Auto-redirected to hash-verified lockfile to prevent unpinned dependency installation.
-# To add or update dependencies, edit requirements.in and recompile with uv.
--r requirements-lock.txt

@@ -29,6 +29,13 @@ Choose artwork, refine its presentation and generate consistent JPG previews in 
 
 ---
 
+
+### Browser-only development preview (cloud or local)
+
+From the repository root, run `bun install` and `bun run dev`; Vite listens on `0.0.0.0:3000`. The root `package.json` uses the canonical `frontend/` workspace rather than duplicating package versions. For a preview proxy that supplies a custom HTTP Host header, set `PREVIEWGEN_ALLOWED_HOSTS` to a comma-separated list of **trusted hostnames** before starting Vite (do not use a wildcard).
+
+**Limit:** this starts only the React/Vite interface. Rendering, filesystem access and exports require the native Python/pywebview desktop backend, so they are unavailable in an ordinary web browser. For desktop development use the instructions below. Python dependencies remain in the explicit hash-pinned `requirements*-lock.txt` files; there is intentionally no root `requirements.txt` auto-install trigger.
+
 ## 🚀 Install PreviewGen from your terminal
 
 **⚡ Recommended:** use the official installer script for a quick, guided setup. No Python, Node.js or repository clone is needed.
@@ -164,7 +171,7 @@ flowchart TD
 <a id="getting-started"></a>
 ## 🧭 Your first launch
 
-The native **Choose Input Folder** dialog selects directories, so it may not display individual artwork files. Select the *containing folder* and confirm with **Select Folder**; PreviewGen lists supported assets after scanning. Direct individual-file selection is not yet available.
+Use **Choose Input Folder** to scan a directory, or select **Add Files** to pick individual supported assets from different directories through the native OS file picker. Selected files are authorized individually, without granting read access to unrelated sibling files. The studio also offers **Before / After** source comparison and locally stored **Style Presets**.
 
 **Tip:** JPG files do not support transparency. The checkerboard is deliberately printed in the presentation preview; your original transparent artwork remains separate.
 
