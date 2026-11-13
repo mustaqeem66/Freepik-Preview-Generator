@@ -336,7 +336,7 @@ export default function App() {
       action: () => { void handleExport(); } },
     { id: "batch", title: "Generate all previews", group: "Export", keywords: "batch",
       disabled: busy || !fileList.length || !scanReady || !destinationReady ||
-        !capabilities.canGenerate || requiresTruncationAck,
+        !capabilities.canBatchGenerate || requiresTruncationAck,
       action: () => { void startBatch(usingFiles ? "" : state.inputFolder, state.outputFolder,
         fileList.length, state, usingFiles ? fileList.map((file) => file.path) : undefined); } },
     { id: "output", title: "Open output folder", group: "Export", keywords: "finder explorer",
@@ -481,11 +481,11 @@ export default function App() {
           canCancelBatch={canCancelBatch} isCancelling={batchStatus === "batch-cancelling"}
           progress={progress} stats={stats} batchErrors={batchErrors}
           truncated={requiresTruncationAck} truncationReasons={truncationReasons} discovered={discovered}
-          onStartBatch={() => { if (!busy && scanReady && destinationReady) void startBatch(
+          onStartBatch={() => { if (!busy && capabilities.canBatchGenerate && scanReady && destinationReady) void startBatch(
             usingFiles ? "" : state.inputFolder, state.outputFolder, fileList.length, state,
             usingFiles ? fileList.map((file) => file.path) : undefined,
           ); }}
-          onCancelBatch={() => void cancelBatch()} canStart={capabilities.canGenerate && !busy && scanReady && destinationReady &&
+          onCancelBatch={() => void cancelBatch()} canStart={capabilities.canBatchGenerate && !busy && scanReady && destinationReady &&
             fileList.length > 0 && !requiresTruncationAck}
           canOpenOutput={Boolean(usingFiles ? state.outputFolder : state.inputFolder) && capabilities.canOpenReport && !busy}
           onOpenOutput={() => void openOutput()} />
