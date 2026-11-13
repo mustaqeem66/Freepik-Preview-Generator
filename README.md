@@ -171,7 +171,7 @@ flowchart TD
 <a id="getting-started"></a>
 ## 🧭 Your first launch
 
-The native **Choose Input Folder** dialog selects directories, so it may not display individual artwork files. Select the *containing folder* and confirm with **Select Folder**; PreviewGen lists supported assets after scanning. Direct individual-file selection is not yet available.
+Use **Choose Input Folder** to scan a directory, or select **Add Files** to pick individual supported assets from different directories through the native OS file picker. Selected files are authorized individually, without granting read access to unrelated sibling files. The studio also offers **Before / After** source comparison and locally stored **Style Presets**.
 
 **Tip:** JPG files do not support transparency. The checkerboard is deliberately printed in the presentation preview; your original transparent artwork remains separate.
 
