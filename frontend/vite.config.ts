@@ -30,7 +30,7 @@ export default defineConfig({
     port: 3000,
     strictPort: true,
     // Restrict custom proxy hostnames to explicit trusted values rather than
-    // disabling Vite's DNS-rebinding protection with allowedHosts: true.
+    // disabling Vite's DNS-rebinding protection by allowing every hostname.
     allowedHosts: process.env.PREVIEWGEN_ALLOWED_HOSTS?.split(",")
       .map((host) => host.trim()).filter(Boolean) ?? [],
   },
