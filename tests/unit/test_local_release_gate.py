@@ -68,6 +68,34 @@ def test_bundle_csp_check_requires_production_bundle_environment(tmp_path: Path,
     assert "No real native WebView" in data["note"]
 
 
+def test_hoisted_workspace_install_does_not_emit_false_dependency_notice(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    # npm ci inside a frontend workspace can hoist packages into root/node_modules.
+    (tmp_path / "node_modules").mkdir()
+    monkeypatch.setattr(
+        release.subprocess, "run",
+        lambda *_a, **_kw: SimpleNamespace(returncode=0),
+    )
+    checks = release.plan_checks(tmp_path, frontend=True, backend=False, python="python")
+    assert release.frontend_deps_available(tmp_path)
+    assert release.run_checks(checks, root=tmp_path, report=tmp_path / "release.json") == 0
+    assert "NOTICE: npm dependencies missing" not in capsys.readouterr().out
+
+
+def test_missing_workspace_dependencies_still_emits_install_notice(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(
+        release.subprocess, "run",
+        lambda *_a, **_kw: SimpleNamespace(returncode=0),
+    )
+    checks = release.plan_checks(tmp_path, frontend=True, backend=False, python="python")
+    assert not release.frontend_deps_available(tmp_path)
+    assert release.run_checks(checks, root=tmp_path, report=tmp_path / "release.json") == 0
+    assert "NOTICE: npm dependencies missing" in capsys.readouterr().out
+
+
 def test_failure_returns_nonzero_and_records_failure_without_hiding_it(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "frontend" / "node_modules").mkdir(parents=True)
     calls = 0
