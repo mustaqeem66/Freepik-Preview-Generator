@@ -29,6 +29,13 @@ Choose artwork, refine its presentation and generate consistent JPG previews in 
 
 ---
 
+
+### Browser-only development preview (cloud or local)
+
+From the repository root, run `bun install` and `bun run dev`; Vite listens on `0.0.0.0:3000`. The root `package.json` uses the canonical `frontend/` workspace rather than duplicating package versions. For a preview proxy that supplies a custom HTTP Host header, set `PREVIEWGEN_ALLOWED_HOSTS` to a comma-separated list of **trusted hostnames** before starting Vite (do not use a wildcard).
+
+**Limit:** this starts only the React/Vite interface. Rendering, filesystem access and exports require the native Python/pywebview desktop backend, so they are unavailable in an ordinary web browser. For desktop development use the instructions below. Python dependencies remain in the explicit hash-pinned `requirements*-lock.txt` files; there is intentionally no root `requirements.txt` auto-install trigger.
+
 ## 🚀 Install PreviewGen from your terminal
 
 **⚡ Recommended:** use the official installer script for a quick, guided setup. No Python, Node.js or repository clone is needed.
