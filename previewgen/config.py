@@ -372,8 +372,14 @@ class PreviewConfig:
             position=position,
             opacity=opacity,
             auto_frame=_safe_bool(mapping.get("autoFrame", mapping.get("auto_frame")), False, "autoFrame"),
-            animation_contact_sheet=_safe_bool(mapping.get("animationContactSheet", mapping.get("animation_contact_sheet")), False, "animationContactSheet"),
-            brushset_contact_sheet=_safe_bool(mapping.get("brushsetContactSheet", mapping.get("brushset_contact_sheet")), False, "brushsetContactSheet"),
+            animation_contact_sheet=_safe_bool(
+                mapping.get("animationContactSheet", mapping.get("animation_contact_sheet")),
+                False, "animationContactSheet",
+            ),
+            brushset_contact_sheet=_safe_bool(
+                mapping.get("brushsetContactSheet", mapping.get("brushset_contact_sheet")),
+                False, "brushsetContactSheet",
+            ),
             frame_margin=_ratio("frameMargin", "frame_margin", 0.08, 0.0, 0.25),
             invert_triangles=_safe_bool(
                 mapping.get("invertTriangles", mapping.get("invert_triangles")), True, "invertTriangles"
