@@ -71,6 +71,18 @@ jobs:
 
       # ── Frontend gate: typecheck -> tests -> production bundle ──
       # Packaging must not start unless the frontend passes all three gates.
+      - name: Verify dependency lock integrity
+        # Fail before packaging when the canonical frontend npm lock is stale
+        # or unmirrored against frontend/package.json.
+        run: python scripts/verify_dependency_locks.py
+      - name: Audit Python dependencies for advisories
+        # Dependabot's pip resolver cannot regenerate these uv-compiled locks,
+        # so pip-audit is the deterministic vulnerability gate for every
+        # committed Python lock.
+        run: |
+          python -m pip_audit --require-hashes -r requirements-lock.txt
+          python -m pip_audit --require-hashes -r requirements-dev-lock.txt
+          python -m pip_audit --require-hashes -r requirements-linux-gui-lock.txt
       - name: Set up Node.js 24.15.0
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -83,6 +95,11 @@ jobs:
           npm test
           npm run build
           cd ..
+      - name: Audit frontend dependencies for advisories
+        # Block packaging on any known npm advisory in the shipped dependency
+        # tree, including dev-only packages that reach the build toolchain.
+        run: npm audit --package-lock-only --audit-level=low --include=dev
+        working-directory: frontend
 
       # ── Mandatory Python Test Suite Gate (includes frontend bundle check) ──
       - name: Run Python unit and integration test suite

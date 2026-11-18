@@ -107,7 +107,12 @@ def plan_checks(
 
 
 def frontend_deps_available(root: Path) -> bool:
-    """Recognize both legacy frontend and npm-workspace-hoisted installs."""
+    """Report whether the frontend dependencies are already installed.
+
+    The frontend owns the only npm lock, so ``npm ci`` installs into
+    ``frontend/node_modules``. The root directory is still checked so an
+    existing checkout with a hoisted install keeps working.
+    """
     return any(
         (path / "node_modules").is_dir()
         for path in (root / "frontend", root)

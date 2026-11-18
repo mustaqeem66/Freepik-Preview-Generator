@@ -9,7 +9,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from previewgen import config as previewgen_config, limits
+from previewgen import config as previewgen_config
+from previewgen import limits
 from previewgen.config import PreviewConfig
 from previewgen.renderers.animation import animated_contact_sheet
 from previewgen.renderers.cad import _load_cad_solid, _load_dwg, _load_dxf

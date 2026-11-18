@@ -7,6 +7,7 @@ kernel at fixed commits on all desktop operating systems.
 from __future__ import annotations
 
 import math
+from typing import Any
 
 from PIL import Image
 
@@ -22,7 +23,7 @@ def rasterize_depth_triangles(
     width: int,
     height: int,
     *,
-    vertex_uv=None,
+    vertex_uv: Any = None,
     texture: Image.Image | None = None,
 ) -> Image.Image:
     """Render fully opaque RGB triangles with interpolated orthographic depth.
@@ -77,7 +78,7 @@ def rasterize_depth_triangles(
 
     if (vertex_uv is None) != (texture is None):
         raise ValueError("Depth rasterizer requires both texture and vertex UV coordinates")
-    uvs = None
+    uvs: Any = None
     texture_pixels = None
     if texture is not None:
         if not isinstance(texture, Image.Image):

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.verify_dependency_locks import check_locks, expected_workspace_lock
+from scripts.verify_dependency_locks import check_locks
 
 pytestmark = pytest.mark.core
 
@@ -42,15 +42,21 @@ def fixture_tree(tmp_path: Path) -> Path:
             },
         },
     }
-    root_manifest = {
-        "name": "previewgen-cloud-preview", "version": "1.0.0",
-        "private": True, "workspaces": ["frontend"],
-    }
     (frontend / "package.json").write_text(json.dumps(frontend_manifest), encoding="utf-8")
     (frontend / "package-lock.json").write_text(json.dumps(frontend_lock), encoding="utf-8")
+    # The root package is a script-only entrypoint. It must not declare npm
+    # workspaces, because npm would then resolve a workspace-root lock and
+    # ignore frontend/package-lock.json entirely.
+    root_manifest = {
+        "name": "previewgen-cloud-preview", "version": "1.0.0", "private": True,
+        "scripts": {
+            "dev": "npm --prefix frontend run dev",
+            "build": "npm --prefix frontend run build",
+            "test": "npm --prefix frontend test",
+            "typecheck": "npm --prefix frontend run typecheck",
+        },
+    }
     (tmp_path / "package.json").write_text(json.dumps(root_manifest), encoding="utf-8")
-    root_lock = expected_workspace_lock(root_manifest, frontend_manifest, frontend_lock)
-    (tmp_path / "package-lock.json").write_text(json.dumps(root_lock), encoding="utf-8")
     return tmp_path
 
 
@@ -108,21 +114,41 @@ def test_non_registry_package_rejected(tmp_path: Path):
     assert any("lenis has non-registry" in error for error in check_locks(root))
 
 
-def test_root_workspace_lock_missing_is_release_failure(tmp_path: Path):
+def test_frontend_lock_missing_is_release_failure(tmp_path: Path):
     root = fixture_tree(tmp_path)
-    (root / "package-lock.json").unlink()
-    assert any("root workspace lock unavailable" in issue for issue in check_locks(root))
+    (root / "frontend/package-lock.json").unlink()
+    assert any("invalid npm lock or manifest" in issue for issue in check_locks(root))
 
 
-def test_workspace_lock_cannot_silently_drift_from_frontend_lock(tmp_path: Path):
+def test_root_workspace_declaration_is_rejected(tmp_path: Path):
+    # npm workspaces make npm resolve a workspace-root lock instead of the
+    # canonical frontend lock, which silently breaks dependency update PRs.
     root = fixture_tree(tmp_path)
-    path = root / "package-lock.json"
-    lock = json.loads(path.read_text())
-    del lock["packages"]["node_modules/lenis"]["integrity"]
-    path.write_text(json.dumps(lock))
-    assert any("root package-lock.json disagrees" in issue for issue in check_locks(root))
+    path = root / "package.json"
+    data = json.loads(path.read_text())
+    data["workspaces"] = ["frontend"]
+    path.write_text(json.dumps(data))
+    assert any("must not declare npm workspaces" in issue for issue in check_locks(root))
 
 
-def test_workspace_root_link_is_not_treated_as_unhashed_registry_artifact(tmp_path: Path):
+def test_root_lock_file_is_rejected(tmp_path: Path):
     root = fixture_tree(tmp_path)
+    (root / "package-lock.json").write_text(json.dumps({"lockfileVersion": 3}), encoding="utf-8")
+    assert any("must not exist" in issue for issue in check_locks(root))
+
+
+def test_root_missing_script_is_rejected(tmp_path: Path):
+    root = fixture_tree(tmp_path)
+    path = root / "package.json"
+    data = json.loads(path.read_text())
+    del data["scripts"]["build"]
+    path.write_text(json.dumps(data))
+    assert any("missing the 'build' script" in issue for issue in check_locks(root))
+
+
+def test_frontend_lock_is_the_only_npm_lock(tmp_path: Path):
+    # The repository must not carry a second npm lock that npm would prefer.
+    root = fixture_tree(tmp_path)
+    assert not (root / "package-lock.json").exists()
+    assert (root / "frontend/package-lock.json").is_file()
     assert check_locks(root) == []

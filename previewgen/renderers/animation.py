@@ -9,7 +9,6 @@ import math
 
 from PIL import Image, ImageDraw
 
-
 MAX_CONTACT_SHEET_FRAMES = 9
 MAX_CONTACT_SHEET_SOURCE_PIXELS = 16_000_000
 

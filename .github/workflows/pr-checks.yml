@@ -23,6 +23,19 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24.15.0"
+      - name: Verify dependency lock integrity
+        # The frontend lock is the only npm lock in the repository. Verify it
+        # before installing so a stale or unmirrored lock fails with a clear
+        # message instead of an opaque `npm ci` EUSAGE error.
+        run: python scripts/verify_dependency_locks.py
+      - name: Audit Python dependencies for advisories
+        # Dependabot's pip resolver cannot regenerate these uv-compiled locks,
+        # so pip-audit is the deterministic vulnerability gate for every
+        # committed Python lock.
+        run: |
+          python -m pip_audit --require-hashes -r requirements-lock.txt
+          python -m pip_audit --require-hashes -r requirements-dev-lock.txt
+          python -m pip_audit --require-hashes -r requirements-linux-gui-lock.txt
       - name: Frontend gates
         working-directory: frontend
         run: |
@@ -30,6 +43,11 @@ jobs:
           npm run typecheck
           npm test
           npm run build
+      - name: Audit frontend dependencies for advisories
+        # Block the merge on any known npm advisory in the dependency tree,
+        # including dev-only packages that reach the build toolchain.
+        run: npm audit --package-lock-only --audit-level=low --include=dev
+        working-directory: frontend
       - name: Backend gates
         env:
           PREVIEWGEN_REQUIRE_FRONTEND_BUNDLE: "1"

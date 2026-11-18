@@ -48,7 +48,7 @@ describe("unprivileged browser demo", () => {
     expect(folder.ok).toBe(false);
     const batch = await bridge.start_batch("browser-demo://samples", "Browser Downloads", {} as never);
     expect(batch.ok).toBe(false);
-    expect(batch.error).toMatch(/requires PreviewGen Desktop/);
+    expect(batch.error).toMatch(/Batch exports require PreviewGen Desktop/);
   });
 
   it("reports cancellation as a terminal scan outcome", async () => {

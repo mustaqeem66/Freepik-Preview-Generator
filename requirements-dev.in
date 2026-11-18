@@ -11,3 +11,7 @@ pyinstaller>=6.0
 pytest>=8.0
 ruff>=0.17
 pyrefly>=1.4
+# Advisory scanner for the committed Python locks. Dependabot's pip resolver
+# cannot regenerate these uv-compiled locks, so this tool is the deterministic
+# vulnerability gate instead.
+pip-audit>=2.10
