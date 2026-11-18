@@ -145,7 +145,18 @@ def test_security_audit_is_explicit_opt_in_and_scans_all_lockfiles(tmp_path: Pat
         "security-npm-audit",
     ]
     assert audits[0].argv == ("py", "scripts/verify_dependency_locks.py")
-    assert all(check.argv[1:4] == ("-m", "pip_audit", "--require-hashes") for check in audits[1:4])
+    # The advisory gate runs through audit_lock_all_platforms.py so that pins
+    # for other operating systems are audited too, and so that pip-audit reads
+    # the pins straight from the lock instead of building PyGObject from source.
+    assert all(
+        check.argv == ("py", "scripts/audit_lock_all_platforms.py", check.argv[-1])
+        for check in audits[1:4]
+    )
+    assert [check.argv[-1] for check in audits[1:4]] == [
+        "requirements-lock.txt",
+        "requirements-dev-lock.txt",
+        "requirements-linux-gui-lock.txt",
+    ]
     assert all(check.cwd == tmp_path for check in audits[:4])
     assert audits[-1].argv == (
         "npm", "audit", "--package-lock-only", "--audit-level=low", "--include=dev"
@@ -166,8 +177,12 @@ def test_security_audit_respects_target_selection(tmp_path: Path) -> None:
 
 def test_vulnerability_audit_failure_blocks_local_release(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "frontend" / "node_modules").mkdir(parents=True)
+
     def pretend_subprocess(argv, *, cwd, env, check):
-        return SimpleNamespace(returncode=1 if "audit" in argv or "pip_audit" in argv else 0)
+        # Any advisory scan must fail the release, whether it runs pip-audit
+        # directly or through the platform-neutral projection helper.
+        is_scan = any("audit" in str(argument) for argument in argv)
+        return SimpleNamespace(returncode=1 if is_scan else 0)
 
     monkeypatch.setattr(release.subprocess, "run", pretend_subprocess)
     checks = release.plan_checks(tmp_path, frontend=False, security_audit=True, python="py")

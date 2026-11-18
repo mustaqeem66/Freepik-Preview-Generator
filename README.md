@@ -32,7 +32,7 @@ Choose artwork, refine its presentation and generate consistent JPG previews in 
 
 ### Browser-only development preview (cloud or local)
 
-From the repository root, run `npm install --prefix frontend` and `npm run dev`; Vite listens on `0.0.0.0:3000`. The root `package.json` delegates to the canonical `frontend/` package rather than duplicating dependency versions, so there is exactly one npm lock (`frontend/package-lock.json`). For a preview proxy that supplies a custom HTTP Host header, set `PREVIEWGEN_ALLOWED_HOSTS` to a comma-separated list of **trusted hostnames** before starting Vite (do not use a wildcard).
+From the repository root, run `npm ci --prefix frontend` and `npm run dev`; Vite listens on `0.0.0.0:3000`. The root `package.json` delegates to the canonical `frontend/` package rather than duplicating dependency versions, so there is exactly one npm lock (`frontend/package-lock.json`). Use `npm ci` rather than `npm install` so the install reproduces that lock exactly; `npm install` may rewrite `frontend/package-lock.json` and resolve versions other than the committed ones. For a preview proxy that supplies a custom HTTP Host header, set `PREVIEWGEN_ALLOWED_HOSTS` to a comma-separated list of **trusted hostnames** before starting Vite (do not use a wildcard).
 
 **Limit:** this starts only the React/Vite interface. Rendering, filesystem access and exports require the native Python/pywebview desktop backend, so they are unavailable in an ordinary web browser. For desktop development use the instructions below. Python dependencies remain in the explicit hash-pinned `requirements*-lock.txt` files; there is intentionally no root `requirements.txt` auto-install trigger.
 

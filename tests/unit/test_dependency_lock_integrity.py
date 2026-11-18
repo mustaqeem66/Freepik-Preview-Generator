@@ -152,3 +152,37 @@ def test_frontend_lock_is_the_only_npm_lock(tmp_path: Path):
     assert not (root / "package-lock.json").exists()
     assert (root / "frontend/package-lock.json").is_file()
     assert check_locks(root) == []
+
+
+def test_root_script_must_delegate_to_the_frontend_lock(tmp_path: Path):
+    # A root script that runs npm from the repository root would resolve a
+    # root lock that does not exist, and `npm install` would bypass the
+    # exact-lock reinstall that `npm ci` guarantees.
+    root = fixture_tree(tmp_path)
+    path = root / "package.json"
+    data = json.loads(path.read_text())
+    data["scripts"]["build"] = "cd frontend && npm install"
+    path.write_text(json.dumps(data))
+    assert any(
+        "must start with 'npm --prefix frontend '" in issue for issue in check_locks(root)
+    )
+
+
+def test_root_script_running_npm_at_the_repository_root_is_rejected(tmp_path: Path):
+    root = fixture_tree(tmp_path)
+    path = root / "package.json"
+    data = json.loads(path.read_text())
+    data["scripts"]["test"] = "npm test"
+    path.write_text(json.dumps(data))
+    assert any(
+        "must start with 'npm --prefix frontend '" in issue for issue in check_locks(root)
+    )
+
+
+def test_non_object_root_manifest_is_reported_not_raised(tmp_path: Path):
+    # A syntactically valid root file that is not a JSON object must produce a
+    # clear diagnostic instead of an AttributeError traceback.
+    root = fixture_tree(tmp_path)
+    (root / "package.json").write_text("[]", encoding="utf-8")
+    issues = check_locks(root)
+    assert any("must contain a JSON object" in issue for issue in issues)

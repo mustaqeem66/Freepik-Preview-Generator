@@ -115,6 +115,8 @@ def root_manifest_issues(root: Path) -> list[str]:
         root_manifest = json.loads((root / "package.json").read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError) as exc:
         return [f"root package.json unreadable or invalid ({type(exc).__name__})"]
+    if not isinstance(root_manifest, dict):
+        return ["root package.json must contain a JSON object"]
     if root_manifest.get("workspaces"):
         problems.append(
             "root package.json must not declare npm workspaces; npm would resolve a "
@@ -129,8 +131,18 @@ def root_manifest_issues(root: Path) -> list[str]:
         problems.append("root package.json must declare npm scripts")
     else:
         for script in ("dev", "build", "test", "typecheck"):
-            if not scripts.get(script):
+            value = scripts.get(script)
+            if not value:
                 problems.append(f"root package.json is missing the {script!r} script")
+            elif not isinstance(value, str) or not value.startswith("npm --prefix frontend "):
+                # A root script that runs npm from the repository root would
+                # resolve a root lock that does not exist, and one that runs
+                # `npm install` would bypass the exact-lock reinstall that
+                # `npm ci` guarantees.
+                problems.append(
+                    f"root package.json {script!r} script must start with "
+                    "'npm --prefix frontend ' so every install path uses the frontend lock"
+                )
     return problems
 
 

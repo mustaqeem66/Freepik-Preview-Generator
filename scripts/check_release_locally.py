@@ -92,13 +92,13 @@ def plan_checks(
                 "requirements-dev-lock.txt",
                 "requirements-linux-gui-lock.txt",
             ):
-                # --disable-pip reads the pins straight from the lock. These
-                # locks are fully hash-pinned, so resolving them would add
-                # nothing and would try to build PyGObject, which needs system
-                # headers the host may not provide.
+                # audit_lock_all_platforms.py rewrites the platform markers so
+                # that pins for other operating systems are audited too, and
+                # uses --disable-pip so the pins are read straight from the
+                # hash-pinned lock instead of building PyGObject from source.
                 checks.append(Check(
                     f"security-pip-audit-{lock}",
-                    (py, "-m", "pip_audit", "--require-hashes", "--disable-pip", "-r", lock), root,
+                    (py, "scripts/audit_lock_all_platforms.py", lock), root,
                 ))
         if frontend:
             checks.append(Check(

@@ -4,7 +4,6 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
     labels:
       - dependencies
     # The Python locks are compiled by uv, not pip-tools. Dependabot's pip
