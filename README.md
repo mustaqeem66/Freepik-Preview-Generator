@@ -371,7 +371,7 @@ disabled. Vulnerabilities are caught instead by `pip-audit`, which runs against
 every committed lock in CI:
 
 ```bash
-python -m pip_audit --require-hashes -r requirements-lock.txt
+python -m pip_audit --require-hashes --no-deps -r requirements-lock.txt
 ```
 
 To bump a Python dependency, edit the relevant `requirements*.in` file and
