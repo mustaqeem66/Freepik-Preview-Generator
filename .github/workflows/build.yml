@@ -78,13 +78,14 @@ jobs:
       - name: Audit Python dependencies for advisories
         # Dependabot's pip resolver cannot regenerate these uv-compiled locks,
         # so pip-audit is the deterministic vulnerability gate for every
-        # committed Python lock. --no-deps skips dependency resolution: these
-        # locks are fully hash-pinned, and resolving them would try to build
-        # PyGObject, which needs system headers this runner does not provide.
+        # committed Python lock. --disable-pip reads the pins straight from the
+        # lock: these files are fully hash-pinned, so resolving them would add
+        # nothing and would try to build PyGObject, which needs system headers
+        # this runner does not provide.
         run: |
-          python -m pip_audit --require-hashes --no-deps -r requirements-lock.txt
-          python -m pip_audit --require-hashes --no-deps -r requirements-dev-lock.txt
-          python -m pip_audit --require-hashes --no-deps -r requirements-linux-gui-lock.txt
+          python -m pip_audit --require-hashes --disable-pip -r requirements-lock.txt
+          python -m pip_audit --require-hashes --disable-pip -r requirements-dev-lock.txt
+          python -m pip_audit --require-hashes --disable-pip -r requirements-linux-gui-lock.txt
       - name: Set up Node.js 24.15.0
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:

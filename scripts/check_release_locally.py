@@ -92,12 +92,13 @@ def plan_checks(
                 "requirements-dev-lock.txt",
                 "requirements-linux-gui-lock.txt",
             ):
-                # --no-deps skips dependency resolution. These locks are fully
-                # hash-pinned, so resolution adds nothing and would try to build
-                # PyGObject, which needs system headers the host may not provide.
+                # --disable-pip reads the pins straight from the lock. These
+                # locks are fully hash-pinned, so resolving them would add
+                # nothing and would try to build PyGObject, which needs system
+                # headers the host may not provide.
                 checks.append(Check(
                     f"security-pip-audit-{lock}",
-                    (py, "-m", "pip_audit", "--require-hashes", "--no-deps", "-r", lock), root,
+                    (py, "-m", "pip_audit", "--require-hashes", "--disable-pip", "-r", lock), root,
                 ))
         if frontend:
             checks.append(Check(
