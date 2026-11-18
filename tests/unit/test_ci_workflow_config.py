@@ -3,13 +3,17 @@
 These checks catch configuration shapes that parse as YAML but behave in a way
 the repository does not intend: duplicate mapping keys, an advisory gate that
 skips a lock, or a Dependabot ecosystem whose limit contradicts its comment.
+
+The checks use only the standard library: PyYAML is not a declared project
+dependency, and a test must not depend on a package that only happens to be
+installed on a developer's machine.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
-import yaml
 
 pytestmark = pytest.mark.core
 
@@ -19,67 +23,95 @@ WORKFLOWS = (
     ROOT / ".github/workflows/build.yml",
     ROOT / ".github/workflows/pr-checks.yml",
 )
+DEPENDABOT = ROOT / ".github/dependabot.yml"
+
+# A YAML mapping key at the start of a line, ignoring indentation.
+_MAPPING_KEY = re.compile(r"^(?P<indent>[ \t]*)(?P<key>[A-Za-z_][A-Za-z0-9_.-]*)\s*:(?=\s|$)")
 
 
-class _UniqueKeyLoader(yaml.SafeLoader):
-    """A SafeLoader that rejects duplicate mapping keys."""
+def _mapping_blocks(text: str) -> list[tuple[int, str]]:
+    """Return (indent, key) for every mapping key in a YAML document."""
+    return [
+        (len(match.group("indent")), match.group("key"))
+        for match in _MAPPING_KEY.finditer(text)
+    ]
 
 
-def _construct_unique_mapping(loader: yaml.SafeLoader, node: yaml.MappingNode) -> dict:
-    mapping: dict = {}
-    for key_node, value_node in node.value:
-        key = loader.construct_object(key_node, deep=True)
-        if key in mapping:
-            raise ValueError(f"duplicate key: {key!r}")
-        mapping[key] = loader.construct_object(value_node, deep=True)
-    return mapping
+def _duplicate_keys(text: str) -> list[str]:
+    """Find mapping keys that are declared twice within the same block.
+
+    A duplicate key in one mapping is ambiguous: YAML loaders may keep the
+    first value, keep the last, or reject the document. GitHub's workflow and
+    Dependabot parsers are not guaranteed to agree, so the repository must not
+    contain one.
+    """
+    # Track the keys seen at each indentation level and the line that closed
+    # that level, so a sibling block does not look like a duplicate.
+    open_blocks: list[tuple[int, set[str], int]] = []
+    duplicates: list[str] = []
+
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        stripped = raw.split("#", 1)[0].rstrip()
+        if not stripped.strip():
+            continue
+        indent = len(stripped) - len(stripped.lstrip(" \t"))
+        # Close every block that this line dedented out of.
+        while open_blocks and open_blocks[-1][0] > indent:
+            open_blocks.pop()
+        # A list item starts a new scope; the keys after it belong to that item.
+        if stripped.lstrip().startswith("- "):
+            open_blocks.append((indent + 2, set(), lineno))
+            continue
+        match = _MAPPING_KEY.match(stripped)
+        if match is None:
+            continue
+        key = match.group("key")
+        if open_blocks and open_blocks[-1][0] == indent:
+            seen = open_blocks[-1][1]
+            if key in seen:
+                duplicates.append(f"{key} (line {lineno})")
+            seen.add(key)
+        else:
+            open_blocks.append((indent, {key}, lineno))
+    return duplicates
 
 
-_UniqueKeyLoader.add_constructor(
-    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping
-)
-
-
-def _load_unique(path: Path) -> dict:
-    return yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
-
-
-@pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda p: p.name)
-def test_workflow_has_no_duplicate_yaml_keys(workflow: Path) -> None:
-    # A duplicate key is silently resolved by most YAML loaders, so GitHub may
-    # see a different configuration than the file appears to describe.
-    _load_unique(workflow)
+def test_workflows_have_no_duplicate_yaml_keys() -> None:
+    for workflow in WORKFLOWS:
+        duplicates = _duplicate_keys(workflow.read_text(encoding="utf-8"))
+        assert not duplicates, f"{workflow.name} has duplicate keys: {duplicates}"
 
 
 def test_dependabot_config_has_no_duplicate_yaml_keys() -> None:
-    _load_unique(ROOT / ".github/dependabot.yml")
+    duplicates = _duplicate_keys(DEPENDABOT.read_text(encoding="utf-8"))
+    assert not duplicates, f".github/dependabot.yml has duplicate keys: {duplicates}"
 
 
-def test_dependabot_pip_updates_are_disabled_with_one_limit() -> None:
-    config = _load_unique(ROOT / ".github/dependabot.yml")
-    pip_entries = [
-        entry for entry in config["updates"]
-        if entry["package-ecosystem"] == "pip"
-    ]
-    assert len(pip_entries) == 1
-    pip_entry = pip_entries[0]
+def test_dependabot_pip_updates_are_disabled() -> None:
+    text = DEPENDABOT.read_text(encoding="utf-8")
+    pip_block = _ecosystem_block(text, "pip")
     # Dependabot's pip resolver cannot regenerate these uv-compiled locks, so
     # pip version-update PRs are disabled and the advisory gates in CI are the
     # compensating control.
-    assert pip_entry["open-pull-requests-limit"] == 0
-    assert pip_entry["directory"] == "/"
+    assert "open-pull-requests-limit: 0" in pip_block
+    assert "open-pull-requests-limit: 5" not in pip_block
 
 
 def test_dependabot_npm_updates_target_the_frontend_lock() -> None:
-    config = _load_unique(ROOT / ".github/dependabot.yml")
-    npm_entries = [
-        entry for entry in config["updates"]
-        if entry["package-ecosystem"] == "npm"
-    ]
-    assert len(npm_entries) == 1
+    text = DEPENDABOT.read_text(encoding="utf-8")
+    npm_block = _ecosystem_block(text, "npm")
     # frontend/package-lock.json is the only npm lock in the repository, so a
     # Dependabot npm update lands directly on the lock npm ci consumes.
-    assert npm_entries[0]["directory"] == "/frontend"
+    assert 'directory: "/frontend"' in npm_block
+
+
+def _ecosystem_block(text: str, ecosystem: str) -> str:
+    """Return the YAML block that configures one Dependabot ecosystem."""
+    marker = f"- package-ecosystem: {ecosystem}"
+    start = text.find(marker)
+    assert start != -1, f"no {ecosystem} ecosystem in the Dependabot config"
+    following = text.find("- package-ecosystem:", start + len(marker))
+    return text[start:following if following != -1 else len(text)]
 
 
 @pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda p: p.name)
