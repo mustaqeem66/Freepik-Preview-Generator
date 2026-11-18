@@ -29,4 +29,6 @@ ezdxf>=1.1.0
 olefile>=0.46
 cascadio>=0.1.1
 pypdfium2>=4.30
-fonttools[woff]>=4.0
+# fonttools 4.68.0 is the first release that requires the patched
+# brotli>=1.2.1 / brotlicffi>=1.2.1.0 (GHSA-9v8h-qqgm-4m35).
+fonttools[woff]>=4.68.0
