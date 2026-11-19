@@ -40,10 +40,11 @@ jobs:
         # only apply to Windows or macOS would be skipped on this Linux job.
         # Audit a platform-neutral projection of each lock so every pinned
         # package is checked on every platform.
-        run: |
-          for lock in requirements-lock.txt requirements-dev-lock.txt requirements-linux-gui-lock.txt; do
-            python scripts/audit_lock_all_platforms.py "$lock"
-          done
+        run: >
+          python scripts/audit_lock_all_platforms.py
+          requirements-lock.txt
+          requirements-dev-lock.txt
+          requirements-linux-gui-lock.txt
       - name: Frontend gates
         working-directory: frontend
         run: |

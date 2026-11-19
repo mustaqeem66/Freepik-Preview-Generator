@@ -87,10 +87,11 @@ jobs:
         # only apply to another operating system would be skipped. Audit a
         # platform-neutral projection of each lock so every pinned package is
         # checked on every platform.
-        run: |
-          for lock in requirements-lock.txt requirements-dev-lock.txt requirements-linux-gui-lock.txt; do
-            python scripts/audit_lock_all_platforms.py "$lock"
-          done
+        run: >
+          python scripts/audit_lock_all_platforms.py
+          requirements-lock.txt
+          requirements-dev-lock.txt
+          requirements-linux-gui-lock.txt
       - name: Set up Node.js 24.15.0
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
