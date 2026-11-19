@@ -35,14 +35,18 @@ This checklist compares the public GitHub branch with the user-supplied `Preview
 
 ## Desktop experience
 
-- [ ] Add an **Add Files** native multi-select path in parallel with the folder-only chooser; never change the folder dialog into a file dialog.
-- [ ] Implement and test file-based ingestion for batch export, preview, drag/drop and reporting; don't offer selection that can't be exported.
-- [ ] Add accessible drag/drop empty state, unsupported file explanation, searchable asset list.
-- [ ] Create design tokens, improve small typography/spacing, keyboard focus and contrast.
-- [ ] Create resizable library/preview/inspector panes and collapsible controls.
-- [ ] Add before/after preview, checkerboard and zoom-to-fit.
-- [ ] Add native desktop toast notifications for completion/failure with opt-in preferences; no intrusive always-on-top popup.
-- [ ] Add presets, batch queue and cancel state UX.
+All eight items below were implemented after this checklist was written. Each was
+re-verified against `main` on 2026-11-19; the original text is kept so the
+change of state stays auditable.
+
+- [x] Add an **Add Files** native multi-select path in parallel with the folder-only chooser; never change the folder dialog into a file dialog. — `DesktopApi.browse_files` uses `allow_multiple=True` and grants **exact file paths only**; no directory is added, so picking a file never grants its siblings or parent. The folder dialog is untouched. 5000-file cap on both the selection and the grant set.
+- [~] Implement and test file-based ingestion for batch export, preview, drag/drop and reporting; don't offer selection that can't be exported. — **Batch export, preview and reporting** are done: `DesktopApi.start_batch_files` and `process_folder(selected_files=…)` carry picked files through preview, batch and reporting, with `sourceIndex` disambiguating same-name picks. **Drag/drop is not implemented** — see the item below.
+- [~] Add accessible drag/drop empty state, unsupported file explanation, searchable asset list. — **Searchable asset list** and **unsupported file explanation** are done: `FileList` filters by filename while keeping the original source indices so a filtered result cannot retarget a different file, and `App.tsx` renders the probe's `previewSupport.caveat` in a `role="note"` block. **Drag/drop is not implemented** — no drop handler exists anywhere in `frontend/src`. The empty state is keyboard-reachable, so the remaining gap is the drop target itself.
+- [x] Create design tokens, improve small typography/spacing, keyboard focus and contrast. — 60 custom properties in `frontend/src/index.css` with light/dark palettes; 3px `:focus-visible` rings; functional labels at 12px with 10–11px reserved for short badges. **Contrast was re-audited on 2026-11-19** and now has a regression gate in `tests/frontend/test_theme_contrast.py`.
+- [x] Create resizable library/preview/inspector panes and collapsible controls. — `PaneResizer` with keyboard support.
+- [x] Add before/after preview, checkerboard and zoom-to-fit. — `BeforeAfterComparison` plus the canvas zoom/pan and fit controls.
+- [x] Add native desktop toast notifications for completion/failure with opt-in preferences; no intrusive always-on-top popup. — `previewgen/notifications.py`, persisted as an opt-in setting that defaults to **off**; failures are non-fatal and never block the bridge.
+- [x] Add presets, batch queue and cancel state UX. — `StylePresetManager` (grant-safe: a preset never changes `logoPath`, `fontPath`, `inputFolder` or `outputFolder`) and `BatchProgress` with cancel state.
 
 ## Security, operations and performance
 
