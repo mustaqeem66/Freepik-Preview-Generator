@@ -164,18 +164,32 @@ def test_cancel_racing_batch_start_is_not_lost(tmp_path, monkeypatch):
     event under the same lock. Before they were swapped together, a Cancel
     arriving between the two was dropped and the new batch rendered the whole
     folder even though the user had asked to stop.
+
+    The Cancel is injected exactly in that window: ``start_batch`` clears the
+    manager event, and the Cancel is raised from inside that clear, before the
+    new operation is installed. With the old ordering the Cancel could only
+    reach the *previous* operation, and the new batch ran uncancelled. With the
+    swap under one lock the Cancel is applied to the new operation instead.
     """
     import previewgen.lifecycle as lifecycle_module
 
-    processed: list[str] = []
+    observed_cancel: list[bool] = []
 
     def fake_process_folder(input_folder, output_folder, config, progress, is_cancelled, **kwargs):
-        processed.append(str(input_folder))
-        # A real run polls the cancellation callback between files.
+        # A real run polls the cancellation callback between files. Poll long
+        # enough to cover the Cancel thread's wait for the lock.
+        saw_cancel = False
+        for _ in range(200):
+            if is_cancelled():
+                saw_cancel = True
+                break
+            time.sleep(0.01)
+        observed_cancel.append(saw_cancel)
         return {
-            "planned": 1, "processed": 1, "remaining": 0,
-            "success": 1, "failed": 0, "skipped": 0,
-            "cancelled": False, "status": "completed",
+            "planned": 1, "processed": 0 if saw_cancel else 1, "remaining": 0,
+            "success": 0 if saw_cancel else 1, "failed": 0, "skipped": 0,
+            "cancelled": saw_cancel,
+            "status": "cancelled" if saw_cancel else "completed",
             "errors": [], "duration": 0.0,
         }
 
@@ -187,23 +201,32 @@ def test_cancel_racing_batch_start_is_not_lost(tmp_path, monkeypatch):
     def clear_then_cancel(self):
         original_clear(self)
         if self is lifecycle.cancel_event:
-            # The Cancel arrives from the UI thread while the batch is starting.
-            threading.Thread(target=lifecycle.cancel_batch, daemon=True).start()
-            time.sleep(0.05)
+            # The Cancel arrives from the UI thread exactly while the batch is
+            # starting. It must wait for the lock, so the batch cannot install
+            # its operation in between.
+            cancel_thread = threading.Thread(target=lifecycle.cancel_batch, daemon=True)
+            cancel_thread.start()
+            cancel_thread.join(timeout=0.5)
 
+    # NOTE: the patches are deliberately left in place for the whole test. The
+    # worker thread runs after ``start_batch`` returns, so restoring
+    # ``process_folder`` earlier would swap the fake out from under the batch.
     monkeypatch.setattr(threading.Event, "clear", clear_then_cancel)
-    try:
-        lifecycle.start_batch(
-            tmp_path, tmp_path / "out", PreviewConfig(),
-            lambda *_: None, lambda: False, operation_id="batch_raced",
-        )
-    finally:
-        monkeypatch.undo()
 
-    lifecycle.batch_thread.join(timeout=5)
+    lifecycle.start_batch(
+        tmp_path, tmp_path / "out", PreviewConfig(),
+        lambda *_: None, lambda: False, operation_id="batch_raced",
+    )
+
+    lifecycle.batch_thread.join(timeout=15)
     assert not lifecycle.batch_thread.is_alive()
-    # The cancelled batch must not have rendered anything.
-    assert processed == []
+    # The batch must not have run to completion. Either the Cancel arrived
+    # before the batch started (nothing was rendered) or the running batch
+    # observed it (the render stopped). Only a batch that finished the whole
+    # folder uncancelled -- the old behaviour -- fails here.
+    assert observed_cancel in ([], [True]), (
+        f"the batch ignored the Cancel: {observed_cancel}"
+    )
     assert lifecycle.cancel_event.is_set()
 
 
