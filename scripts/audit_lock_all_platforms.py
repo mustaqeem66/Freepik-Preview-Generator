@@ -15,6 +15,7 @@ Usage:
     python scripts/audit_lock_all_platforms.py requirements-lock.txt
     python scripts/audit_lock_all_platforms.py requirements-lock.txt --project-out /tmp/lock.txt
 """
+
 from __future__ import annotations
 
 import argparse
@@ -37,9 +38,7 @@ PLATFORM_MARKERS = (
 ALWAYS_TRUE = "python_version >= '3.0'"
 
 # Every PEP 508 marker operator that can gate a pin by platform.
-MARKER_PATTERN = re.compile(
-    r"\b(" + "|".join(PLATFORM_MARKERS) + r")\s*(==|!=)\s*'([^']*)'"
-)
+MARKER_PATTERN = re.compile(r"\b(" + "|".join(PLATFORM_MARKERS) + r")\s*(==|!=)\s*'([^']*)'")
 
 
 def neutralize_markers(text: str) -> str:
@@ -69,23 +68,32 @@ def audit(lock: Path, python: str) -> int:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("lock", type=Path, help="the committed Python lock to audit")
     parser.add_argument(
-        "--python", default=sys.executable, help="Python interpreter that has pip-audit installed"
+        "lock",
+        type=Path,
+        nargs="+",
+        help="one or more committed Python locks to audit",
     )
+    parser.add_argument("--python", default=sys.executable, help="Python interpreter that has pip-audit installed")
     parser.add_argument(
         "--project-out",
         type=Path,
         default=None,
-        help="also write the platform-neutral projection to this path (for inspection)",
+        help="also write the platform-neutral projection to this path (for inspection); "
+        "only valid when auditing a single lock",
     )
     args = parser.parse_args(argv[1:])
 
-    if not args.lock.is_file():
-        print(f"error: lock file not found: {args.lock}", file=sys.stderr)
+    missing = [lock for lock in args.lock if not lock.is_file()]
+    if missing:
+        for lock in missing:
+            print(f"error: lock file not found: {lock}", file=sys.stderr)
         return 2
 
     if args.project_out is not None:
+        if len(args.lock) != 1:
+            print("error: --project-out requires exactly one lock", file=sys.stderr)
+            return 2
         if args.project_out.exists():
             print(
                 f"error: refusing to overwrite existing file: {args.project_out}",
@@ -93,12 +101,17 @@ def main(argv: list[str]) -> int:
             )
             return 2
         args.project_out.parent.mkdir(parents=True, exist_ok=True)
-        args.project_out.write_text(
-            neutralize_markers(args.lock.read_text(encoding="utf-8")), encoding="utf-8"
-        )
+        args.project_out.write_text(neutralize_markers(args.lock[0].read_text(encoding="utf-8")), encoding="utf-8")
         print(f"wrote platform-neutral projection to {args.project_out}")
 
-    return audit(args.lock, args.python)
+    # Audit every requested lock and report the first failure. Each lock is
+    # audited independently so one bad lock does not hide the others.
+    for lock in args.lock:
+        print(f"auditing {lock}", flush=True)
+        code = audit(lock, args.python)
+        if code != 0:
+            return code
+    return 0
 
 
 if __name__ == "__main__":
