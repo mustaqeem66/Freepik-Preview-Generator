@@ -21,7 +21,7 @@
   border: 1px solid var(--card-border); border-radius: 7px; background: var(--chip-bg); }
 .asset-view-toggle button { display: grid; place-items: center; border: 0; border-radius: 5px;
   padding: 6px; background: transparent; color: var(--text-sec); }
-.asset-view-toggle button[aria-pressed="true"] { background: var(--card-bg); color: var(--accent);
+.asset-view-toggle button[aria-pressed="true"] { background: var(--card-bg); color: var(--accent-text);
   box-shadow: 0 1px 3px rgba(0,0,0,.08); }
 .asset-view-toggle button:focus-visible { outline: 2px solid var(--accent); }
 @media (forced-colors: active) {
