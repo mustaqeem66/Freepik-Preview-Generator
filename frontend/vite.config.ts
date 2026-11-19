@@ -43,5 +43,18 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "jsdom",
+    // Vitest's default fork pool starts one jsdom environment per test file
+    // with unbounded concurrency. On a 4-core runner with limited free memory
+    // the pool can fail to start a worker ("Timeout waiting for worker to
+    // respond"), which fails the whole suite even though every test passes.
+    // Bounding the pool keeps the run deterministic on constrained machines;
+    // CI runners still finish it in well under a minute.
+    pool: "forks",
+    poolOptions: {
+      forks: {
+        maxForks: 2,
+        minForks: 1,
+      },
+    },
   },
 });
