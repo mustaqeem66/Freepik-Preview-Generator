@@ -11,9 +11,12 @@
   --text: #232328;
   --text-main: var(--text);
   --text-sec: #63636d;
-  --text-muted: #72727c;
+  --text-muted: #6b6b75;
   --accent: #0067d4;
   --accent-hover: #005bbd;
+  /* Accent used as a text/icon colour. The solid accent is a button fill and
+     is not readable as text on a light surface; this token is. */
+  --accent-text: #0067d4;
   --chip-bg: #e9e9ee;
   --btn-disabled: #a2a2ad;
   --preview-bg: #e5e5e9;
@@ -38,6 +41,10 @@
   --text-muted: #a3a3ae;
   --accent: #086cd9;
   --accent-hover: #075fc3;
+  /* The dark accent (#086cd9) only reaches 2.60:1 on --surface and 3.37:1 on
+     --bg, so accent-coloured text and icons use a lighter token that clears
+     the WCAG AA 4.5:1 floor on every dark surface. */
+  --accent-text: #4da3ff;
   --chip-bg: #38383e;
   --btn-disabled: #55555f;
   --preview-bg: #17171a;
@@ -86,7 +93,7 @@ fieldset:disabled { opacity: .65; }
 .button.primary { color: white; background: var(--accent); border-color: transparent; }
 .button.primary:hover:not(:disabled) { background: var(--accent-hover); }
 .button[aria-pressed="true"] { background: var(--selection); border-color: var(--focus-ring); }
-.text-button { border: 0; background: none; color: var(--accent); padding: 4px; font-weight: 600; }
+.text-button { border: 0; background: none; color: var(--accent-text); padding: 4px; font-weight: 600; }
 .studio-shell { height: 100dvh; min-height: 600px; display: flex; flex-direction: column; padding: 0 18px; gap: 12px; }
 .studio-toolbar { display: flex; align-items: center; justify-content: space-between; min-height: 78px; gap: 20px; flex-shrink: 0; }
 .brand, .toolbar-actions { display: flex; align-items: center; gap: 12px; }
@@ -255,11 +262,15 @@ body { -webkit-font-smoothing: antialiased; }
 .icon-button { width: 34px; }
 .button:active:not(:disabled), .icon-button:active:not(:disabled) { transform: scale(.975); }
 .button.primary {
-  background: linear-gradient(180deg, #3b9aff 0%, var(--accent) 85%);
+  background: linear-gradient(180deg, #2676cc 0%, var(--accent) 85%);
   border-color: rgba(0, 83, 170, .3);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.24), 0 1px 3px rgba(0,70,140,.15);
 }
-[data-theme="dark"] .button.primary { background: linear-gradient(180deg,#268fff,var(--accent)); }
+/* The dark gradient's original top stop (#268fff) put white 12px labels at
+   3.25:1, and the light stop (#3b9aff) at 2.90:1 -- both under the WCAG AA
+   4.5:1 floor for normal text. These stops keep the same blue depth and
+   highlight so the button still reads as a raised accent surface. */
+[data-theme="dark"] .button.primary { background: linear-gradient(180deg,#1a6fc8,var(--accent)); }
 .button.primary:hover:not(:disabled) { filter: brightness(1.05); }
 input[type="text"], input[type="number"], select { border-radius: 8px; min-height: 34px; }
 h2 { font-size: 13px; }

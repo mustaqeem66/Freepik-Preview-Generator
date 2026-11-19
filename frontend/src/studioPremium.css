@@ -69,7 +69,7 @@
 .brand-mark {
   width: 42px; height: 42px;
   border-radius: 13px;
-  color: var(--accent);
+  color: var(--accent-text);
   border: 1px solid var(--card-border);
   background: var(--surface);
   box-shadow: 0 1px 3px rgba(22, 36, 57, .08);

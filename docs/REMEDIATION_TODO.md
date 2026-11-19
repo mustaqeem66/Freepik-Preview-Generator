@@ -35,14 +35,18 @@ This checklist compares the public GitHub branch with the user-supplied `Preview
 
 ## Desktop experience
 
-- [ ] Add an **Add Files** native multi-select path in parallel with the folder-only chooser; never change the folder dialog into a file dialog.
-- [ ] Implement and test file-based ingestion for batch export, preview, drag/drop and reporting; don't offer selection that can't be exported.
-- [ ] Add accessible drag/drop empty state, unsupported file explanation, searchable asset list.
-- [ ] Create design tokens, improve small typography/spacing, keyboard focus and contrast.
-- [ ] Create resizable library/preview/inspector panes and collapsible controls.
-- [ ] Add before/after preview, checkerboard and zoom-to-fit.
-- [ ] Add native desktop toast notifications for completion/failure with opt-in preferences; no intrusive always-on-top popup.
-- [ ] Add presets, batch queue and cancel state UX.
+All eight items below were implemented after this checklist was written. Each was
+re-verified against `main` on 2026-11-19; the original text is kept so the
+change of state stays auditable.
+
+- [x] Add an **Add Files** native multi-select path in parallel with the folder-only chooser; never change the folder dialog into a file dialog. — `DesktopApi.browse_files` uses `allow_multiple=True` and grants **exact file paths only**; no directory is added, so picking a file never grants its siblings or parent. The folder dialog is untouched. 5000-file cap on both the selection and the grant set.
+- [~] Implement and test file-based ingestion for batch export, preview, drag/drop and reporting; don't offer selection that can't be exported. — **Batch export, preview and reporting** are done: `DesktopApi.start_batch_files` and `process_folder(selected_files=…)` carry picked files through preview, batch and reporting, with `sourceIndex` disambiguating same-name picks. **Drag/drop is not implemented** — see the item below.
+- [~] Add accessible drag/drop empty state, unsupported file explanation, searchable asset list. — **Searchable asset list** and **unsupported file explanation** are done: `FileList` filters by filename while keeping the original source indices so a filtered result cannot retarget a different file, and `App.tsx` renders the probe's `previewSupport.caveat` in a `role="note"` block. **Drag/drop is not implemented** — no drop handler exists anywhere in `frontend/src`. The empty state is keyboard-reachable, so the remaining gap is the drop target itself.
+- [x] Create design tokens, improve small typography/spacing, keyboard focus and contrast. — 60 custom properties in `frontend/src/index.css` with light/dark palettes; 3px `:focus-visible` rings; functional labels at 12px with 10–11px reserved for short badges. **Contrast was re-audited on 2026-11-19** and now has a regression gate in `tests/frontend/test_theme_contrast.py`.
+- [x] Create resizable library/preview/inspector panes and collapsible controls. — `PaneResizer` with keyboard support.
+- [x] Add before/after preview, checkerboard and zoom-to-fit. — `BeforeAfterComparison` plus the canvas zoom/pan and fit controls.
+- [x] Add native desktop toast notifications for completion/failure with opt-in preferences; no intrusive always-on-top popup. — `previewgen/notifications.py`, persisted as an opt-in setting that defaults to **off**; failures are non-fatal and never block the bridge.
+- [x] Add presets, batch queue and cancel state UX. — `StylePresetManager` (grant-safe: a preset never changes `logoPath`, `fontPath`, `inputFolder` or `outputFolder`) and `BatchProgress` with cancel state.
 
 ## Security, operations and performance
 
@@ -127,3 +131,32 @@ Audit performed directly on `main` at `576b6a2`; each fix ships with a regressio
 
 Not changed after review: `LifecycleManager.start_batch` joins the superseded worker thread from the new worker thread only (never the bridge thread), which is required to keep output writes serialized; and `ActiveOperation.process_ids` is defense-in-depth metadata for shutdown logging, while actual renderer children are owned and reaped by their coordinators. Neither is a functional defect.
 
+
+## 2026-11-19 — Deep audit of `main` at `6a18d9e`
+
+Audit performed directly on `main` after the CI flake fixes in #159 and #160. Every
+finding below ships with a regression test.
+
+| Finding | Fix | Gate |
+| --- | --- | --- |
+| The primary button's gradient put its white 12px label at **2.90:1** (light) and **3.25:1** (dark) against the gradient's light end — under the WCAG AA 4.5:1 floor for normal text | the gradient stops were darkened to `#2676cc` / `#1a6fc8`; the worst point on each gradient is now 4.62:1 and 5.03:1 | `tests/frontend/test_theme_contrast.py::test_white_button_label_is_readable_across_the_whole_gradient` |
+| Accent-coloured text used the solid `--accent` fill token, which reaches only **2.60:1** on the dark surface | a dedicated `--accent-text` token was added (`#0067d4` light, `#4da3ff` dark) and every accent-as-text rule now uses it | `tests/frontend/test_theme_contrast.py::test_accent_text_is_readable_on_every_surface` |
+| The dark `--text-muted` token sat at **4.22:1** on the page background | darkened to `#6b6b75` (4.67:1 on `--bg`, 5.05:1 on `--card`) | `tests/frontend/test_theme_contrast.py::test_secondary_text_is_readable_on_the_page_background` |
+| The pressed focus button painted accent text over the tinted `--selection` surface, which lands at **4.16:1** in dark mode | that one state uses `--text` instead (9.69:1) | `tests/frontend/test_theme_contrast.py::test_accent_text_is_readable_on_the_selection_surface` |
+| The Vitest worker-pool bound still used the `poolOptions` shape that **Vitest 4 removed**, printing a deprecation warning on every run | migrated to the current top-level `maxWorkers` / `minWorkers` options; the bound now applies without the warning | `frontend/vite.config.ts`, verified by a clean `npm test` run |
+
+### Verified unchanged in this audit
+
+The Windows hang fix (#74) is intact: the `DesktopApi` bridge surface is still flat
+(41 public names, no `_window`), every coordinator object still carries
+`_serializable = False`, and `tests/unit/test_bridge_surface_exposure.py` passes.
+The batch cancel-race fix (#159) holds under a deterministic regression test, and
+the native-picker child now exits with a diagnostic instead of hanging until the
+parent's timeout (#160).
+
+### Not verified in this audit
+
+Native installer operation, Windows/macOS idle behaviour, renderer image fidelity
+against an independent oracle, and code signing/notarization remain unproven —
+they need real machines and signed artifacts, and are tracked in
+`docs/engineering/2026-10-28-audit-verification-progress-and-release-plan.md`.

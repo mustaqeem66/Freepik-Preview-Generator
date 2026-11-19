@@ -49,12 +49,14 @@ export default defineConfig({
     // respond"), which fails the whole suite even though every test passes.
     // Bounding the pool keeps the run deterministic on constrained machines;
     // CI runners still finish it in well under a minute.
+    //
+    // Vitest 4 removed `poolOptions` in favour of top-level `maxWorkers` /
+    // `minWorkers`. The old nested form still worked in Vitest 5 but printed
+    // a deprecation warning on every run; the top-level form is the current
+    // API and keeps the bound that stops constrained runners from failing to
+    // start a worker.
     pool: "forks",
-    poolOptions: {
-      forks: {
-        maxForks: 2,
-        minForks: 1,
-      },
-    },
+    maxWorkers: 2,
+    minWorkers: 1,
   },
 });

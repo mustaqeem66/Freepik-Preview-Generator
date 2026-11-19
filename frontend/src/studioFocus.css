@@ -11,11 +11,15 @@
   font-size: 12px;
 }
 .canvas-focus-button[aria-pressed="true"] {
-  color: var(--accent);
+  color: var(--accent-text);
   border-color: var(--focus-ring);
   background: var(--selection);
   box-shadow: none;
 }
+/* --selection is a tinted surface, so the accent-text token lands at 4.16:1
+   on it in dark mode. Use the plain text colour there, which clears 4.5:1
+   against every selection tone. */
+[data-theme="dark"] .canvas-focus-button[aria-pressed="true"] { color: var(--text); }
 .studio-workspace-focused { grid-template-columns: minmax(0, 1fr); }
 .studio-workspace-focused .canvas-pane { min-width: 0; min-height: 0; }
 .studio-workspace-focused .canvas-stage { margin: 10px; }
