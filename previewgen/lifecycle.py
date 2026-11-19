@@ -111,21 +111,36 @@ class LifecycleManager:
         Each run owns an independent cancellation event and operation id. The
         new worker waits for the previous worker to exit before touching the
         filesystem, ensuring superseded runs cannot overlap output writes.
+
+        The manager-level cancel event and the active operation are swapped
+        under ``_batch_lock``. A cancel that arrives while a batch is starting
+        is therefore either observed by the new operation or applied to the
+        one it superseded, but never dropped between the two.
         """
-        self.cancel_event.clear()
         op = ActiveOperation(operation_id=operation_id, kind="batch_render")
         with self._batch_lock:
+            self.cancel_event.clear()
             previous = self._active_batch
             if previous is not None:
                 previous.cancel_event.set()
             self._active_batch = op
+
+        def cancelled() -> bool:
+            """True when this run, the manager, or the caller asked to stop.
+
+            The manager-level event is included so a cancel that arrived
+            before this operation was installed is still honoured. It is only
+            set by an explicit cancel, and it is cleared under ``_batch_lock``
+            when a new run starts, so it cannot cancel an unrelated batch.
+            """
+            return op.cancel_event.is_set() or self.cancel_event.is_set() or is_cancelled()
 
         def run_worker() -> None:
             summary: dict[str, Any]
             try:
                 if previous is not None and previous.thread is not None:
                     previous.thread.join()  # Worker thread only; never the bridge thread.
-                if op.cancel_event.is_set() or is_cancelled():
+                if cancelled():
                     summary = {
                         "planned": 0, "processed": 0, "remaining": 0,
                         "success": 0, "failed": 0, "skipped": 0,
@@ -141,13 +156,11 @@ class LifecycleManager:
 
                     if selected_files is None:
                         summary = process_folder(
-                            input_folder, output_folder, config, progress,
-                            lambda: op.cancel_event.is_set() or is_cancelled(),
+                            input_folder, output_folder, config, progress, cancelled,
                         )
                     else:
                         summary = process_folder(
-                            input_folder, output_folder, config, progress,
-                            lambda: op.cancel_event.is_set() or is_cancelled(),
+                            input_folder, output_folder, config, progress, cancelled,
                             selected_files=selected_files,
                         )
             except Exception as exc:
@@ -156,8 +169,8 @@ class LifecycleManager:
                 summary = {
                     "planned": 0, "processed": 0, "remaining": 0,
                     "success": 0, "failed": 0, "skipped": 0,
-                    "cancelled": op.cancel_event.is_set(),
-                    "status": "cancelled" if op.cancel_event.is_set() else "failed",
+                    "cancelled": cancelled(),
+                    "status": "cancelled" if cancelled() else "failed",
                     "errorCode": code, "errors": [message], "duration": 0.0,
                 }
             finally:
@@ -181,9 +194,14 @@ class LifecycleManager:
         worker.start()
 
     def cancel_batch(self) -> None:
-        """Cancel only the current batch (never a scan, preview or probe)."""
-        self.cancel_event.set()
+        """Cancel only the current batch (never a scan, preview or probe).
+
+        The manager event and the active operation are signalled under the
+        same lock that ``start_batch`` uses to install a new operation, so a
+        cancel racing a batch start cannot be lost.
+        """
         with self._batch_lock:
+            self.cancel_event.set()
             if self._active_batch is not None:
                 self._active_batch.cancel_event.set()
 

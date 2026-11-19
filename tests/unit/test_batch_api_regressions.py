@@ -157,6 +157,56 @@ def test_cancel_batch_does_not_cancel_scan_operation():
     assert not scan.cancel_event.is_set()
 
 
+def test_cancel_racing_batch_start_is_not_lost(tmp_path, monkeypatch):
+    """A Cancel that lands while a batch is starting must stop that batch.
+
+    The batch installs its cancellation event and the manager-level cancel
+    event under the same lock. Before they were swapped together, a Cancel
+    arriving between the two was dropped and the new batch rendered the whole
+    folder even though the user had asked to stop.
+    """
+    import previewgen.lifecycle as lifecycle_module
+
+    processed: list[str] = []
+
+    def fake_process_folder(input_folder, output_folder, config, progress, is_cancelled, **kwargs):
+        processed.append(str(input_folder))
+        # A real run polls the cancellation callback between files.
+        return {
+            "planned": 1, "processed": 1, "remaining": 0,
+            "success": 1, "failed": 0, "skipped": 0,
+            "cancelled": False, "status": "completed",
+            "errors": [], "duration": 0.0,
+        }
+
+    monkeypatch.setattr(lifecycle_module, "process_folder", fake_process_folder)
+
+    lifecycle = LifecycleManager()
+    original_clear = threading.Event.clear
+
+    def clear_then_cancel(self):
+        original_clear(self)
+        if self is lifecycle.cancel_event:
+            # The Cancel arrives from the UI thread while the batch is starting.
+            threading.Thread(target=lifecycle.cancel_batch, daemon=True).start()
+            time.sleep(0.05)
+
+    monkeypatch.setattr(threading.Event, "clear", clear_then_cancel)
+    try:
+        lifecycle.start_batch(
+            tmp_path, tmp_path / "out", PreviewConfig(),
+            lambda *_: None, lambda: False, operation_id="batch_raced",
+        )
+    finally:
+        monkeypatch.undo()
+
+    lifecycle.batch_thread.join(timeout=5)
+    assert not lifecycle.batch_thread.is_alive()
+    # The cancelled batch must not have rendered anything.
+    assert processed == []
+    assert lifecycle.cancel_event.is_set()
+
+
 def test_single_export_zip_member_defaults_to_archive_folder(tmp_path):
     """A zip:// member must export next to the archive, not into the temp dir."""
     import urllib.parse
