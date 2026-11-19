@@ -71,6 +71,20 @@ def _observe_session(workdir: Path) -> dict[str, object]:
     finished = threading.Event()
     state = {"ticks": 0, "navigated": set(), "answered": [], "pick": chosen}
 
+    # A GTK-loop timer cannot rescue a stalled GTK loop: both the 80ms poll
+    # timer and the session watchdog below live on the default main context,
+    # so if that context stops iterating neither ever fires and the child
+    # hangs until the parent kills it. This thread-based watchdog does not
+    # depend on GTK at all and hard-exits the child so the parent sees a
+    # clean, attributable failure instead of a 180s timeout.
+    def hard_watchdog() -> None:
+        if not finished.wait(timeout=120.0):
+            sys.stderr.write("PICKER_WATCHDOG: the GTK main loop stalled\n")
+            sys.stderr.flush()
+            os._exit(70)
+
+    threading.Thread(target=hard_watchdog, daemon=True).start()
+
     def ready(dialog) -> bool:
         key = id(dialog)
         if key not in state["navigated"]:
@@ -141,10 +155,19 @@ def _observe_session(workdir: Path) -> dict[str, object]:
 
 
 def test_native_picker_selection_is_what_becomes_readable(tmp_path):
-    result = subprocess.run(
-        [sys.executable, str(Path(__file__).resolve()), CHILD_FLAG, str(tmp_path)],
-        capture_output=True, text=True, timeout=180, cwd=str(PROJECT_ROOT),
-    )
+    try:
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), CHILD_FLAG, str(tmp_path)],
+            capture_output=True, text=True, timeout=180, cwd=str(PROJECT_ROOT),
+        )
+    except subprocess.TimeoutExpired as exc:
+        # The child normally exits itself via its own watchdog. Reaching this
+        # branch means the whole child process wedged, so report it as such
+        # instead of an opaque timeout.
+        raise AssertionError(
+            "the native picker child process never exited; the GTK session "
+            f"did not complete\nstdout={exc.stdout}\nstderr={exc.stderr}"
+        ) from exc
     assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
     line = next(
         (line for line in result.stdout.splitlines() if line.startswith(EVIDENCE_PREFIX)), None
