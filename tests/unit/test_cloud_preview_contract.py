@@ -19,12 +19,22 @@ def test_root_bun_workspace_has_direct_vite_scripts() -> None:
     root = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     frontend = json.loads((ROOT / "frontend/package.json").read_text(encoding="utf-8"))
     assert root["private"] is True
-    assert root["workspaces"] == ["frontend"]
     assert root["version"] == frontend["version"]
     for script in ("dev", "build", "test", "typecheck"):
         assert root["scripts"].get(script)
-    assert root["scripts"]["dev"].startswith("vite frontend ")
-    assert "--port 3000" in root["scripts"]["dev"]
+    # The root package delegates to the canonical frontend package. It must not
+    # declare npm workspaces: npm would then resolve a workspace-root lock and
+    # ignore frontend/package-lock.json, breaking dependency update PRs.
+    assert "workspaces" not in root
+    for script in ("dev", "build", "test", "typecheck"):
+        assert root["scripts"][script].startswith("npm --prefix frontend ")
+
+
+def test_frontend_lock_is_the_only_npm_lock() -> None:
+    # npm resolves the workspace-root lock when one exists, so a second npm
+    # lock would silently shadow the canonical frontend lock.
+    assert not (ROOT / "package-lock.json").exists()
+    assert (ROOT / "frontend/package-lock.json").is_file()
 
 
 def test_cloud_bootstrap_does_not_autodetect_python_requirements() -> None:

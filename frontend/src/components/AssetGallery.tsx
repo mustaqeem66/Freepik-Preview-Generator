@@ -54,6 +54,8 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
   const { start, end, totalHeight } = virtualWindow;
   const [images, setImages] = useState<Record<string, string>>({});
   const [failed, setFailed] = useState<Set<string>>(() => new Set());
+  const imagesRef = useRef(images);
+  const failedRef = useRef(failed);
   const currentlyVisible = useMemo(() => {
     const indices: number[] = [];
     for (let row = start; row < end; row++) {
@@ -75,23 +77,25 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
 
   useEffect(() => {
     const unReady = bridgeEvents.subscribe("thumbnail.ready", ({ path, url }) => {
-      if (wantedRef.current.has(path)) {
-        setFailed((old) => {
-          if (!old.has(path)) return old;
-          const next = new Set(old);
-          next.delete(path);
-          return next;
-        });
-        setImages((old) => old[path] === url ? old : { ...old, [path]: url });
+      if (!wantedRef.current.has(path)) return;
+      if (failedRef.current.has(path)) {
+        const next = new Set(failedRef.current);
+        next.delete(path);
+        failedRef.current = next;
+        setFailed(next);
+      }
+      if (imagesRef.current[path] !== url) {
+        const next = { ...imagesRef.current, [path]: url };
+        imagesRef.current = next;
+        setImages(next);
       }
     });
     const unFailed = bridgeEvents.subscribe("thumbnail.failed", ({ path }) => {
-      if (wantedRef.current.has(path)) setFailed((old) => {
-        if (old.has(path)) return old;
-        const next = new Set(old);
-        next.add(path);
-        return next;
-      });
+      if (!wantedRef.current.has(path) || failedRef.current.has(path)) return;
+      const next = new Set(failedRef.current);
+      next.add(path);
+      failedRef.current = next;
+      setFailed(next);
     });
     return () => { unReady(); unFailed(); };
   }, []);
@@ -99,11 +103,16 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
   useEffect(() => {
     const wanted: string[] = JSON.parse(pathsKey) as string[];
     wantedRef.current = new Set(wanted);
-    setImages((old) => keepVisible(old, wanted));
-    setFailed((old) => {
-      const next = new Set([...old].filter((p) => wantedRef.current.has(p)));
-      return next.size === old.size ? old : next;
-    });
+    const visibleImages = keepVisible(imagesRef.current, wanted);
+    if (visibleImages !== imagesRef.current) {
+      imagesRef.current = visibleImages;
+      setImages(visibleImages);
+    }
+    const visibleFailed = new Set([...failedRef.current].filter((p) => wantedRef.current.has(p)));
+    if (visibleFailed.size !== failedRef.current.size) {
+      failedRef.current = visibleFailed;
+      setFailed(visibleFailed);
+    }
     const generation = ++generationRef.current;
     // Debounce fast wheel navigation. Only the latest visible set reaches Python.
     const timer = window.setTimeout(async () => {
@@ -114,7 +123,11 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
         const response = await api.request_thumbnails(wanted);
         if (generation !== generationRef.current || !response?.ok || !response.value) return;
         const cached = response.value;
-        setImages((old) => mergeVisible(old, wanted, cached));
+        const next = mergeVisible(imagesRef.current, wanted, cached);
+        if (next !== imagesRef.current) {
+          imagesRef.current = next;
+          setImages(next);
+        }
       } catch {
         // Gallery falls back to format tiles while the backend is unavailable.
       }
@@ -133,9 +146,11 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
         const result = await api.request_thumbnails(wanted);
         if (!result.ok || !result.value) return;
         const returned = result.value;
-        setImages((old) => {
-          return mergeVisible(old, wantedRef.current, returned);
-        });
+        const next = mergeVisible(imagesRef.current, wantedRef.current, returned);
+        if (next !== imagesRef.current) {
+          imagesRef.current = next;
+          setImages(next);
+        }
       } catch { /* The icon placeholder remains available offline. */ }
     }, 60_000);
     return () => window.clearInterval(interval);
@@ -213,12 +228,13 @@ export function AssetGallery({ files, matchedIndices, activeIndex, height, onSel
                 <span className="gallery-art" aria-hidden="true">
                   {image && !imageFailed
                     ? <img src={image} loading="lazy" decoding="async"
-                        onError={() => setFailed((old) => {
-                          if (old.has(file.path)) return old;
-                          const next = new Set(old);
+                        onError={() => {
+                          if (failedRef.current.has(file.path)) return;
+                          const next = new Set(failedRef.current);
                           next.add(file.path);
-                          return next;
-                        })} alt="" />
+                          failedRef.current = next;
+                          setFailed(next);
+                        }} alt="" />
                     : imageFailed ? <ImageOff size={23} strokeWidth={1.4}/> :
                       <FileImage size={23} strokeWidth={1.4}/>}
                 </span>

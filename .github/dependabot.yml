@@ -4,9 +4,19 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
     labels:
       - dependencies
+    # The Python locks are compiled by uv, not pip-tools. Dependabot's pip
+    # resolver drives pip-compile without --universal, so it re-resolves the
+    # graph against one interpreter and emits a lock that no longer matches the
+    # committed cross-platform pins. The Linux GUI lock additionally needs
+    # libgirepository/cairo build headers that the Dependabot container does
+    # not provide, so every update failed with "Error resolving dependency".
+    # Version bumps therefore go through the documented uv compile flow
+    # (see README, "Dependency lock maintenance (Python)"), and vulnerabilities
+    # are caught deterministically by the pip-audit gates in CI and in
+    # scripts/check_release_locally.py rather than by Dependabot.
+    open-pull-requests-limit: 0
 
   - package-ecosystem: npm
     directory: "/frontend"
@@ -15,6 +25,8 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
+    # frontend/package-lock.json is the only npm lock in the repository, so a
+    # Dependabot npm update lands directly on the lock npm ci consumes.
 
   - package-ecosystem: github-actions
     directory: "/"

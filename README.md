@@ -32,7 +32,7 @@ Choose artwork, refine its presentation and generate consistent JPG previews in 
 
 ### Browser-only development preview (cloud or local)
 
-From the repository root, run `bun install` and `bun run dev`; Vite listens on `0.0.0.0:3000`. The root `package.json` uses the canonical `frontend/` workspace rather than duplicating package versions. For a preview proxy that supplies a custom HTTP Host header, set `PREVIEWGEN_ALLOWED_HOSTS` to a comma-separated list of **trusted hostnames** before starting Vite (do not use a wildcard).
+From the repository root, run `npm ci --prefix frontend` and `npm run dev`; Vite listens on `0.0.0.0:3000`. The root `package.json` delegates to the canonical `frontend/` package rather than duplicating dependency versions, so there is exactly one npm lock (`frontend/package-lock.json`). Use `npm ci` rather than `npm install` so the install reproduces that lock exactly; `npm install` may rewrite `frontend/package-lock.json` and resolve versions other than the committed ones. For a preview proxy that supplies a custom HTTP Host header, set `PREVIEWGEN_ALLOWED_HOSTS` to a comma-separated list of **trusted hostnames** before starting Vite (do not use a wildcard).
 
 **Limit:** this starts only the React/Vite interface. Rendering, filesystem access and exports require the native Python/pywebview desktop backend, so they are unavailable in an ordinary web browser. For desktop development use the instructions below. Python dependencies remain in the explicit hash-pinned `requirements*-lock.txt` files; there is intentionally no root `requirements.txt` auto-install trigger.
 
@@ -331,26 +331,66 @@ page reloads. On native desktop startup, the real `window.pywebview.api` always
 takes priority, and automated Vitest bridge tests never enable the browser demo.
 Never treat the browser demo as proof that desktop image-renderer parity is certified.
 
-### Dependency lock maintenance (npm workspaces)
+### Dependency lock maintenance
 
-The desktop frontend remains the canonical npm dependency manifest under
-`frontend/package.json` and `frontend/package-lock.json`. Because the root
-`package.json` declares an npm workspace for the cloud preview, **npm ci
-resolves its lockfile from the repository root**, even when invoked from
-`frontend/`. Both lockfiles are therefore committed intentionally.
+The desktop frontend owns the only npm dependency manifest and lock in this
+repository: `frontend/package.json` and `frontend/package-lock.json`. The root
+`package.json` is a script-only entrypoint that delegates to the frontend; it
+declares **no npm workspaces** and there is **no root `package-lock.json`**.
 
-After making a trusted dependency update to the frontend lock, regenerate the
-workspace lock **offline**, then verify the two locks and all artifact hashes:
+That distinction is load-bearing. When a root package declares npm workspaces,
+npm resolves the workspace-root lock even when `npm ci` is invoked inside
+`frontend/`. A dependency update that only rewrites the frontend lock then
+fails later as an opaque `npm ci` EUSAGE error. With a single lock, npm always
+installs exactly what `frontend/package-lock.json` pins.
+
+After making a trusted dependency update, verify the lock structure and all
+artifact hashes, then run the frontend gates:
 
 ```bash
-python scripts/sync_root_workspace_lock.py
 python scripts/verify_dependency_locks.py
 cd frontend && npm ci
 ```
 
 Do not copy or fabricate integrity digests. Verify new artifact hashes against
-the official npm registry; commit both lockfiles in the same dependency PR.
-The integrity checker is structural, not a substitute for a live advisory audit.
+the official npm registry and commit `frontend/package-lock.json` in the same
+dependency PR. The integrity checker is structural, not a substitute for a live
+advisory audit.
+
+### Dependency lock maintenance (Python)
+
+The three Python locks are compiled by **uv**, not pip-tools:
+`requirements-lock.txt` (runtime), `requirements-dev-lock.txt` (development and
+CI), and `requirements-linux-gui-lock.txt` (the Linux packaged GUI build).
+
+Dependabot's pip resolver drives `pip-compile` without `--universal` and
+re-resolves the graph against a single interpreter, so it cannot reproduce these
+cross-platform pins; every pip update it attempted failed with
+`Error resolving dependency`. Dependabot pip **version** updates are therefore
+disabled. Vulnerabilities are caught instead by `pip-audit`, which runs against
+every committed lock in CI:
+
+```bash
+python -m pip_audit --require-hashes --disable-pip -r requirements-lock.txt
+```
+
+To bump a Python dependency, edit the relevant `requirements*.in` file and
+recompile the affected locks with the documented self-constrained command
+recorded in each lock's header, for example:
+
+```bash
+uv pip compile --universal --generate-hashes --python-version 3.12 \
+    -c requirements-dev-lock.txt \
+    --output-file requirements-dev-lock.txt requirements-dev.in
+```
+
+The self-constraint (`-c`) keeps every unrelated pin stable, so a recompile
+upgrades only what you intended to change. Recompile all three locks together
+and then confirm they still agree:
+
+```bash
+python scripts/verify_dependency_locks.py
+```
 
 ### 💻 Run locally
 

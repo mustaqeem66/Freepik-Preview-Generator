@@ -71,6 +71,26 @@ jobs:
 
       # ── Frontend gate: typecheck -> tests -> production bundle ──
       # Packaging must not start unless the frontend passes all three gates.
+      - name: Verify dependency lock integrity
+        # Fail before packaging when the canonical frontend npm lock is stale
+        # or unmirrored against frontend/package.json.
+        run: python scripts/verify_dependency_locks.py
+      - name: Audit Python dependencies for advisories
+        # Dependabot's pip resolver cannot regenerate these uv-compiled locks,
+        # so pip-audit is the deterministic vulnerability gate for every
+        # committed Python lock. --disable-pip reads the pins straight from the
+        # lock: these files are fully hash-pinned, so resolving them would add
+        # nothing and would try to build PyGObject, which needs system headers
+        # this runner does not provide.
+        #
+        # pip-audit evaluates PEP 508 markers against the runner, so pins that
+        # only apply to another operating system would be skipped. Audit a
+        # platform-neutral projection of each lock so every pinned package is
+        # checked on every platform.
+        run: |
+          for lock in requirements-lock.txt requirements-dev-lock.txt requirements-linux-gui-lock.txt; do
+            python scripts/audit_lock_all_platforms.py "$lock"
+          done
       - name: Set up Node.js 24.15.0
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -83,6 +103,11 @@ jobs:
           npm test
           npm run build
           cd ..
+      - name: Audit frontend dependencies for advisories
+        # Block packaging on any known npm advisory in the shipped dependency
+        # tree, including dev-only packages that reach the build toolchain.
+        run: npm audit --package-lock-only --audit-level=low --include=dev
+        working-directory: frontend
 
       # ── Mandatory Python Test Suite Gate (includes frontend bundle check) ──
       - name: Run Python unit and integration test suite
@@ -508,7 +533,7 @@ jobs:
           cat SHA256SUMS.txt
 
       - name: Create Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           generate_release_notes: true
           files: |

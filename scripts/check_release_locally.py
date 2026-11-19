@@ -92,9 +92,13 @@ def plan_checks(
                 "requirements-dev-lock.txt",
                 "requirements-linux-gui-lock.txt",
             ):
+                # audit_lock_all_platforms.py rewrites the platform markers so
+                # that pins for other operating systems are audited too, and
+                # uses --disable-pip so the pins are read straight from the
+                # hash-pinned lock instead of building PyGObject from source.
                 checks.append(Check(
                     f"security-pip-audit-{lock}",
-                    (py, "-m", "pip_audit", "--require-hashes", "-r", lock), root,
+                    (py, "scripts/audit_lock_all_platforms.py", lock), root,
                 ))
         if frontend:
             checks.append(Check(
@@ -107,7 +111,12 @@ def plan_checks(
 
 
 def frontend_deps_available(root: Path) -> bool:
-    """Recognize both legacy frontend and npm-workspace-hoisted installs."""
+    """Report whether the frontend dependencies are already installed.
+
+    The frontend owns the only npm lock, so ``npm ci`` installs into
+    ``frontend/node_modules``. The root directory is still checked so an
+    existing checkout with a hoisted install keeps working.
+    """
     return any(
         (path / "node_modules").is_dir()
         for path in (root / "frontend", root)

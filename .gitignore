@@ -103,6 +103,10 @@ project.tar.gz.b64.txt
 # Local-only QA evidence (never publish machine metadata by accident)
 local-check-report.json
 
+# Local-only tool state (Reticle sessions and Graphify output are machine artifacts)
+.reticle/
+graphify-out/
+
 # Local CI sandboxes used to reproduce the hash-pinned install (not project files)
 .venv-ci/
 .venv-lockcheck/

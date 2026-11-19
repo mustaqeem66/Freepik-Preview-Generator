@@ -18,9 +18,10 @@ import shutil
 import struct
 import tempfile
 import zlib
+from collections.abc import Iterator
 from io import BytesIO
 from pathlib import Path
-from typing import Any, BinaryIO, Iterator
+from typing import Any, BinaryIO
 
 from PIL import Image, ImageOps
 
