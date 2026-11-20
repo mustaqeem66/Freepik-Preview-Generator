@@ -186,6 +186,18 @@ is identical to the pre-consolidation build except the newly added
 `--accent-label`, and every rendered text node keeps the same foreground and
 background pair.
 
+Two failure modes the gate is explicitly required to catch, because either one
+would let a broken measurement report success:
+
+| Failure mode | How the gate refuses it |
+| --- | --- |
+| The theme toggle does not take effect, so the dark theme is never measured and both passes report the light theme's colours | the gate compares the two themes' resolved foreground colours and fails when they are identical |
+| The build step packages a different stylesheet than the one that was measured | the gate runs against `frontend/dist` **and** against the `index.html` that PyInstaller froze into the artifact, matching the CSP gate's convention |
+
+The first failure mode was confirmed by stubbing the theme toggle out: the
+gate reports "both themes resolved to the same foreground colours" and exits
+non-zero instead of passing.
+
 ### Not verified in this audit
 
 Native installer operation, Windows/macOS idle behaviour, renderer image fidelity
