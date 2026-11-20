@@ -162,6 +162,11 @@ jobs:
           mkdir -p build_diagnostics
           xvfb-run -a python scripts/verify_theme_contrast.py \
             --report build_diagnostics/theme-contrast.json
+          packaged_html="$(find dist/PreviewGen -path '*/frontend/dist/index.html' -print -quit)"
+          test -n "$packaged_html" || { echo "FATAL: packaged frontend HTML not found"; exit 1; }
+          xvfb-run -a python scripts/verify_theme_contrast.py \
+            --dist "$packaged_html" \
+            --report build_diagnostics/theme-contrast-packaged.json
 
       - name: Collect build diagnostics and renderer versions
         shell: bash
