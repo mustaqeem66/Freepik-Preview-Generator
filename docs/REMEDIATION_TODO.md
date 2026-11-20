@@ -134,14 +134,27 @@ Not changed after review: `LifecycleManager.start_batch` joins the superseded wo
 
 ## 2026-11-19 — Deep audit of `main` at `6a18d9e`
 
-Audit performed directly on `main` after the CI flake fixes in #159 and #160. Every
-finding below ships with a regression test.
+Audit performed directly on `main` after the CI flake fixes in #159 and #160.
+
+> **Correction (2026-11-20).** The 2026-11-19 round fixed colour tokens in
+> `frontend/src/index.css` and shipped a stylesheet-level test. Measuring the
+> **computed** colours of the built bundle in a real browser showed that two
+> of those fixes never reached the UI: the palette was declared in three
+> `:root` blocks across `index.css` and `studioPremium.css`, and
+> `studioPremium.css` is imported last, so its values silently won. The
+> `--text-muted` fix in particular was dead code — the shipped value was still
+> `#69768a`, and the studio badge, the format notes and the slider hints were
+> rendering between 3.92:1 and 4.41:1.
+>
+> The 2026-11-20 round below fixes the defect at its root and replaces the
+> blind spot with a gate that measures the shipped artifact. The 2026-11-19
+> entries are kept for the record.
 
 | Finding | Fix | Gate |
 | --- | --- | --- |
 | The primary button's gradient put its white 12px label at **2.90:1** (light) and **3.25:1** (dark) against the gradient's light end — under the WCAG AA 4.5:1 floor for normal text | the gradient stops were darkened to `#2676cc` / `#1a6fc8`; the worst point on each gradient is now 4.62:1 and 5.03:1 | `tests/frontend/test_theme_contrast.py::test_white_button_label_is_readable_across_the_whole_gradient` |
 | Accent-coloured text used the solid `--accent` fill token, which reaches only **2.60:1** on the dark surface | a dedicated `--accent-text` token was added (`#0067d4` light, `#4da3ff` dark) and every accent-as-text rule now uses it | `tests/frontend/test_theme_contrast.py::test_accent_text_is_readable_on_every_surface` |
-| The dark `--text-muted` token sat at **4.22:1** on the page background | darkened to `#6b6b75` (4.67:1 on `--bg`, 5.05:1 on `--card`) | `tests/frontend/test_theme_contrast.py::test_secondary_text_is_readable_on_the_page_background` |
+| The dark `--text-muted` token sat at **4.22:1** on the page background | darkened to `#6b6b75` (4.67:1 on `--bg`, 5.05:1 on `--card`) — **superseded by the 2026-11-20 round, which fixed the token that actually ships** | `tests/frontend/test_theme_contrast.py::test_secondary_text_is_readable_on_every_surface` |
 | The pressed focus button painted accent text over the tinted `--selection` surface, which lands at **4.16:1** in dark mode | that one state uses `--text` instead (9.69:1) | `tests/frontend/test_theme_contrast.py::test_accent_text_is_readable_on_the_selection_surface` |
 | The Vitest worker-pool bound still used the `poolOptions` shape that **Vitest 4 removed**, printing a deprecation warning on every run | migrated to the current top-level `maxWorkers` / `minWorkers` options; the bound now applies without the warning | `frontend/vite.config.ts`, verified by a clean `npm test` run |
 
@@ -153,6 +166,69 @@ The Windows hang fix (#74) is intact: the `DesktopApi` bridge surface is still f
 The batch cancel-race fix (#159) holds under a deterministic regression test, and
 the native-picker child now exits with a diagnostic instead of hanging until the
 parent's timeout (#160).
+
+## 2026-11-20 — The palette had no single authority
+
+Found by measuring the **computed** colours of the built bundle in a real
+browser rather than reading the CSS source. Every ratio below was measured in
+the rendered document.
+
+| Finding | Fix | Gate |
+| --- | --- | --- |
+| The palette was declared in **three `:root` blocks across `index.css` and `studioPremium.css`**, plus two competing `prefers-contrast: more` blocks. Because `studioPremium.css` is imported last, its values silently won: a token "fixed" in `index.css` never reached the browser. This is what made the 2026-11-19 contrast fixes ineffective | `index.css` is now the single authority for the palette; the duplicate blocks were removed and `studioPremium.css` contributes only `--canvas-dot` and `--studio-shadow`. The built bundle now declares each palette token exactly once per theme | `tests/frontend/test_theme_contrast.py::test_the_palette_has_a_single_authority` |
+| The effective `--text-muted` was `#69768a`, which reaches **3.92:1** on `--chip-bg` and **4.07:1** on `--bg`. The studio badge, the format notes and the slider hints were all below the WCAG AA 4.5:1 floor | changed to `#5f6977`, which clears **4.74:1** on the worst surface in the theme | `tests/frontend/test_theme_contrast.py::test_secondary_text_is_readable_on_every_surface`, `scripts/verify_theme_contrast.py` |
+| The dark primary button's white label sat on the bright `#5298fb` accent at **2.90:1** | a new `--accent-label` token carries `#15191f` in dark mode (**6.08:1**) and `#ffffff` in light mode (**5.63:1**) | `tests/frontend/test_theme_contrast.py::test_accent_filled_button_label_is_readable`, `scripts/verify_theme_contrast.py` |
+| The stylesheet-level test read one file, so it could not see an override in another file | the test now resolves the **effective** palette in import order, exactly as the cascade does, and asserts that no other file may redefine a palette token | `tests/frontend/test_theme_contrast.py` |
+| Nothing measured the shipped artifact, so a colour could pass every source-level check and still fail on screen | `scripts/verify_theme_contrast.py` loads the built bundle in **WebKitGTK** — the engine behind the Linux pywebview window — measures every rendered text node in both themes and fails below the WCAG AA floor. It drives the real theme toggle, so React's own state is exercised | `scripts/verify_theme_contrast.py`, wired into `build.yml` on Linux |
+
+The consolidation was verified to be behaviour-preserving: every computed token
+is identical to the pre-consolidation build except the newly added
+`--accent-label`, and every rendered text node keeps the same foreground and
+background pair.
+
+Two failure modes the gate is explicitly required to catch, because either one
+would let a broken measurement report success:
+
+| Failure mode | How the gate refuses it |
+| --- | --- |
+| The theme toggle does not take effect, so the dark theme is never measured and both passes report the light theme's colours | the gate compares the two themes' resolved foreground colours and fails when they are identical |
+| The build step packages a different stylesheet than the one that was measured | the gate runs against `frontend/dist` **and** against the `index.html` that PyInstaller froze into the artifact, matching the CSP gate's convention |
+
+The first failure mode was confirmed by stubbing the theme toggle out: the
+gate reports "both themes resolved to the same foreground colours" and exits
+non-zero instead of passing.
+
+## 2026-11-20 — The Windows clean-machine gate blamed the frontend for a browser-process abort
+
+Found while running the build workflow, not by reading the code. The
+`Clean Machine Test (windows-latest)` job failed reproducibly (2 attempts) with:
+
+```
+[ERROR] pywebview: WebView2 initialization failed with exception:
+  (0x80004004): Operation aborted (Exception from HRESULT: 0x80004004 (E_ABORT))
+   at Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateCoreWebView2ControllerAsync
+```
+
+The app then logs an orderly shutdown and exits with code 0, so the test
+reported "frontend_ready marker not written; the packaged WebView never became
+ready" — a message that points at the frontend when the WebView never started
+at all. The abort happens while the **browser process is being created**, so
+the frontend HTML is never parsed and nothing in the bundle can be
+responsible.
+
+This reproduces on unmodified `main` (`a0d9f1c`) with the identical error, on
+the same runner image (`windows-2025-vs2026`, runner `2.338.2`) that the
+passing runs used. It is therefore an environment condition, not a defect
+introduced by any change. The underlying cause of the abort inside the
+WebView2 runtime on a busy CI runner is **not yet established**; the
+observation is filed on issue #19.
+
+The gate now retries the launch up to three times, but **only** when the log
+shows the browser-process abort. Any other reason for the missing marker still
+fails immediately, and the issue #19 bridge-injection check still runs after
+the retry loop, so a real regression cannot be masked by a retry. The aborted
+attempt's log is preserved so the failure stays diagnosable even when a later
+attempt succeeds.
 
 ### Not verified in this audit
 

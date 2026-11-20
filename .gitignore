@@ -121,6 +121,9 @@ renderer-matrix-local.json
 csp-webview-local.json
 csp-webview-packaged-local.json
 
+# Local-only WCAG contrast evidence from scripts/verify_theme_contrast.py
+theme-contrast-local.json
+
 # Deterministic scratch fixtures generated for local renderer smoke coverage
 local-fixtures/
 

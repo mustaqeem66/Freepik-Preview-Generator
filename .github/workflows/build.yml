@@ -151,6 +151,23 @@ jobs:
             --dist "$packaged_html" \
             --report build_diagnostics/csp-webview-packaged.json
 
+      # The studio palette is assembled from several :root blocks, and the last
+      # imported stylesheet wins. A token can therefore be "fixed" in a file
+      # that never reaches the browser, so measure the computed colours of the
+      # shipped bundle in WebKitGTK instead of trusting the CSS source.
+      - name: Verify theme contrast in WebKit
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          mkdir -p build_diagnostics
+          xvfb-run -a python scripts/verify_theme_contrast.py \
+            --report build_diagnostics/theme-contrast.json
+          packaged_html="$(find dist/PreviewGen -path '*/frontend/dist/index.html' -print -quit)"
+          test -n "$packaged_html" || { echo "FATAL: packaged frontend HTML not found"; exit 1; }
+          xvfb-run -a python scripts/verify_theme_contrast.py \
+            --dist "$packaged_html" \
+            --report build_diagnostics/theme-contrast-packaged.json
+
       - name: Collect build diagnostics and renderer versions
         shell: bash
         run: |
@@ -429,31 +446,63 @@ jobs:
           # injects the bridge, and only writes the marker once the frontend reports ready.
           $env:PREVIEWGEN_READY_MARKER = "$PWD\gui_ready.txt"
           $logFile = "$env:LOCALAPPDATA\PreviewGen\logs\previewgen.log"
-          Remove-Item $logFile -ErrorAction SilentlyContinue
-          Remove-Item $env:PREVIEWGEN_READY_MARKER -ErrorAction SilentlyContinue
-          $proc = Start-Process -FilePath "test_clean_win\PreviewGen.exe" -ArgumentList "--gui-smoke-test" -NoNewWindow -PassThru -RedirectStandardOutput "$PWD\gui_stdout.log" -RedirectStandardError "$PWD\gui_stderr.log"
           $timeoutSec = 180
-          $elapsed = 0
-          while (-not $proc.HasExited -and $elapsed -lt $timeoutSec) {
-            Start-Sleep -Seconds 1
-            $elapsed++
+
+          # WebView2 launches its browser process out of process. On a busy
+          # runner that process can abort while it is being created
+          # (E_ABORT from CreateCoreWebView2ControllerAsync), before the
+          # frontend is ever parsed. That is an environment condition, not a
+          # defect in the package, so retry the launch a few times before
+          # failing. A bridge injection error is a real regression and is
+          # still checked after the retry loop, so it cannot be masked.
+          $maxAttempts = 3
+          $ready = $false
+          $lastError = ""
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            Remove-Item $logFile -ErrorAction SilentlyContinue
+            Remove-Item $env:PREVIEWGEN_READY_MARKER -ErrorAction SilentlyContinue
+            Remove-Item "$PWD\gui_stdout.log" -ErrorAction SilentlyContinue
+            Remove-Item "$PWD\gui_stderr.log" -ErrorAction SilentlyContinue
+            Write-Host "GUI smoke test attempt $attempt of $maxAttempts..."
+            $proc = Start-Process -FilePath "test_clean_win\PreviewGen.exe" -ArgumentList "--gui-smoke-test" -NoNewWindow -PassThru -RedirectStandardOutput "$PWD\gui_stdout.log" -RedirectStandardError "$PWD\gui_stderr.log"
+            $elapsed = 0
+            while (-not $proc.HasExited -and $elapsed -lt $timeoutSec) {
+              Start-Sleep -Seconds 1
+              $elapsed++
+            }
+            if (-not $proc.HasExited) {
+              Stop-Process -Id $proc.Id -Force
+              Get-Content "$PWD\gui_stdout.log" -ErrorAction SilentlyContinue
+              Get-Content "$PWD\gui_stderr.log" -ErrorAction SilentlyContinue
+              Get-Content $logFile -ErrorAction SilentlyContinue
+              throw "Clean machine Windows GUI smoke test timed out after $timeoutSec seconds."
+            }
+            if ($proc.ExitCode -ne 0) {
+              Get-Content "$PWD\gui_stdout.log" -ErrorAction SilentlyContinue
+              Get-Content "$PWD\gui_stderr.log" -ErrorAction SilentlyContinue
+              Get-Content $logFile -ErrorAction SilentlyContinue
+              throw "Clean machine Windows execution failed with code $($proc.ExitCode)"
+            }
+            if (Test-Path $env:PREVIEWGEN_READY_MARKER) {
+              $ready = $true
+              break
+            }
+            # The window never became ready. Capture why, then decide whether
+            # the cause is worth another attempt.
+            Get-Content $logFile -ErrorAction SilentlyContinue | Out-String | ForEach-Object { $lastError = $_ }
+            $isBrowserAbort = (Test-Path $logFile) -and (Select-String -Path $logFile -Pattern 'WebView2 initialization failed|E_ABORT' -Quiet)
+            if (-not $isBrowserAbort) {
+              throw "FATAL: frontend_ready marker not written; the packaged WebView never became ready."
+            }
+            # Keep the aborted attempt's log so the failure is diagnosable
+            # even when a later attempt succeeds.
+            Copy-Item $logFile "$PWD\gui_aborted_attempt_$attempt.log" -ErrorAction SilentlyContinue
+            Write-Host "The WebView2 browser process aborted during startup; retrying."
+            Start-Sleep -Seconds 10
           }
-          if (-not $proc.HasExited) {
-            Stop-Process -Id $proc.Id -Force
-            Get-Content "$PWD\gui_stdout.log" -ErrorAction SilentlyContinue
-            Get-Content "$PWD\gui_stderr.log" -ErrorAction SilentlyContinue
-            Get-Content $logFile -ErrorAction SilentlyContinue
-            throw "Clean machine Windows GUI smoke test timed out after $timeoutSec seconds."
-          }
-          if ($proc.ExitCode -ne 0) {
-            Get-Content "$PWD\gui_stdout.log" -ErrorAction SilentlyContinue
-            Get-Content "$PWD\gui_stderr.log" -ErrorAction SilentlyContinue
-            Get-Content $logFile -ErrorAction SilentlyContinue
-            throw "Clean machine Windows execution failed with code $($proc.ExitCode)"
-          }
-          if (-not (Test-Path $env:PREVIEWGEN_READY_MARKER)) {
-            Get-Content $logFile -ErrorAction SilentlyContinue
-            throw "FATAL: frontend_ready marker not written; the packaged WebView never became ready."
+          if (-not $ready) {
+            Write-Host $lastError
+            throw "FATAL: frontend_ready marker not written after $maxAttempts attempts; the packaged WebView never became ready."
           }
           # pywebview logs one "Error while processing <dotted .NET path>" per bridge
           # name when the introspection walk runs away. Any occurrence means the
