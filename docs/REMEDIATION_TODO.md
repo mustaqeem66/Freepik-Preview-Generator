@@ -198,6 +198,38 @@ The first failure mode was confirmed by stubbing the theme toggle out: the
 gate reports "both themes resolved to the same foreground colours" and exits
 non-zero instead of passing.
 
+## 2026-11-20 — The Windows clean-machine gate blamed the frontend for a browser-process abort
+
+Found while running the build workflow, not by reading the code. The
+`Clean Machine Test (windows-latest)` job failed reproducibly (2 attempts) with:
+
+```
+[ERROR] pywebview: WebView2 initialization failed with exception:
+  (0x80004004): Operation aborted (Exception from HRESULT: 0x80004004 (E_ABORT))
+   at Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateCoreWebView2ControllerAsync
+```
+
+The app then logs an orderly shutdown and exits with code 0, so the test
+reported "frontend_ready marker not written; the packaged WebView never became
+ready" — a message that points at the frontend when the WebView never started
+at all. The abort happens while the **browser process is being created**, so
+the frontend HTML is never parsed and nothing in the bundle can be
+responsible.
+
+This reproduces on unmodified `main` (`a0d9f1c`) with the identical error, on
+the same runner image (`windows-2025-vs2026`, runner `2.338.2`) that the
+passing runs used. It is therefore an environment condition, not a defect
+introduced by any change. The underlying cause of the abort inside the
+WebView2 runtime on a busy CI runner is **not yet established**; the
+observation is filed on issue #19.
+
+The gate now retries the launch up to three times, but **only** when the log
+shows the browser-process abort. Any other reason for the missing marker still
+fails immediately, and the issue #19 bridge-injection check still runs after
+the retry loop, so a real regression cannot be masked by a retry. The aborted
+attempt's log is preserved so the failure stays diagnosable even when a later
+attempt succeeds.
+
 ### Not verified in this audit
 
 Native installer operation, Windows/macOS idle behaviour, renderer image fidelity
