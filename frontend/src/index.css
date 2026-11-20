@@ -1,59 +1,81 @@
+/* ── Studio palette ────────────────────────────────────────────────────────
+   This is the single authority for the colour tokens. The palette used to be
+   declared in three :root blocks across index.css and studioPremium.css, and
+   because studioPremium.css is imported last its values silently won -- a
+   token "fixed" in index.css never reached the browser. Everything here is
+   the value the engine computes, and no other file may redefine a token
+   listed here.
+   ────────────────────────────────────────────────────────────────────────── */
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable", "Segoe UI", sans-serif;
   font-size: 13px;
   color-scheme: light;
-  --bg: #f1f1f3;
-  --card-bg: #fafafa;
+  --bg: #eff1f5;
+  --card-bg: #f9fafc;
   --surface: #ffffff;
   --field-bg: #ffffff;
-  --card-border: #d9d9de;
-  --field-border: #ceced5;
-  --text: #232328;
+  --preview-bg: #e5e8ee;
+  --card-border: rgba(41, 53, 71, .13);
+  --field-border: rgba(41, 53, 71, .22);
+  --text: #1b2430;
   --text-main: var(--text);
-  --text-sec: #63636d;
-  --text-muted: #6b6b75;
-  --accent: #0067d4;
-  --accent-hover: #005bbd;
+  --text-sec: #525f71;
+  /* The muted tone is read on the page, the cards and the tinted chips.
+     #69768a reached only 3.92:1 on --chip-bg and 4.07:1 on --bg, so the
+     studio badge, the format notes and the slider hints all failed WCAG AA.
+     #5f6977 clears 4.5:1 on every surface in this theme. */
+  --text-muted: #5f6977;
+  --accent: #2165c5;
+  --accent-hover: #1856af;
+  /* Label colour for accent-filled controls. White on #2165c5 is 5.63:1. */
+  --accent-label: #ffffff;
   /* Accent used as a text/icon colour. The solid accent is a button fill and
      is not readable as text on a light surface; this token is. */
   --accent-text: #0067d4;
-  --chip-bg: #e9e9ee;
+  --chip-bg: #e9edf4;
   --btn-disabled: #a2a2ad;
-  --preview-bg: #e5e5e9;
-  --toolbar-bg: rgba(250, 250, 252, .94);
-  --selection: #dceaff;
+  --toolbar-bg: rgba(249, 250, 252, .92);
+  --selection: #dce9fa;
   --success: #237445;
   --error: #bd3030;
   --danger: var(--error);
-  --focus-ring: #337fdc;
-  --shadow: 0 8px 24px rgba(20, 20, 35, .07), 0 1px 3px rgba(20, 20, 35, .04);
+  --focus-ring: #226ecc;
+  --shadow: 0 3px 10px rgba(0, 0, 0, .07), 0 14px 36px rgba(0, 0, 0, .07);
+  --ease-studio: cubic-bezier(.32,.72,.28,1);
+  --radius-studio: 12px;
 }
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #1c1c1f;
-  --card-bg: #252528;
-  --surface: #303034;
-  --field-bg: #1f1f23;
-  --card-border: #3d3d43;
-  --field-border: #4b4b53;
-  --text: #f1f1f4;
-  --text-sec: #b3b3bd;
-  --text-muted: #a3a3ae;
-  --accent: #086cd9;
-  --accent-hover: #075fc3;
-  /* The dark accent (#086cd9) only reaches 2.60:1 on --surface and 3.37:1 on
-     --bg, so accent-coloured text and icons use a lighter token that clears
-     the WCAG AA 4.5:1 floor on every dark surface. */
+  --bg: #15191f;
+  --card-bg: #20252d;
+  --surface: #2b323c;
+  --field-bg: #252c36;
+  --preview-bg: #15191f;
+  --card-border: rgba(221, 229, 243, .13);
+  --field-border: rgba(221, 229, 243, .24);
+  --text: #f5f7fa;
+  --text-main: var(--text);
+  --text-sec: #c3cbd6;
+  --text-muted: #a2aec0;
+  --accent: #5298fb;
+  --accent-hover: #7aafff;
+  /* The dark accent (#5298fb) reaches only 2.90:1 under white text, which is
+     below the 4.5:1 floor for the 12px button label. A near-black label on
+     the bright accent reaches 6.08:1 and matches the platform convention for
+     accent-filled controls in dark mode. */
+  --accent-label: #15191f;
+  /* The dark accent only reaches 2.60:1 on --surface and 3.37:1 on --bg, so
+     accent-coloured text and icons use a lighter token that clears the
+     WCAG AA 4.5:1 floor on every dark surface. */
   --accent-text: #4da3ff;
-  --chip-bg: #38383e;
+  --chip-bg: #353e4b;
   --btn-disabled: #55555f;
-  --preview-bg: #17171a;
-  --toolbar-bg: rgba(37, 37, 40, .94);
-  --selection: #253e5c;
+  --toolbar-bg: rgba(32, 37, 45, .93);
+  --selection: #26456d;
   --success: #75d49a;
   --error: #ff8b8b;
-  --focus-ring: #7cb7ff;
-  --shadow: 0 8px 24px rgba(0, 0, 0, .18), 0 1px 3px rgba(0, 0, 0, .15);
+  --focus-ring: #85bbff;
+  --shadow: 0 5px 20px rgba(0, 0, 0, .3), 0 18px 40px rgba(0, 0, 0, .25);
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); }
@@ -211,8 +233,8 @@ h2 { font-size: 12px; font-weight: 650; }
   *, *::before, *::after { transition: none !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
 }
 @media (prefers-contrast: more) {
-  :root { --card-border: #747480; --field-border: #63636f; }
-  [data-theme="dark"] { --card-border: #92929c; --field-border: #aaaab4; }
+  :root { --card-border: #677180; --field-border: #505967; }
+  [data-theme="dark"] { --card-border: #aab4c5; --field-border: #c0c7d6; }
 }
 @media (forced-colors: active) {
   .color-swatch, .status-dot { forced-color-adjust: none; }
@@ -221,27 +243,9 @@ h2 { font-size: 12px; font-weight: 650; }
 
 
 /* Premium Studio integration — layered materials, restrained motion, readable controls.
-   CSS translucency is an in-webview effect, not native macOS vibrancy or Windows Mica. */
-:root {
-  --bg: #ececef; --card-bg: #f7f7f9; --preview-bg: #e3e3e8;
-  --surface: #fff; --card-border: rgba(0,0,0,.11); --field-border: rgba(0,0,0,.17);
-  --toolbar-bg: rgba(249,249,251,.84);
-  --text: #1d1d1f; --text-sec: #64646c; --text-muted: #767680;
-  --accent: #006edb; --accent-hover: #005fc4;
-  --selection: rgba(0,110,219,.15);
-  --focus-ring: #0071e3;
-  --shadow: 0 3px 10px rgba(0,0,0,.07), 0 14px 36px rgba(0,0,0,.07);
-  --ease-studio: cubic-bezier(.32,.72,.28,1);
-  --radius-studio: 12px;
-}
-[data-theme="dark"] {
-  --bg: #161618; --card-bg: #202023; --surface: #303034; --field-bg: #26262a;
-  --preview-bg: #111114; --card-border: rgba(255,255,255,.12);
-  --field-border: rgba(255,255,255,.21); --toolbar-bg: rgba(32,32,36,.84);
-  --text: #f5f5f7; --text-sec: #babac3; --text-muted: #aaaab6;
-  --accent: #0a84ff; --accent-hover: #409cff; --selection: rgba(10,132,255,.23);
-  --focus-ring: #84baff; --shadow: 0 5px 20px rgba(0,0,0,.3), 0 18px 40px rgba(0,0,0,.25);
-}
+   CSS translucency is an in-webview effect, not native macOS vibrancy or Windows Mica.
+   The palette itself lives in the :root block at the top of this file; this
+   section only carries the component rules that use it. */
 body { -webkit-font-smoothing: antialiased; }
 .studio-workspace { border-radius: 14px; box-shadow: var(--shadow); }
 .studio-toolbar { background: var(--toolbar-bg); border-radius: 0 0 10px 10px; }

@@ -151,6 +151,18 @@ jobs:
             --dist "$packaged_html" \
             --report build_diagnostics/csp-webview-packaged.json
 
+      # The studio palette is assembled from several :root blocks, and the last
+      # imported stylesheet wins. A token can therefore be "fixed" in a file
+      # that never reaches the browser, so measure the computed colours of the
+      # shipped bundle in WebKitGTK instead of trusting the CSS source.
+      - name: Verify theme contrast in WebKit
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          mkdir -p build_diagnostics
+          xvfb-run -a python scripts/verify_theme_contrast.py \
+            --report build_diagnostics/theme-contrast.json
+
       - name: Collect build diagnostics and renderer versions
         shell: bash
         run: |
