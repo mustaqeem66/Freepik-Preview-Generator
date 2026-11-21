@@ -13,6 +13,7 @@ Security notes:
     * only files directly inside the session temp directory are served
     * path traversal and directory listing are rejected
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -20,6 +21,7 @@ import http.server
 import logging
 import secrets
 import socket
+import socketserver
 import threading
 import time
 from pathlib import Path
@@ -55,11 +57,27 @@ class _PreviewHTTPServer(http.server.ThreadingHTTPServer):
     daemon_threads = True
     preview_server: PreviewFileServer | None = None
 
+    def server_bind(self) -> None:
+        """Bind without the reverse-DNS lookup that ``HTTPServer`` performs.
+
+        ``HTTPServer.server_bind`` calls ``socket.getfqdn(host)`` to fill in
+        ``server_name`` for the access log. That is a reverse DNS lookup, and
+        on a host with no answer for the address it blocks until the resolver
+        gives up -- which on the macOS CI runner held the bind for over twenty
+        seconds. The server binds to loopback and serves an unguessable token,
+        so the canonical name is never used for anything but logging, and a
+        blocking lookup must not be on the path that publishes a preview.
+        """
+        socketserver.TCPServer.server_bind(self)
+        address = self.server_address
+        self.server_name = str(address[0])
+        self.server_port = int(address[1])
+
 
 class PreviewFileServer:
     """Serves preview JPEGs from a private loopback HTTP endpoint."""
-    _serializable = False  # never reachable from window.pywebview.api
 
+    _serializable = False  # never reachable from window.pywebview.api
 
     def __init__(self) -> None:
         self._root: Path | None = None
@@ -97,9 +115,7 @@ class PreviewFileServer:
         self._httpd = httpd
         self._port = int(httpd.server_address[1])
         logging.info("Preview file server: starting the serving thread")
-        self._thread = threading.Thread(
-            target=httpd.serve_forever, name="preview-http", daemon=True
-        )
+        self._thread = threading.Thread(target=httpd.serve_forever, name="preview-http", daemon=True)
         self._thread.start()
         logging.info("Preview file server: waiting for the port to accept")
         self._wait_until_accepting()
@@ -295,7 +311,7 @@ class PreviewFileServer:
             if closing == -1:
                 return False
             hostname = name[1:closing]
-            rest = name[closing + 1:]
+            rest = name[closing + 1 :]
             port = rest[1:] if rest.startswith(":") else ""
         else:
             hostname, separator, port = name.rpartition(":")
