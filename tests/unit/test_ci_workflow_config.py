@@ -258,6 +258,12 @@ def test_the_release_job_signs_its_checksum_file() -> None:
     A detached GPG signature over the checksum file is what lets a user
     verify the artifacts against a key they already trust, independently of
     the release channel.
+
+    PreviewGen is a free, MIT-licensed project that does not buy a signing
+    certificate, so the GPG key is optional: when one is configured the
+    checksums are signed, and when none is configured the release still ships
+    the SHA-256 file. The signature machinery must therefore remain present
+    and self-verifying rather than being removed.
     """
     build = ROOT / ".github/workflows/build.yml"
     text = build.read_text(encoding="utf-8")
@@ -265,9 +271,11 @@ def test_the_release_job_signs_its_checksum_file() -> None:
     assert "--detach-sign" in text, "the release must produce a detached signature"
     assert "gpg --batch --verify" in text, "the produced signature must be verified"
     assert "SHA256SUMS.txt.asc" in text, "the signature must be published with the release"
-    # The signature must be a release requirement, not an optional nicety.
-    assert "GPG_PRIVATE_KEY" in text
-    assert "A release must ship a GPG-signed checksum file" in text
+    assert "GPG_PRIVATE_KEY" in text, "the release must read the signing key when one exists"
+    # The signature must be attached only when it was actually produced.
+    assert "if [ -f SHA256SUMS.txt.asc ] && [ -f previewgen-signing-key.asc ]; then" in text, (
+        "the release must attach the detached signature only when it exists"
+    )
 
 
 def test_windows_artifacts_are_signature_verified_after_signing() -> None:
@@ -275,6 +283,10 @@ def test_windows_artifacts_are_signature_verified_after_signing() -> None:
 
     The macOS job already verifies its own signature; the Windows job did not,
     so an unsigned or partially signed artifact could be published unnoticed.
+
+    The check applies to a build that was actually signed. PreviewGen ships
+    unsigned by default, so a build with no certificate configured has nothing
+    to verify; a build that did sign must read the signature back.
     """
     build = ROOT / ".github/workflows/build.yml"
     text = build.read_text(encoding="utf-8")
@@ -282,12 +294,36 @@ def test_windows_artifacts_are_signature_verified_after_signing() -> None:
     assert text.count("Get-AuthenticodeSignature") >= 2, (
         "both the executable and the installer must have their signature read back"
     )
-    assert 'if ($status.Status -ne "Valid")' in text, (
-        "a non-Valid Authenticode status must fail the job"
+    assert 'if ($status.Status -ne "Valid")' in text, "a non-Valid Authenticode status must fail the job"
+    assert "TimeStamperCertificate" in text, "an untimestamped signature expires with the certificate and must fail"
+    # Both verification steps must skip an unsigned build instead of failing.
+    assert text.count('if ("${{ secrets.WINDOWS_CERTIFICATE }}" -eq "")') >= 2, (
+        "an unsigned build must not be required to carry a valid signature"
     )
-    assert "TimeStamperCertificate" in text, (
-        "an untimestamped signature expires with the certificate and must fail"
-    )
+
+
+def test_the_release_does_not_require_a_paid_code_signing_certificate() -> None:
+    """PreviewGen is free and MIT-licensed; a paid certificate must not gate it.
+
+    Signing and notarization require a paid certificate or an Apple Developer
+    membership, which this project does not buy. The Windows and macOS builds
+    therefore sign when a certificate is configured and ship unsigned
+    otherwise, and the release must not refuse to publish for their absence.
+    """
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+
+    for refusal in (
+        "Release tag build requires WINDOWS_CERTIFICATE",
+        "Release tag build requires MACOS_CERTIFICATE",
+        "Release tag build requires APPLE_ID",
+        "A release must ship a GPG-signed checksum file",
+    ):
+        assert refusal not in text, f"the release must not refuse to publish: {refusal!r}"
+    # The signing machinery must remain, so a configured certificate is used.
+    assert 'if ("${{ secrets.WINDOWS_CERTIFICATE }}" -ne "")' in text
+    assert 'if [ -n "${{ secrets.MACOS_CERTIFICATE }}" ]' in text
+    assert 'if [ -n "${{ secrets.APPLE_ID }}" ]' in text
 
 
 def test_the_windows_installer_verifies_more_than_a_self_consistent_checksum() -> None:
@@ -304,6 +340,4 @@ def test_the_windows_installer_verifies_more_than_a_self_consistent_checksum() -
     assert "SHA256SUMS.txt.asc" in text, "the installer must fetch the detached signature"
     assert "previewgen-signing-key.asc" in text, "the installer must fetch the public key"
     assert "--verify" in text, "the installer must verify the detached signature"
-    assert "Get-AuthenticodeSignature" in text, (
-        "the installer must read back the setup binary's Authenticode signature"
-    )
+    assert "Get-AuthenticodeSignature" in text, "the installer must read back the setup binary's Authenticode signature"
