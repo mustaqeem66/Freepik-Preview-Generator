@@ -43,3 +43,24 @@ describe("BatchProgress cancellation controls", () => {
   });
 
 });
+
+describe("BatchProgress disabled explanation", () => {
+  it("explains why the start button is unavailable", () => {
+    render(<BatchProgress {...base} isProcessing={false} canStart={false}
+      disabledReason="Choose a source folder to export its assets." />);
+    const button = screen.getByRole("button", { name: "Generate Previews" });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    expect(button.getAttribute("title")).toBe("Choose a source folder to export its assets.");
+    // The reason is also readable without hovering.
+    expect(screen.getByText("Choose a source folder to export its assets.")).toBeTruthy();
+  });
+
+  it("shows no explanation when the button is available", () => {
+    render(<BatchProgress {...base} isProcessing={false} canStart
+      disabledReason="Choose a source folder to export its assets." />);
+    const button = screen.getByRole("button", { name: "Generate Previews" });
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("title")).toBeNull();
+    expect(screen.queryByText("Choose a source folder to export its assets.")).toBeNull();
+  });
+});

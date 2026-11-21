@@ -201,7 +201,7 @@ def test_bounded_mesh_preview_uses_depth_buffer_for_crossing_triangles():
         ),
     )
     image = render_3d_mesh(mesh, yaw_deg=0, pitch_deg=0, target_dimension=128)
-    colors = list(image.getdata())
+    colors = list(image.get_flattened_data())
     assert any(r > b * 2 and a == 255 for r, g, b, a in colors)
     assert any(b > r * 2 and a == 255 for r, g, b, a in colors)
 

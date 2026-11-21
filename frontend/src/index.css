@@ -311,6 +311,7 @@ h2 { font-size: 13px; }
 .bp-stats { justify-content:flex-start; flex-wrap:wrap; font-size:12px; }
 .bp-stat { display:inline-flex; align-items:center; gap:6px; }
 .bp-stat.ok { color:var(--success); } .bp-stat.bad { color:var(--error); }
+.bp-disabled-reason { margin:0; font-size:11px; line-height:1.5; }
 .bp-truncation,.bp-errors { padding:10px 12px; border-radius:8px; font-size:12px; line-height:1.5; }
 .bp-truncation { display:flex; gap:8px; color:var(--text); background:rgba(202,136,0,.12); border:1px solid rgba(202,136,0,.35); }
 .bp-errors { max-height:110px; overflow:auto; color:var(--error); background:rgba(215,0,21,.09); border:1px solid rgba(215,0,21,.25); }

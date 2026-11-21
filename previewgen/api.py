@@ -48,6 +48,29 @@ SCAN_INLINE_RESULT_LIMIT = 128
 SCAN_PAGE_MAX_ITEMS = 128
 SCAN_PAGE_MAX_BYTES = 32 * 1024
 
+# A bridge event delivery waits on the native main loop. A closing window can
+# stop that loop without releasing the wait, so the delivery is bounded: past
+# this budget the frontend is gone and the event is dropped instead of
+# stranding the worker that produced it.
+BRIDGE_DELIVERY_TIMEOUT_SECONDS = 5.0
+
+
+def _resolve_file_dialog_kind(kind: str) -> int:
+    """Return one native file-dialog kind for the installed pywebview.
+
+    ``FileDialog`` replaced the module-level ``OPEN_DIALOG``/``FOLDER_DIALOG``
+    constants, which now emit a deprecation warning on every call. Older
+    pywebview releases only expose the constants, so both spellings are
+    accepted. Each kind is resolved on its own so a caller that only opens a
+    file picker never depends on the folder constant being present.
+    """
+    import webview
+
+    dialog_enum = getattr(webview, "FileDialog", None)
+    if dialog_enum is not None:
+        return int(getattr(dialog_enum, kind))
+    return int(getattr(webview, f"{kind}_DIALOG"))
+
 
 def _resolve_export_destination(
     out_dir: Path,
@@ -83,6 +106,9 @@ class DesktopApi:
 
     def __init__(self) -> None:
         self._window: Any | None = None  # webview.Window when running
+        # Bounded budget for one bridge delivery. Overridable per instance so
+        # a test can exercise the timeout path without a long wait.
+        self._bridge_delivery_timeout_seconds = BRIDGE_DELIVERY_TIMEOUT_SECONDS
         self._custom_chrome_enabled = False
         self.session_zip_dir: Path | None = None
         self.scanner = get_scanner()
@@ -338,6 +364,16 @@ class DesktopApi:
             return True
         return False
 
+    def _detach_window(self) -> None:
+        """Forget the native window so no worker can dispatch into a dead one.
+
+        A worker thread that calls ``evaluate_js`` after the window was
+        destroyed waits on a main loop that has already stopped. Clearing the
+        reference turns that dispatch into a no-op instead of a wait on a loop
+        that will never run again.
+        """
+        self._window = None
+
     def _dispatch_envelope(
         self, event_name: str, payload: dict[str, Any], operation_id: str = "", terminal: bool = False
     ) -> None:
@@ -349,7 +385,8 @@ class DesktopApi:
         marks the final event of an operation so the frontend can reject any
         non-terminal event that arrives late for a completed operation.
         """
-        if not self._window:
+        window = self._window
+        if not window:
             return
         self._last_heartbeat_time = time.time()
         seq = next(self._sequence_counter)
@@ -362,8 +399,40 @@ class DesktopApi:
             "payload": payload,
         }
         script = f"window.__onBridgeEvent && window.__onBridgeEvent({json.dumps(envelope)})"
-        with contextlib.suppress(Exception):
-            self._window.evaluate_js(script)
+        self._deliver_bridge_event(window, script)
+
+    def _deliver_bridge_event(self, window: Any, script: str) -> None:
+        """Deliver one bridge event without ever stranding the calling worker.
+
+        The delivery is synchronous so the caller observes the event before it
+        returns and the frontend receives envelopes in the exact sequence order
+        it validates against.
+
+        The pywebview GTK backend's ``evaluate_js`` schedules the call on the
+        GTK main loop and waits on a semaphore that is never released once the
+        main loop has stopped. An inline call on a closing window therefore
+        blocks the worker for the lifetime of the process. The call is made on
+        a helper thread and awaited with a bounded timeout; on timeout the
+        helper is abandoned (it is a daemon thread, so it cannot hold the
+        process open) and the event is dropped, which is correct because the
+        frontend is gone along with the window.
+        """
+        delivered = threading.Event()
+
+        def _run() -> None:
+            try:
+                with contextlib.suppress(Exception):
+                    window.evaluate_js(script)
+            finally:
+                delivered.set()
+
+        helper = threading.Thread(target=_run, name="bridge-delivery", daemon=True)
+        helper.start()
+        budget = self._bridge_delivery_timeout_seconds
+        if not delivered.wait(budget):
+            logging.warning(
+                "Bridge event delivery timed out after %.1fs; the window is closing", budget
+            )
 
     def _on_scan_progress(self, scan_id: str, count: int) -> None:
         self._dispatch_envelope("scan.progress", {"scanId": scan_id, "count": count}, operation_id=scan_id)
@@ -683,9 +752,8 @@ class DesktopApi:
         if not self._window:
             return {"ok": False, "value": None, "error": "Native file picker is unavailable"}
         try:
-            res = self._window.create_file_dialog(
-                int(__import__("webview").OPEN_DIALOG), allow_multiple=True,
-            )
+            open_kind = _resolve_file_dialog_kind("OPEN")
+            res = self._window.create_file_dialog(open_kind, allow_multiple=True)
             if not res:
                 return {"ok": True, "value": {"files": [], "rejected": []}, "error": None}
             files: list[dict[str, Any]] = []
@@ -746,7 +814,8 @@ class DesktopApi:
         if not self._window:
             return ""
         try:
-            res = self._window.create_file_dialog(int(__import__('webview').FOLDER_DIALOG))
+            folder_kind = _resolve_file_dialog_kind("FOLDER")
+            res = self._window.create_file_dialog(folder_kind)
             path = res[0] if res else ""
             if path:
                 self._add_authorized_input_folder(path)
@@ -760,7 +829,8 @@ class DesktopApi:
         if not self._window:
             return ""
         try:
-            res = self._window.create_file_dialog(int(__import__('webview').FOLDER_DIALOG))
+            folder_kind = _resolve_file_dialog_kind("FOLDER")
+            res = self._window.create_file_dialog(folder_kind)
             path = res[0] if res else ""
             if path:
                 self._add_authorized_output_folder(path)
@@ -773,8 +843,9 @@ class DesktopApi:
         if not self._window:
             return ""
         try:
+            open_kind = _resolve_file_dialog_kind("OPEN")
             res = self._window.create_file_dialog(
-                int(__import__('webview').OPEN_DIALOG),
+                open_kind,
                 file_types=(
                     "Image Files (*.png;*.webp;*.svg;*.ico;*.jpg;*.jpeg)",
                     "*.png;*.webp;*.svg;*.ico;*.jpg;*.jpeg",
@@ -794,8 +865,9 @@ class DesktopApi:
         if not self._window:
             return ""
         try:
+            open_kind = _resolve_file_dialog_kind("OPEN")
             res = self._window.create_file_dialog(
-                int(__import__('webview').OPEN_DIALOG),
+                open_kind,
                 file_types=("Font Files (*.ttf;*.otf;*.woff;*.woff2)", "*.ttf;*.otf;*.woff;*.woff2")
             )
             selected = res[0] if res else ""
@@ -1450,6 +1522,10 @@ class DesktopApi:
 
     def cleanup(self) -> None:
         """Orderly shutdown sequence."""
+        # Detach the window first. A worker that finishes during shutdown would
+        # otherwise call evaluate_js on a window whose main loop has stopped,
+        # which blocks that worker forever on GTK.
+        self._detach_window()
         with self._scan_page_lock:
             self._scan_page_state = None
         self.comparison_coordinator.close()

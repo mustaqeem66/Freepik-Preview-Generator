@@ -103,9 +103,34 @@ export class BridgeEventRegistry {
   }
 }
 export const bridgeEvents = new BridgeEventRegistry();
+/**
+ * True when this document is hosted by a plain browser rather than the
+ * desktop runtime.
+ *
+ * The packaged desktop app loads the bundled frontend over `file:`, so an
+ * `http:`/`https:` document is a browser session by definition. The native
+ * runtime injects its bridge asynchronously, after the page's own scripts have
+ * run, so `window.pywebview` being undefined proves nothing on its own and
+ * cannot be used to tell the two apart.
+ */
+export function isBrowserHostedDocument(protocol: string): boolean {
+  return protocol === "http:" || protocol === "https:";
+}
+
 export class ApiBridge {
   private static cachedApi: PyWebViewApi | null = null;
   private static browserDemo: WebFallbackBridge | null = null;
+  /** Override for the document protocol; used by tests. */
+  private static protocolOverride: string | null = null;
+
+  /** Override the detected document protocol. Returns a restore function. */
+  static setProtocolOverride(protocol: string | null): () => void {
+    const previous = this.protocolOverride;
+    this.protocolOverride = protocol;
+    return () => {
+      this.protocolOverride = previous;
+    };
+  }
 
   /** Read the live native bridge without letting a teardown throw. */
   private static _readLiveApi(): PyWebViewApi | undefined {
@@ -138,6 +163,20 @@ export class ApiBridge {
     // takes precedence above this branch.
     if (this.browserDemo && !window.pywebview) return this.browserDemo;
 
+    // A plain browser has no native bridge coming, so the handshake window
+    // would only delay the demo by its full duration.
+    //
+    // The protocol override is a test seam and deliberately bypasses the
+    // test-mode guard, so the real branch is exercised rather than a
+    // parallel code path.
+    const protocol = this.protocolOverride ?? window.location.protocol;
+    const browserHosted = (this.protocolOverride !== null || import.meta.env.MODE !== "test")
+      && isBrowserHostedDocument(protocol);
+    if (browserHosted) {
+      this.browserDemo ??= new WebFallbackBridge();
+      return this.browserDemo;
+    }
+
     const deadline = Date.now() + maxWaitMs;
 
     while (Date.now() < deadline) {
@@ -151,17 +190,9 @@ export class ApiBridge {
       window.setTimeout(resolve, 50);
       await promise;
     }
-    // Never substitute a synthetic bridge for the privileged desktop runtime.
-    // In web-only development, expose a clearly labeled in-memory canvas demo
-    // after giving pywebview the full requested handshake window.
-    if (
-      import.meta.env.MODE !== "test"
-      && (window.location.protocol === "http:" || window.location.protocol === "https:")
-      && !window.pywebview
-    ) {
-      this.browserDemo ??= new WebFallbackBridge();
-      return this.browserDemo;
-    }
+    // The desktop runtime never answered. Never substitute a synthetic bridge
+    // for the privileged desktop runtime: a failed native handshake must stay
+    // a failure, not silently downgrade to a demo.
     return undefined;
   }
 

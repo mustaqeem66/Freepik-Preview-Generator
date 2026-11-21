@@ -133,6 +133,20 @@ def _observe_session(workdir: Path) -> dict[str, object]:
             Path(outside).unlink(missing_ok=True)
         finally:
             finished.set()
+            # Shut the preview worker down while the GTK main loop is still
+            # alive. The preview request above started an isolated render
+            # worker whose completion dispatches back into the window; on GTK
+            # that dispatch waits on the main loop, so tearing the window down
+            # first leaves the worker blocked forever and keeps the child
+            # process alive after the evidence has been collected.
+            api.cleanup()
+            # pywebview injects its JS bridge from a non-daemon thread that
+            # waits on the GTK main loop. Destroying the window while that
+            # thread is still in flight stops the main loop and strands the
+            # thread, so the interpreter never finishes shutting down and the
+            # child hangs after its evidence has been collected. `loaded` is
+            # set by that same thread once the injection has completed.
+            window.events.loaded.wait(20)
             # destroy() marshals back to the GUI loop; joining it here would
             # block that same loop, because webview.start runs launch() on it.
             window.destroy()
