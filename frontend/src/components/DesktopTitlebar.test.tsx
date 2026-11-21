@@ -5,10 +5,11 @@ import { DesktopTitlebar } from "./DesktopTitlebar";
 
 afterEach(() => { vi.restoreAllMocks(); });
 
-async function setup(platform: "windows" | "linux" | "macos", enabled = true) {
+async function setup(platform: "windows" | "linux" | "macos", enabled = true, version = "2.1.3") {
   const window_action = vi.fn(async () => ({ ok: true, error: null }));
   vi.spyOn(ApiBridge, "getApi").mockResolvedValue({
     get_window_chrome: async () => ({ ok: true, value: { enabled, platform }, error: null }),
+    get_app_info: async () => ({ ok: true, value: { version, platform }, error: null }),
     window_action,
   } as never);
   const view = render(<DesktopTitlebar />);
@@ -42,5 +43,14 @@ describe("platform titlebar", () => {
   it("renders no fake controls when OS titlebar is active", async () => {
     await setup("linux", false);
     expect(screen.queryByTestId("desktop-titlebar")).toBeNull();
+  });
+
+  it("shows the running build's version", async () => {
+    // A user who installs from a script needs to confirm which build they
+    // got. Without the version in the titlebar, a stale install and a
+    // current install are indistinguishable from the running app.
+    await setup("linux");
+    await waitFor(() => expect(screen.getByTestId("titlebar-version")).toBeTruthy());
+    expect(screen.getByTestId("titlebar-version").textContent).toBe("v2.1.3");
   });
 });

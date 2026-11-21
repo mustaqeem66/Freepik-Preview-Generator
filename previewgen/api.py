@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     pass
 
+from previewgen import __version__ as APP_VERSION
 from previewgen import limits
 from previewgen.assets import calculate_export_dimensions as _calc_export_dimensions
 from previewgen.config import DISCOVERY_MAX_FILES, SUPPORTED_3D_EXTENSIONS, SUPPORTED_EXTENSIONS, PreviewConfig
@@ -180,6 +181,32 @@ class DesktopApi:
         return {
             "ok": True,
             "value": {"enabled": bool(self._window and self._custom_chrome_enabled), "platform": platform},
+            "error": None,
+        }
+
+    def get_app_info(self) -> dict[str, Any]:
+        """Report the running build's version and platform.
+
+        A user who installs from a script needs to confirm which build they
+        actually ended up with. Without this the version is invisible: it
+        lives only in ``previewgen.__version__`` and in the packaged artifact
+        name, so a stale install and a current install are indistinguishable
+        from the running app.
+        """
+        return {
+            "ok": True,
+            "value": {
+                "version": APP_VERSION,
+                "platform": (
+                    "macos"
+                    if sys.platform == "darwin"
+                    else "windows"
+                    if sys.platform == "win32"
+                    else "linux"
+                    if sys.platform.startswith("linux")
+                    else "unknown"
+                ),
+            },
             "error": None,
         }
 
