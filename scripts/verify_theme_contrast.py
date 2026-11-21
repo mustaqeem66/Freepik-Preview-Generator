@@ -19,6 +19,7 @@ Run after ``npm run build`` in frontend/:
 
     python scripts/verify_theme_contrast.py
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,6 +39,27 @@ LOAD_BUDGET_MS = 15000
 # The theme attribute the app writes onto <html>; the demo bridge renders the
 # full studio UI in the browser fallback, so the same document covers both.
 THEMES = ("light", "dark")
+
+# The gate measures the *resolved palette*, so it must never sample an
+# animation frame. The studio animates background-color when the theme
+# changes; `getComputedStyle` returns the interpolated value mid-animation,
+# which once made the dark theme report its dark foreground against the
+# light theme's still-animating background and failed the gate on colours
+# the app never actually displayed.
+#
+# This must run before the theme toggle, not at measurement time: the
+# animation has already started by the time the second theme is measured, so
+# disabling the transition afterwards would sample the frame that is already
+# on screen.
+SETTLE_JS = r"""
+(function () {
+  var style = document.createElement('style');
+  style.setAttribute('data-contrast-gate', '1');
+  style.textContent = '*, *::before, *::after { transition: none !important; }';
+  (document.head || document.documentElement).appendChild(style);
+  return 'settled';
+})()
+"""
 
 # Runs inside the page. Reports every rendered text node with the colours the
 # engine actually resolved, so a cascade override cannot hide from the gate.
@@ -206,8 +228,7 @@ def _measure(dist: Path, timeout_seconds: int) -> dict[str, Any]:
         def then(value: str) -> None:
             if value != "clicked":
                 measured[state["theme"]] = {
-                    "error": "the theme toggle control was not found; "
-                    "the app did not render the studio UI"
+                    "error": "the theme toggle control was not found; the app did not render the studio UI"
                 }
                 state["theme"] = None
                 next_theme(view)
@@ -246,7 +267,10 @@ def _measure(dist: Path, timeout_seconds: int) -> dict[str, Any]:
     def wait_for_render(view: Any, attempt: int = 0) -> None:
         def then(value: str) -> None:
             if value == "ready" or attempt >= 120:
-                next_theme(view)
+                # Disable transitions before any theme is measured, so every
+                # colour the gate reads is the settled one rather than an
+                # interpolated frame.
+                run_script(view, SETTLE_JS, lambda _settled: next_theme(view))
                 return
             GLib.timeout_add(250, lambda: (wait_for_render(view, attempt + 1), False)[1])
 
@@ -340,7 +364,7 @@ def main(argv: list[str] | None = None) -> int:
         for f in failures:
             print(
                 f"  {f['theme']:5} {f['ratio']:.2f}:1 (floor {f['floor']}) "
-                f"{f['size']} {f['tag']}.{f['cls']} \"{f['text']}\" "
+                f'{f["size"]} {f["tag"]}.{f["cls"]} "{f["text"]}" '
                 f"fg={f['fg']} bg={f['bg']}"
             )
         print(f"\nEvidence written to {args.report}")
