@@ -109,3 +109,26 @@ describe("ApiBridge cache", () => {
     expect(await ApiBridge.getApi(100)).toBe(api);
   });
 });
+
+describe("ApiBridge teardown safety", () => {
+  afterEach(() => {
+    ApiBridge.clearCache();
+    // @ts-expect-error restore the global
+    delete window.pywebview;
+    vi.restoreAllMocks();
+  });
+
+  it("does not reject when the native bridge throws while being torn down", async () => {
+    // pywebview rebuilds `window.pywebview.api` on every page load. Reading it
+    // during teardown can throw, and an escaping rejection would surface as an
+    // unhandled error that fails the whole test run and the CI gate.
+    Object.defineProperty(window, "pywebview", {
+      configurable: true,
+      get() {
+        throw new Error("bridge is being torn down");
+      },
+    });
+
+    await expect(ApiBridge.getApi(50)).resolves.toBeUndefined();
+  });
+});

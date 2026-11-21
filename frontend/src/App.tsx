@@ -391,7 +391,8 @@ export default function App() {
     } : isWideWorkspace ? {
       gridTemplateColumns: `${actualLibraryWidth}px 6px minmax(280px, 1fr) 6px ${actualInspectorWidth}px`
     } : undefined}>
-      {!isFocused && <aside className="library-pane" aria-label="Asset library" ref={libraryScrollRef}>
+      {!isFocused && <aside className="library-pane" aria-label="Asset library" ref={libraryScrollRef}
+        tabIndex={0}>
         <div className="library-scroll-content">
         <FolderPicker inputFolder={state.inputFolder} outputFolder={state.outputFolder} sameFolder={state.sameFolder}
           forceSeparateOutput={usingFiles}
@@ -492,7 +493,8 @@ export default function App() {
       </section>
       {!isFocused && isWideWorkspace && <PaneResizer label="Resize inspector" value={actualInspectorWidth}
         initial={300} min={260} max={380} reverse onChange={setInspectorWidth} />}
-      {!isFocused && <aside className="inspector-pane" aria-label="Preview inspector" ref={inspectorScrollRef}>
+      {!isFocused && <aside className="inspector-pane" aria-label="Preview inspector" ref={inspectorScrollRef}
+        tabIndex={0}>
         <div className="inspector-scroll-content">
         <div className="inspector-heading"><h2>Inspector</h2><span className="muted">Live adjustments</span></div>
         <fieldset disabled={busy || !isLoaded}><legend className="sr-only">Preview settings</legend>

@@ -204,6 +204,11 @@ export class WebFallbackBridge implements PyWebViewApi {
 
   async frontend_ready(): Promise<ApiResponse<string>> { return result("browser-demo"); }
 
+  // The browser demo has no native backend, so there is nowhere to record
+  // policy violations. The method exists so the shared watcher can call it
+  // unconditionally instead of probing for the bridge method's presence.
+  async report_csp_violations(): Promise<ApiResponse<number>> { return result(0); }
+
   async get_initial_state(): Promise<ApiResponse<Partial<PreviewState>>> {
     return result({
       ...SETTINGS_DEFAULTS, ...this.settings,

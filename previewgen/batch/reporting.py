@@ -97,6 +97,28 @@ def _prune_old_reports(output_folder: Path, retention: int) -> None:
                 logging.debug("Could not prune old report %s: %s", candidate, exc)
 
 
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: object) -> object:
+    """Neutralise spreadsheet formula injection in a CSV cell.
+
+    Excel, LibreOffice and Numbers all evaluate a cell that begins with ``=``,
+    ``+``, ``-`` or ``@`` as a formula. A report cell holds a filename or an
+    error message that came from the user's filesystem, so a file named
+    ``=cmd|calc.png`` would otherwise execute when the report is opened.
+
+    Prefixing the cell with an apostrophe forces the spreadsheet to treat the
+    content as text. The apostrophe is the standard, cross-application
+    neutraliser and does not change the value the user sees.
+    """
+    if not isinstance(value, str):
+        return value
+    if value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def write_batch_reports(
     output_folder: Path,
     summary_payload: dict[str, Any],
@@ -138,12 +160,12 @@ def write_batch_reports(
             writer.writerow(["source", "output", "status", "duration_sec", "error_code", "error"])
             for rec in file_records:
                 writer.writerow([
-                    Path(rec.get("source", "")).name,
-                    Path(rec.get("output", "")).name,
-                    rec.get("status"),
+                    _csv_safe(Path(rec.get("source", "")).name),
+                    _csv_safe(Path(rec.get("output", "")).name),
+                    _csv_safe(rec.get("status")),
                     rec.get("duration"),
-                    rec.get("errorCode") or "",
-                    rec.get("error") or "",
+                    _csv_safe(rec.get("errorCode") or ""),
+                    _csv_safe(rec.get("error") or ""),
                 ])
 
         # Both payloads are complete on disk as temp files; now promote each

@@ -197,9 +197,16 @@ def start_desktop_app() -> int:
         if is_smoke and gui_type:
             def _auto_close_smoke(smoke_window: Any = window) -> None:
                 marker = os.environ.get("PREVIEWGEN_READY_MARKER")
+                # When the CSP self-test is enabled it needs a live WebView to
+                # run in, so the window must outlive the ready marker until the
+                # self-test has written its result.
+                csp_marker = os.environ.get("PREVIEWGEN_CSP_MARKER")
                 for _ in range(SMOKE_READY_POLL_ATTEMPTS):
                     if marker and Path(marker).is_file():
-                        break
+                        if not csp_marker:
+                            break
+                        if Path(csp_marker).is_file():
+                            break
                     time.sleep(SMOKE_READY_POLL_SECONDS)
                 with contextlib.suppress(Exception):
                     smoke_window.destroy()

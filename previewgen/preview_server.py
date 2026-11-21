@@ -273,7 +273,43 @@ class PreviewFileServer:
 
     # -- request handling -------------------------------------------------
 
+    def _host_is_allowed(self, handler: http.server.BaseHTTPRequestHandler) -> bool:
+        """Accept only requests addressed to this server's loopback origin.
+
+        The server is published as ``http://127.0.0.1:<port>/...``. A request
+        whose ``Host`` header names another host or another port is either a
+        DNS-rebinding attempt or a cross-origin fetch and must not receive the
+        image.
+        """
+        host = handler.headers.get("Host", "")
+        if not host:
+            return False
+        name = host.strip()
+        if name.startswith("["):
+            # IPv6 literal: [::1]:port
+            closing = name.find("]")
+            if closing == -1:
+                return False
+            hostname = name[1:closing]
+            rest = name[closing + 1:]
+            port = rest[1:] if rest.startswith(":") else ""
+        else:
+            hostname, separator, port = name.rpartition(":")
+            if not separator:
+                hostname, port = name, ""
+        if hostname.lower() not in {"127.0.0.1", "localhost", "::1"}:
+            return False
+        # The published URL always carries the ephemeral port. A Host without
+        # one names port 80, which is not this server.
+        return port == str(self._port)
+
     def _serve(self, handler: http.server.BaseHTTPRequestHandler) -> None:
+        if not self._host_is_allowed(handler):
+            # DNS rebinding: a hostile page can point a name at 127.0.0.1 and
+            # then read the response. Only the loopback names this server was
+            # actually published under may fetch from it.
+            handler.send_error(404, "Not found")
+            return
         path = urlparse(handler.path).path
         parts = [segment for segment in path.split("/") if segment]
         if len(parts) != 2 or parts[0] != self._token or self._root is None:

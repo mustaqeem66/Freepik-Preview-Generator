@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -136,8 +136,8 @@ jobs:
 
       # Issue #20: a policy string no engine enforces is not a control. Prove
       # the shipped directives in WebKitGTK against both the built HTML and the
-      # copy PyInstaller froze into the artifact. Linux only: the other jobs run
-      # the positive packaged-GUI smoke, not engine-level negative probes.
+      # copy PyInstaller froze into the artifact. The clean-machine jobs below
+      # also run a narrower script/preview smoke in each packaged WebView.
       - name: Verify production CSP in WebKit
         if: runner.os == 'Linux'
         run: |
@@ -239,6 +239,29 @@ jobs:
             Write-Host "Notice: No WINDOWS_CERTIFICATE secret configured. Skipping Windows binary signing."
           }
 
+      - name: Verify Windows executable signature
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # `signtool sign` returning zero is not proof that the artifact carries
+          # a valid signature: a malformed or partially signed binary can still
+          # exit zero. Read the signature back and require a real one.
+          $target = "dist\PreviewGen\PreviewGen.exe"
+          if (-not (Test-Path $target)) { throw "FATAL: $target is missing; nothing was signed." }
+          $status = Get-AuthenticodeSignature $target
+          Write-Host "Authenticode status: $($status.Status) (subject: $($status.SignerCertificate.Subject))"
+          if ($status.Status -ne "Valid") {
+            throw "FATAL: $target is not validly signed (status: $($status.Status)). Refusing to publish."
+          }
+          if (-not $status.SignerCertificate) {
+            throw "FATAL: $target has no signer certificate. Refusing to publish."
+          }
+          if ($status.TimeStamperCertificate) {
+            Write-Host "Timestamped by: $($status.TimeStamperCertificate.Subject)"
+          } else {
+            throw "FATAL: $target carries no RFC3161 timestamp; the signature will expire with the certificate."
+          }
+
       - name: Package Windows build
         if: runner.os == 'Windows'
         shell: pwsh
@@ -276,6 +299,24 @@ jobs:
             & $signtool.FullName sign /f cert.pfx /p "${{ secrets.WINDOWS_CERTIFICATE_PWD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 PreviewGen-Setup.exe
             if ($LASTEXITCODE -ne 0) { throw "Signing PreviewGen-Setup.exe failed." }
             Remove-Item cert.pfx -Force
+          }
+
+      - name: Verify Windows installer signature
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $target = "PreviewGen-Setup.exe"
+          if (-not (Test-Path $target)) { throw "FATAL: $target is missing; nothing was signed." }
+          $status = Get-AuthenticodeSignature $target
+          Write-Host "Installer Authenticode status: $($status.Status) (subject: $($status.SignerCertificate.Subject))"
+          if ($status.Status -ne "Valid") {
+            throw "FATAL: $target is not validly signed (status: $($status.Status)). Refusing to publish."
+          }
+          if (-not $status.SignerCertificate) {
+            throw "FATAL: $target has no signer certificate. Refusing to publish."
+          }
+          if (-not $status.TimeStamperCertificate) {
+            throw "FATAL: $target carries no RFC3161 timestamp; the signature will expire with the certificate."
           }
 
       # ── macOS: Genuine .app bundle, Code Signing, Startup test & DMG ──
@@ -445,6 +486,9 @@ jobs:
           # installs in issue #19. `--gui-smoke-test` creates the hidden WebView2 window,
           # injects the bridge, and only writes the marker once the frontend reports ready.
           $env:PREVIEWGEN_READY_MARKER = "$PWD\gui_ready.txt"
+          # Keep the bounded script/preview smoke verdict separate from engine diagnostics.
+          $env:PREVIEWGEN_CSP_MARKER = "$PWD\csp_selftest.json"
+          $env:PREVIEWGEN_CSP_VIOLATIONS = "$PWD\csp_violations.jsonl"
           $logFile = "$env:LOCALAPPDATA\PreviewGen\logs\previewgen.log"
           $timeoutSec = 180
 
@@ -461,6 +505,8 @@ jobs:
           for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
             Remove-Item $logFile -ErrorAction SilentlyContinue
             Remove-Item $env:PREVIEWGEN_READY_MARKER -ErrorAction SilentlyContinue
+            Remove-Item $env:PREVIEWGEN_CSP_MARKER -ErrorAction SilentlyContinue
+            Remove-Item $env:PREVIEWGEN_CSP_VIOLATIONS -ErrorAction SilentlyContinue
             Remove-Item "$PWD\gui_stdout.log" -ErrorAction SilentlyContinue
             Remove-Item "$PWD\gui_stderr.log" -ErrorAction SilentlyContinue
             Write-Host "GUI smoke test attempt $attempt of $maxAttempts..."
@@ -511,6 +557,23 @@ jobs:
             Select-String -Path $logFile -Pattern 'Error while processing|Error occurred in script' | Select-Object -First 5
             throw "FATAL: bridge injection errors in the packaged Windows run (issue #19 regression)."
           }
+          # No project toolchain is needed to check the verdict on Windows.
+          if (-not (Test-Path $env:PREVIEWGEN_CSP_MARKER)) {
+            throw "FATAL: the packaged Windows run produced no CSP self-test result."
+          }
+          $cspResult = Get-Content $env:PREVIEWGEN_CSP_MARKER -Raw
+          Write-Host "CSP self-test result: $cspResult"
+          $verdict = ConvertFrom-Json -InputObject $cspResult -AsHashtable -NoEnumerate
+          if ($verdict -isnot [System.Collections.IDictionary] -or
+              $verdict.inlineScript -isnot [string] -or
+              $verdict.blobScript -isnot [string] -or
+              $verdict.previewJpeg -isnot [string] -or
+              $verdict.Contains('error') -or
+              $verdict.inlineScript -cne 'blocked' -or
+              $verdict.blobScript -cne 'blocked' -or
+              $verdict.previewJpeg -cne 'loaded') {
+            throw "FATAL: packaged WebView2 CSP/preview smoke failed."
+          }
           Write-Host "Verifying frozen binary render capabilities (all fixtures)..."
           $renderProc = Start-Process -FilePath "test_clean_win\PreviewGen.exe" -ArgumentList "--render-test-all --fixtures tests/fixtures" -NoNewWindow -Wait -PassThru
           if ($renderProc.ExitCode -ne 0) {
@@ -524,6 +587,10 @@ jobs:
           echo "Mounting macOS DMG on machine without project Python/Node..."
           hdiutil attach PreviewGen-macOS.dmg -mountpoint /Volumes/PreviewGenTest
           export PREVIEWGEN_READY_MARKER="$PWD/gui_ready.txt"
+          # Engine violations are diagnostic only, including deliberate smoke probes.
+          export PREVIEWGEN_CSP_MARKER="$PWD/csp_selftest.json"
+          export PREVIEWGEN_CSP_VIOLATIONS="$PWD/csp_violations.jsonl"
+          rm -f "$PREVIEWGEN_READY_MARKER" "$PREVIEWGEN_CSP_MARKER" "$PREVIEWGEN_CSP_VIOLATIONS"
           python3 -c "import subprocess, sys, time; proc = subprocess.Popen(['/Volumes/PreviewGenTest/PreviewGen.app/Contents/MacOS/PreviewGen', '--gui-smoke-test']); sys.exit(proc.wait(timeout=60))" || {
             cat ~/Library/Logs/PreviewGen/previewgen.log 2>/dev/null || true
             echo "FATAL: macOS GUI test failed or timed out after 60s"; exit 1;
@@ -532,6 +599,7 @@ jobs:
             cat ~/Library/Logs/PreviewGen/previewgen.log 2>/dev/null || true
             echo "FATAL: frontend_ready marker not found on macOS"; exit 1;
           }
+          python3 scripts/check_csp_marker.py --marker "$PREVIEWGEN_CSP_MARKER"
           echo "Verifying frozen binary render capabilities on macOS (all fixtures)..."
           /Volumes/PreviewGenTest/PreviewGen.app/Contents/MacOS/PreviewGen --render-test-all --fixtures tests/fixtures
           if [ $? -ne 0 ]; then
@@ -546,6 +614,10 @@ jobs:
           sudo apt-get update && sudo apt-get install -y xvfb libfuse2 python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 || sudo apt-get install -y xvfb libfuse2 python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.0
           chmod +x PreviewGen-Linux.AppImage
           export PREVIEWGEN_READY_MARKER="$PWD/gui_ready.txt"
+          # Engine violations are diagnostic only, including deliberate smoke probes.
+          export PREVIEWGEN_CSP_MARKER="$PWD/csp_selftest.json"
+          export PREVIEWGEN_CSP_VIOLATIONS="$PWD/csp_violations.jsonl"
+          rm -f "$PREVIEWGEN_READY_MARKER" "$PREVIEWGEN_CSP_MARKER" "$PREVIEWGEN_CSP_VIOLATIONS"
           timeout 60s xvfb-run -a ./PreviewGen-Linux.AppImage --gui-smoke-test > previewgen-gui.log 2>&1 || {
             echo "FATAL: Linux GUI smoke test failed or timed out after 60s"
             cat ~/.local/state/previewgen/previewgen.log 2>/dev/null || true
@@ -557,6 +629,7 @@ jobs:
             cat ~/.local/state/previewgen/previewgen.log 2>/dev/null || true
             exit 1
           }
+          python3 scripts/check_csp_marker.py --marker "$PREVIEWGEN_CSP_MARKER"
           echo "Verifying frozen AppImage render capabilities on Linux (all fixtures)..."
           ./PreviewGen-Linux.AppImage --render-test-all --fixtures tests/fixtures
           if [ $? -ne 0 ]; then
@@ -564,32 +637,85 @@ jobs:
             exit 1
           fi
 
-  # ── Release generation with SHA256 checksums ──
+      - name: Upload packaged CSP evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-csp-${{ matrix.artifact }}
+          path: |
+            gui_ready.txt
+            csp_selftest.json
+            csp_violations.jsonl
+          if-no-files-found: ignore
+
+  # ── Stage signed release artifacts for manual native QA sign-off ──
   release:
+    permissions:
+      contents: write
     needs: [build, clean-machine-test]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - name: Download all artifacts
+      - name: Checkout the release user guide
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download release artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+          pattern: PreviewGen-*
           merge-multiple: true
 
       - name: Generate SHA-256 Checksums
         run: |
           echo "Generating SHA-256 checksums for release verification..."
-          sha256sum PreviewGen-* > SHA256SUMS.txt
+          sha256sum PreviewGen-Setup.exe PreviewGen-Windows.zip \
+            PreviewGen-macOS.dmg PreviewGen-Linux.AppImage > SHA256SUMS.txt
           echo "Generated SHA256SUMS.txt:"
           cat SHA256SUMS.txt
 
-      - name: Create Release
-        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
-        with:
-          generate_release_notes: true
-          files: |
-            PreviewGen-Setup.exe
-            PreviewGen-Windows.zip
-            PreviewGen-macOS.dmg
-            PreviewGen-Linux.AppImage
-            SHA256SUMS.txt
-            USER_GUIDE.txt
+      - name: Sign release checksums with GPG
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_KEY_ID: ${{ vars.GPG_KEY_ID }}
+        run: |
+          # A checksum published in the same channel as the artifact proves
+          # nothing against a tampered download: an attacker who can replace
+          # the AppImage can replace the checksum file too. A detached GPG
+          # signature lets a user verify the checksums against a key they
+          # already trust, independently of this release.
+          if [ -z "$GPG_PRIVATE_KEY" ] || [ -z "$GPG_KEY_ID" ]; then
+            # This job only runs for tag refs, so every execution is a release.
+            echo "::error::A release must ship a GPG-signed checksum file. Configure GPG_PRIVATE_KEY and GPG_KEY_ID."
+            exit 1
+          fi
+
+          echo "$GPG_PRIVATE_KEY" | base64 --decode > "$RUNNER_TEMP/release-signing-key.asc"
+          chmod 600 "$RUNNER_TEMP/release-signing-key.asc"
+          gpg --batch --import "$RUNNER_TEMP/release-signing-key.asc"
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "$GPG_PASSPHRASE" \
+            --local-user "$GPG_KEY_ID" \
+            --armor --detach-sign --output SHA256SUMS.txt.asc SHA256SUMS.txt
+          # Verify the signature we just produced, so a broken key or a
+          # misconfigured passphrase cannot ship a useless signature.
+          gpg --batch --verify SHA256SUMS.txt.asc SHA256SUMS.txt
+          # Publish the public key beside the signature so install.ps1 can
+          # verify the checksums without the user hunting for it.
+          gpg --batch --armor --export "$GPG_KEY_ID" > previewgen-signing-key.asc
+          test -s previewgen-signing-key.asc || { echo "::error::Failed to export the release public key."; exit 1; }
+          rm -f "$RUNNER_TEMP/release-signing-key.asc"
+          echo "Release checksums are signed by $GPG_KEY_ID"
+
+      - name: Create release draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          # Hosted smoke does not satisfy the native evidence checklist.
+          gh release create "$RELEASE_TAG" --draft --verify-tag --generate-notes \
+            PreviewGen-Setup.exe PreviewGen-Windows.zip \
+            PreviewGen-macOS.dmg PreviewGen-Linux.AppImage \
+            SHA256SUMS.txt SHA256SUMS.txt.asc previewgen-signing-key.asc USER_GUIDE.txt

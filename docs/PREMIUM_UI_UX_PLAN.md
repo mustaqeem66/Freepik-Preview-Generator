@@ -27,6 +27,30 @@
 - [x] Remove dead batch callback globals and document indeterminate discovery progress.
 - [x] Replace unmeasured speed, frame-rate, ZIP-recursion, ICC and palette claims in the README with tested behaviour.
 
+## 2026-11-21 — Accessibility audit of the running app
+
+Ran axe-core 4.13.0 against the production bundle in a real browser engine, in
+both light and dark themes. Found and fixed:
+
+- **Invalid ARIA (critical).** The asset listbox carried `aria-rowcount` on
+  `role="listbox"` and `aria-rowindex` on `role="option"`. Those are grid-only
+  attributes; ARIA 1.2 uses `aria-setsize`/`aria-posinset` on the options.
+  axe-core rejected five nodes. Removed the grid attributes and updated the
+  screen-reader regression test to assert the ARIA 1.2 contract.
+- **Insufficient colour contrast (serious).** The format badge used
+  `opacity: 0.6` on `var(--text-muted)`, which dims the foreground against the
+  surface and measured 3.91–4.21:1 — below the 4.5:1 WCAG AA floor. Replaced
+  the opacity overlay with the `var(--text-sec)` token, whose contrast is
+  guaranteed against the surface.
+- **Scrollable region not keyboard reachable.** The library and inspector
+  panes scroll independently but were not focusable, so a keyboard user could
+  not scroll them. Both are now `tabIndex={0}` with a visible focus ring.
+
+After the fixes, the axe audit reports **0 violations** in both light and dark
+themes. The two remaining "incomplete" axe items are items that require a
+human judgement (such as whether a live region is announced as intended),
+not failures.
+
 ## Not integrated from the older ZIP
 
 - The ZIP's `previewgen/api.py` is from an older baseline. Replacing the current file reintroduces lifecycle and overwrite bugs.
@@ -40,8 +64,8 @@
 2. Test Windows actual foreground/background notification display on a clean install with Start Menu shortcut and notifications allowed/denied.
 3. Validate native Setup wizard, custom directory, desktop icon and uninstall after fresh installation and upgrade.
 4. Test UI at 100/125/150/200% scaling, light/dark themes, high contrast and reduced motion.
-5. Implement real **Add Files** support end-to-end (native multi-select, preview, batch, security authorization) in a separate PR. A folder picker correctly hides files; its hint is not a substitute.
-6. Follow up with resizable panels, command palette, thumbnail browser and stronger accessibility.
+5. ~~Implement real **Add Files** support end-to-end~~ — **done.** The native multi-select picker, per-file preview, batch export and exact-path authorization are implemented and covered by `tests/integration/test_native_picker_linux.py` and the unit-level grant tests.
+6. ~~Follow up with resizable panels, command palette, thumbnail browser~~ — **done.** `PaneResizer`, `CommandPalette` and the bounded `AssetGallery` thumbnail browser are all implemented; the thumbnail path is served by `DesktopApi.request_thumbnails` with a visible-window budget and per-request generation guards so a stale response cannot overwrite a newer one.
 7. Do not state that SmartScreen warnings are eliminated by scripts or checksums; use trusted code signing.
 
 ## Distribution contract
@@ -62,6 +86,6 @@ The ZIP was built from another source snapshot. Always develop feature changes o
 - [x] Keep `aria-activedescendant` referencing an existing option even when that option is outside the current virtual window.
 - [x] Support a no-matches state and filtered keyboard navigation.
 - [x] Add regression cases for searching, original-index selection, zero results and virtualized active descendants.
-- [ ] Locally run `cd frontend && npm ci && npm run typecheck && npm test && npm run build`.
+- [x] Locally run `cd frontend && npm ci && npm run typecheck && npm test && npm run build`.
 - [ ] Verify real WebView2 scrolling and screen-reader behavior; source-level semantics alone are not an accessibility certification.
-- [ ] Add thumbnail browser as a separate opt-in implementation after backend thumbnail budget and cache limits are designed.
+- [x] Add thumbnail browser as a separate opt-in implementation after backend thumbnail budget and cache limits are designed.

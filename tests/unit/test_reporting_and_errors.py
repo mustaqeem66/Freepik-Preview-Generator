@@ -99,6 +99,26 @@ def test_classify_exception_maps_to_stable_codes():
     assert classify_exception(Exception("kaboom"))[0] == ErrorCode.INTERNAL_ERROR
 
 
+def test_a_full_disk_is_never_reported_as_a_corrupt_asset():
+    """A full volume must not blame the user's file.
+
+    ``OSError("disk full")`` carries no errno, and the generic fallback would
+    otherwise classify it as a corrupt asset.
+    """
+    import errno
+
+    assert classify_exception(OSError(errno.ENOSPC, "no space"))[0] == ErrorCode.DISK_FULL
+    assert classify_exception(OSError("disk full"))[0] == ErrorCode.DISK_FULL
+    assert (
+        classify_exception(OSError("Insufficient disk space: needs 10 MB"))[0]
+        == ErrorCode.DISK_FULL
+    )
+
+    windows = OSError("disk full")
+    windows.winerror = 112
+    assert classify_exception(windows)[0] == ErrorCode.DISK_FULL
+
+
 def test_batch_file_records_carry_error_codes():
     with tempfile.TemporaryDirectory() as tmp_in, tempfile.TemporaryDirectory() as tmp_out:
         in_dir = Path(tmp_in)

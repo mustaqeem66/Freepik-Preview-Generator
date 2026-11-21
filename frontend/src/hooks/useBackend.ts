@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ApiBridge } from "../api/bridge";
 import { isWebFallbackApi } from "../api/webFallbackBridge";
+import type { PyWebViewApi } from "../types";
 
 export type BackendStatus = "connecting" | "connected" | "ready" | "degraded" | "disconnected";
 
@@ -67,7 +68,19 @@ export function useBackend(): BackendState {
 
     let task: Promise<CheckOutcome>;
     task = (async (): Promise<CheckOutcome> => {
-      const api = await ApiBridge.getApi(4000);
+      // The bridge handshake itself can throw — the native object may be
+      // torn down mid-navigation, and reading `window.pywebview.api` can
+      // throw on a half-initialised bridge. An unhandled rejection here would
+      // escape the hook entirely and fail the whole test run, so the wait is
+      // guarded like the handshake that follows it.
+      let api: PyWebViewApi | undefined;
+      try {
+        api = await ApiBridge.getApi(4000);
+      } catch (err) {
+        console.warn("Backend bridge handshake warning:", err);
+        if (isLatest()) setStatus("degraded");
+        return { success: false, accepted: isLatest() };
+      }
       if (!isLatest()) return { success: false, accepted: false };
       if (!api) {
         setIsBrowserDemo(false);

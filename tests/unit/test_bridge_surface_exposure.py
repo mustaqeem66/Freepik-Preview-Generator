@@ -44,6 +44,7 @@ EXPECTED_BRIDGE = frozenset({
     "probe_asset",
     "release_preview",
     "render_preview",
+    "report_csp_violations",
     "request_source_comparison",
     "request_thumbnails",
     "save_settings",
@@ -65,6 +66,8 @@ FORBIDDEN = frozenset({
     "is_authorized_output_path",
     "is_authorized_export_destination",
     "is_authorized_selected_file",
+    "probe_packaged_csp",
+    "run_csp_selftest",
     "set_window",
 })
 

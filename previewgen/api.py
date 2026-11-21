@@ -6,6 +6,7 @@ Uses webview.Window type hints only (does not import webview at module scope).
 from __future__ import annotations
 
 import contextlib
+import io
 import itertools
 import json
 import logging
@@ -46,6 +47,32 @@ from previewgen.thumbnail_coordinator import MAX_VISIBLE_THUMBNAILS, ThumbnailCo
 SCAN_INLINE_RESULT_LIMIT = 128
 SCAN_PAGE_MAX_ITEMS = 128
 SCAN_PAGE_MAX_BYTES = 32 * 1024
+
+
+def _resolve_export_destination(
+    out_dir: Path,
+    stem: str,
+    overwrite_policy: str,
+    protected: set[Path] | None = None,
+) -> tuple[Path, bool]:
+    """Resolve the destination file for an export, honouring the overwrite policy.
+
+    Returns the destination path and whether the export must be skipped because
+    the file already exists. The destination is never allowed to overwrite a
+    protected source file, whatever the policy says.
+    """
+    protected = protected or set()
+    destination = protect_source_destinations(out_dir / f"{stem}.jpg", protected)
+    if not destination.exists():
+        return destination, False
+    if overwrite_policy == "skip":
+        return destination, True
+    if overwrite_policy == "rename":
+        counter = 1
+        while destination.exists() or destination.resolve() in protected:
+            destination = out_dir / f"{stem}_copy{counter}.jpg"
+            counter += 1
+    return destination, False
 
 
 class DesktopApi:
@@ -90,6 +117,7 @@ class DesktopApi:
         self._scan_page_lock = threading.Lock()
         self._scan_page_state: tuple[str, list[dict[str, Any]], int] | None = None
         self._scan_paging_enabled = False
+        self._csp_smoke_started = threading.Lock()
         self._last_heartbeat_time = time.time()
         self._register_default_authorized_paths()
 
@@ -457,9 +485,130 @@ class DesktopApi:
             except Exception as exc:
                 logging.warning("Could not write ready marker: %s", exc)
         if "--gui-smoke-test" in sys.argv and self._window:
-            # Destroy window after bridge response completes so clean machine tests exit promptly
-            threading.Timer(0.5, self._window.destroy).start()
+            if os.environ.get("PREVIEWGEN_CSP_MARKER"):
+                if self._csp_smoke_started.acquire(blocking=False):
+                    threading.Thread(target=self._run_csp_selftest_then_close, daemon=True).start()
+            else:
+                # Destroy window after bridge response completes so clean machine tests exit promptly
+                threading.Timer(0.5, self._window.destroy).start()
         return {"ok": True, "value": "ready", "error": None}
+
+    def _run_csp_selftest_then_close(self) -> None:
+        """Write one smoke verdict before closing the native window."""
+        try:
+            outcome = self._probe_packaged_csp()
+        except Exception as exc:
+            logging.warning("CSP smoke probe could not complete: %s", exc)
+            outcome = {"error": "CSP_PROBE_UNAVAILABLE"}
+        try:
+            marker = os.environ["PREVIEWGEN_CSP_MARKER"]
+            Path(marker).write_text(json.dumps(outcome, sort_keys=True) + "\n", encoding="utf-8")
+        except (OSError, KeyError):
+            logging.exception("Could not write CSP smoke verdict")
+        finally:
+            if self._window is not None:
+                self._window.destroy()
+
+    def report_csp_violations(self, violations: list[dict[str, Any]]) -> dict[str, Any]:
+        """Log diagnostics sent by the frontend, not a policy enforcement verdict.
+
+        Deliberate smoke probes may themselves generate violations. Some engines
+        omit these events, so the smoke gate uses a separate result file.
+        """
+        marker = os.environ.get("PREVIEWGEN_CSP_VIOLATIONS")
+        recorded: list[dict[str, Any]] = []
+        if isinstance(violations, list):
+            for entry in violations[:100]:
+                if not isinstance(entry, dict):
+                    continue
+                recorded.append(
+                    {
+                        "effectiveDirective": str(entry.get("effectiveDirective", "")),
+                        "blockedURI": str(entry.get("blockedURI", "")),
+                        "violatedDirective": str(entry.get("violatedDirective", "")),
+                        "resourceType": str(entry.get("resourceType", "")),
+                    }
+                )
+        for violation in recorded:
+            logging.warning(
+                "Content Security Policy violation: directive=%s blocked=%s resource=%s",
+                violation["effectiveDirective"],
+                violation["blockedURI"],
+                violation["resourceType"],
+            )
+        if marker and recorded:
+            try:
+                with open(marker, "a", encoding="utf-8") as handle:
+                    for violation in recorded:
+                        handle.write(json.dumps(violation, sort_keys=True) + "\n")
+            except Exception as exc:
+                logging.warning("Could not write CSP violation marker: %s", exc)
+        return {"ok": True, "value": len(recorded), "error": None}
+
+    def _probe_packaged_csp(self) -> dict[str, Any]:
+        """Exercise script-src and the loopback JPEG control in the live WebView."""
+        from PIL import Image
+
+        window = self._window
+        if window is None:
+            return {"error": "NO_WINDOW"}
+
+        with Image.new("RGB", (8, 8), "red") as image, io.BytesIO() as buffer:
+            image.save(buffer, "JPEG")
+            url = self.preview_server.publish_jpeg(buffer.getvalue())
+        try:
+            # Both scripts write only a smoke sentinel. Inline scripts execute
+            # synchronously on insertion; the blob has no DNS or network path.
+            script = """
+              (() => {
+                const result = window.__pgCsp = {
+                  inlineScript: 'blocked', blobScript: 'pending', previewJpeg: 'pending'
+                };
+                const inline = document.createElement('script');
+                inline.textContent = "window.__pgCsp.inlineScript = 'executed'";
+                document.head.appendChild(inline);
+                inline.remove();
+
+                const external = document.createElement('script');
+                const blobUrl = URL.createObjectURL(new Blob(
+                  ["window.__pgCsp.blobScript = 'executed'"], { type: 'text/javascript' }
+                ));
+                function finishScript() {
+                  URL.revokeObjectURL(blobUrl);
+                  external.remove();
+                }
+                external.onload = () => {
+                  if (result.blobScript === 'pending') result.blobScript = 'unexpected-load';
+                  finishScript();
+                };
+                external.onerror = () => { result.blobScript = 'blocked'; finishScript(); };
+                external.src = blobUrl;
+                document.head.appendChild(external);
+
+                const preview = new Image();
+                preview.onload = () => {
+                  result.previewJpeg = preview.naturalWidth === 8 && preview.naturalHeight === 8
+                    ? 'loaded' : 'invalid-image';
+                };
+                preview.onerror = () => { result.previewJpeg = 'error'; };
+                preview.src = __PREVIEW_URL__;
+                return true;
+              })()
+            """.replace("__PREVIEW_URL__", json.dumps(url))
+            window.evaluate_js(script)
+            deadline = time.monotonic() + 8.0
+            outcome = {"inlineScript": "pending", "blobScript": "pending", "previewJpeg": "pending"}
+            while time.monotonic() < deadline:
+                raw = window.evaluate_js("JSON.stringify(window.__pgCsp)")
+                observed = json.loads(raw)
+                outcome = {key: str(observed[key]) for key in outcome}
+                if "pending" not in outcome.values():
+                    break
+                time.sleep(0.1)
+            return outcome
+        finally:
+            self.preview_server.release_jpeg(url)
+
     def get_initial_state(self) -> dict[str, Any]:
         """Load persistent user preferences with schema version validation."""
         validated = load_settings()
@@ -1152,18 +1301,12 @@ class DesktopApi:
             cfg = PreviewConfig.from_mapping(config_dict, mode="strict-export")
             out_dir.mkdir(parents=True, exist_ok=True)
 
-            dest_file = protect_source_destinations(
-                out_dir / f"{source_path.stem}.jpg", {source_path.resolve()}
+            dest_file, skipped = _resolve_export_destination(
+                out_dir,
+                source_path.stem,
+                cfg.overwrite_policy,
+                {source_path.resolve()},
             )
-            skipped = False
-            if dest_file.exists():
-                if cfg.overwrite_policy == "skip":
-                    skipped = True
-                elif cfg.overwrite_policy == "rename":
-                    counter = 1
-                    while dest_file.exists() or dest_file.resolve() == source_path.resolve():
-                        dest_file = out_dir / f"{source_path.stem}_copy{counter}.jpg"
-                        counter += 1
 
             if not skipped:
                 render_file_isolated(source_path, dest_file, cfg, timeout_seconds=60.0)

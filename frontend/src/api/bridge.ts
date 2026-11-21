@@ -107,12 +107,25 @@ export class ApiBridge {
   private static cachedApi: PyWebViewApi | null = null;
   private static browserDemo: WebFallbackBridge | null = null;
 
+  /** Read the live native bridge without letting a teardown throw. */
+  private static _readLiveApi(): PyWebViewApi | undefined {
+    try {
+      return window.pywebview?.api;
+    } catch {
+      // The native bridge is being torn down mid-navigation.
+      return undefined;
+    }
+  }
+
   static async getApi(maxWaitMs: number = 3000): Promise<PyWebViewApi | undefined> {
     // pywebview rebuilds window.pywebview.api whenever the page reloads, so a
     // cached object from the previous document would route calls into a bridge
     // that no longer exists. Trust the live object, fall back to the cache only
     // while the window is mid-navigation.
-    const liveApi = window.pywebview?.api;
+    //
+    // Reading `window.pywebview.api` can itself throw when the native bridge
+    // is being torn down mid-navigation, so every access is guarded.
+    const liveApi = this._readLiveApi();
     if (liveApi) {
       if (this.cachedApi !== liveApi) this.cachedApi = liveApi;
       return this.cachedApi;
@@ -128,15 +141,15 @@ export class ApiBridge {
     const deadline = Date.now() + maxWaitMs;
 
     while (Date.now() < deadline) {
-      const api = window.pywebview?.api;
+      const api = this._readLiveApi();
       if (api) {
         this.cachedApi = api;
         return api;
       }
 
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 50);
-      });
+      const { promise, resolve } = Promise.withResolvers<void>();
+      window.setTimeout(resolve, 50);
+      await promise;
     }
     // Never substitute a synthetic bridge for the privileged desktop runtime.
     // In web-only development, expose a clearly labeled in-memory canvas demo

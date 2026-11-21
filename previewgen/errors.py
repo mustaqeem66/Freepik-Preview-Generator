@@ -77,8 +77,14 @@ def classify_exception(exc: BaseException) -> tuple[str, str]:
             return ErrorCode.DISK_FULL, user_message(ErrorCode.DISK_FULL)
         if exc.errno == errno.ENOENT:
             return ErrorCode.FOLDER_NOT_FOUND, user_message(ErrorCode.FOLDER_NOT_FOUND)
+        # Windows reports a full volume through winerror, not errno.
+        if getattr(exc, "winerror", None) == 112:
+            return ErrorCode.DISK_FULL, user_message(ErrorCode.DISK_FULL)
 
     text = str(exc).lower()
+
+    if "no space left" in text or "disk full" in text or "insufficient disk space" in text:
+        return ErrorCode.DISK_FULL, user_message(ErrorCode.DISK_FULL)
 
     if "locked by another" in text or "currently locked" in text:
         return ErrorCode.OUTPUT_LOCKED, user_message(ErrorCode.OUTPUT_LOCKED)

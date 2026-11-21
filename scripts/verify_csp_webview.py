@@ -4,13 +4,11 @@
 Issue #20 asks for validation of the packaged policy rather than a review of the
 string. The frontend contract test only proves the meta tag is present; this
 proves the engine acts on it. It loads the real ``frontend/dist`` artifact in
-WebKitGTK (the engine family behind the Linux pywebview window), performs one
-action per directive, and cross-checks the outcome against the policy reports
-WebKit writes to the console.
-
-Probes are written to leave a verdict in ``window.__p`` rather than returning a
-promise, because WebKitGTK 4.1's ``run_javascript`` cannot await one. A probe
-that never reports success is read as ``blocked``: nothing loaded, nothing ran.
+WebKitGTK (the engine family behind the Linux pywebview window). Network
+probes use a second, reachable loopback origin outside the policy allowlist.
+For signals that could also be ordinary load failures, the same operation
+must succeed in an unrestricted file document on the same engine. Timeouts
+never count as policy refusals.
 
 Run after ``npm run build`` in frontend/:
 
@@ -48,33 +46,31 @@ def _jpeg_bytes() -> bytes:
 JPEG = _jpeg_bytes()
 
 # Each probe performs something the shipped policy must decide. ``expect`` is the
-# behavior the policy mandates; the harness polls window.__p until it leaves
-# "pending" or the budget runs out.
+# behavior the policy mandates; ``control`` probes must also run without CSP.
 PROBES: list[dict[str, str]] = [
     {
         "name": "script-src blocks an injected inline script",
         "directive": "script-src",
         "expect": "blocked",
         "js": """
-          window.__p = 'pending'; window.__inlineRan = false;
+          window.__inlineRan = false;
           var s = document.createElement('script');
           s.textContent = 'window.__inlineRan = true;';
-          s.onerror = function () { window.__p = 'blocked'; };
           document.head.appendChild(s);
-          setTimeout(function () {
-            window.__p = window.__inlineRan ? 'allowed' : 'blocked';
-          }, 400);
+          window.__p = window.__inlineRan ? 'allowed' : 'blocked';
+          s.remove();
         """,
     },
     {
-        "name": "script-src blocks a remote script tag",
+        "name": "script-src blocks a script from a disallowed origin",
         "directive": "script-src",
         "expect": "blocked",
+        "control": "allowed",
         "js": """
           window.__p = 'pending';
           var s = document.createElement('script');
-          s.src = 'https://example.invalid/evil.js';
-          s.onload = function () { window.__p = 'allowed'; };
+          s.src = 'http://__DENIED_HOST__:%(denied_port)d/probe.js';
+          s.onload = function () { window.__p = window.__probeRan ? 'allowed' : 'error'; };
           s.onerror = function () { window.__p = 'blocked'; };
           document.head.appendChild(s);
         """,
@@ -90,13 +86,14 @@ PROBES: list[dict[str, str]] = [
         """,
     },
     {
-        "name": "connect-src blocks a remote fetch",
+        "name": "connect-src blocks a fetch to a disallowed origin",
         "directive": "connect-src",
         "expect": "blocked",
+        "control": "allowed",
         "js": """
           window.__p = 'pending';
-          fetch('https://example.invalid/leak.json').then(function (r) {
-            window.__p = r.ok ? 'allowed' : 'blocked';
+          fetch('http://__DENIED_HOST__:%(denied_port)d/probe.json').then(function (r) {
+            window.__p = r.ok ? 'allowed' : 'error';
           }, function () { window.__p = 'blocked'; });
         """,
     },
@@ -112,15 +109,16 @@ PROBES: list[dict[str, str]] = [
         """,
     },
     {
-        "name": "img-src blocks a remote image",
+        "name": "img-src blocks an image from a disallowed origin",
         "directive": "img-src",
         "expect": "blocked",
+        "control": "allowed",
         "js": """
           window.__p = 'pending';
           var i = new Image();
           i.onload = function () { window.__p = 'allowed'; };
           i.onerror = function () { window.__p = 'blocked'; };
-          i.src = 'https://example.invalid/pixel.png';
+          i.src = 'http://__DENIED_HOST__:%(denied_port)d/preview.jpg';
         """,
     },
     {
@@ -145,7 +143,7 @@ PROBES: list[dict[str, str]] = [
         "js": """
           window.__p = 'pending';
           var f = document.createElement('iframe');
-          f.src = 'https://example.invalid/';
+          f.src = 'http://__DENIED_HOST__:%(denied_port)d/frame.html';
           document.body.appendChild(f);
         """,
     },
@@ -153,39 +151,50 @@ PROBES: list[dict[str, str]] = [
         "name": "object-src 'none' blocks a remote plugin object",
         "directive": "object-src",
         "expect": "blocked",
+        "engine": "object-src",
         "js": """
           window.__p = 'pending';
           var o = document.createElement('object');
-          o.data = 'https://example.invalid/thing.swf';
-          o.onload = function () { window.__p = 'allowed'; };
-          o.onerror = function () { window.__p = 'blocked'; };
+          o.data = 'http://__DENIED_HOST__:%(denied_port)d/object.html';
           document.body.appendChild(o);
         """,
     },
     {
-        "name": "connect-src blocks a remote XMLHttpRequest",
+        "name": "connect-src blocks an XMLHttpRequest to a disallowed origin",
         "directive": "connect-src",
         "expect": "blocked",
+        "control": "allowed",
         "js": """
           window.__p = 'pending';
           var x = new XMLHttpRequest();
-          x.onload = function () { window.__p = 'allowed'; };
+          x.onload = function () { window.__p = x.status === 200 ? 'allowed' : 'error'; };
           x.onerror = function () { window.__p = 'blocked'; };
-          try { x.open('GET', 'https://example.invalid/x', true); x.send(); }
+          try { x.open('GET', 'http://__DENIED_HOST__:%(denied_port)d/probe.json', true); x.send(); }
           catch (e) { window.__p = 'blocked'; }
         """,
     },
     {
-        "name": "worker-src 'none' blocks a remote worker",
+        "name": "worker-src 'none' blocks a blob worker",
         "directive": "worker-src",
         "expect": "blocked",
+        "control": "allowed",
         "js": """
           window.__p = 'pending';
+          var url = URL.createObjectURL(new Blob(
+            ["postMessage('ready')"], { type: 'text/javascript' }
+          ));
           try {
-            var w = new Worker('https://example.invalid/worker.js');
-            w.onmessage = function () { window.__p = 'allowed'; };
-            w.onerror = function () { window.__p = 'blocked'; };
-          } catch (e) { window.__p = 'blocked'; }
+            var w = new Worker(url);
+            w.onmessage = function (e) {
+              window.__p = e.data === 'ready' ? 'allowed' : 'error';
+              w.terminate();
+              URL.revokeObjectURL(url);
+            };
+            w.onerror = function () { window.__p = 'blocked'; URL.revokeObjectURL(url); };
+          } catch (e) {
+            window.__p = 'blocked';
+            URL.revokeObjectURL(url);
+          }
         """,
     },
 ]
@@ -193,8 +202,17 @@ PROBES: list[dict[str, str]] = [
 
 class _Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
-        body = JPEG if self.path.endswith(".jpg") else b"{}"
-        kind = "image/jpeg" if self.path.endswith(".jpg") else "application/json"
+        if self.path == "/preview.jpg":
+            body, kind = JPEG, "image/jpeg"
+        elif self.path == "/probe.js":
+            body, kind = b"window.__probeRan = true;", "text/javascript"
+        elif self.path in ("/frame.html", "/object.html"):
+            body, kind = b"<!doctype html><title>PreviewGen CSP probe</title>", "text/html"
+        elif self.path == "/probe.json":
+            body, kind = b"{}", "application/json"
+        else:
+            self.send_error(404)
+            return
         self.send_response(200)
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(body)))
@@ -206,19 +224,46 @@ class _Handler(BaseHTTPRequestHandler):
         return
 
 
-def _serve_loopback() -> tuple[HTTPServer, int]:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-    server = HTTPServer(("127.0.0.1", port), _Handler)
+def _serve_loopback(host: str) -> tuple[HTTPServer, int]:
+    server = HTTPServer((host, 0), _Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server, port
+    return server, server.server_port
+
+
+def _non_loopback_ipv4() -> str:
+    """The host's own non-loopback IPv4 address.
+
+    The denied origin must be reachable for the control run to mean anything.
+    A second loopback address is not: WebKit's sandboxed network process
+    cannot open a connection to it, so the control would time out and the
+    probe could not tell a policy refusal from an unreachable host.
+    """
+    candidates: list[str] = []
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            # Connecting a datagram socket only selects a route; it sends nothing.
+            probe.connect(("192.0.2.1", 9))
+            candidates.append(probe.getsockname()[0])
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            candidates.append(info[4][0])
+    except OSError:
+        pass
+    for address in candidates:
+        if not address.startswith("127."):
+            return address
+    raise RuntimeError("no reachable non-loopback IPv4 address is available for the CSP control")
 
 
 def _run_probes(
     uri: str,
     timeout_seconds: int,
     loopback_port: int,
+    denied_port: int,
+    denied_host: str,
+    specs: list[dict[str, str]],
 ) -> tuple[list[dict[str, Any]], list[str]]:
     import gi
 
@@ -228,7 +273,7 @@ def _run_probes(
 
     results: list[dict[str, Any]] = []
     violations: list[str] = []
-    pending = list(PROBES)
+    pending = iter(specs)
     state: dict[str, Any] = {"deadline": 0}
 
     def run_script(view: Any, script: str, then: Any) -> None:
@@ -254,14 +299,12 @@ def _run_probes(
     def poll_once(view: Any) -> None:
         def then(value: str) -> None:
             spec = state["spec"]
-            if value in ("allowed", "blocked"):
+            if value in ("allowed", "blocked", "error"):
                 record(spec, value)
                 start_next(view)
                 return
             if GLib.get_monotonic_time() >= state["deadline"]:
-                # A negative probe that never reports success was refused; a
-                # positive one stuck pending is a real failure, so record as-is.
-                record(spec, "blocked" if spec["expect"] == "blocked" else value or "pending")
+                record(spec, "timeout")
                 start_next(view)
                 return
             GLib.timeout_add(150, lambda: (poll_once(view), False)[1])
@@ -269,13 +312,19 @@ def _run_probes(
         run_script(view, "window.__p || 'pending'", then)
 
     def start_next(view: Any) -> None:
-        if not pending:
+        spec = next(pending, None)
+        if spec is None:
+            state["spec"] = None
             Gtk.main_quit()
             return
-        spec = pending.pop(0)
         state["spec"] = spec
 
-        def then(_value: str) -> None:
+        def then(value: str) -> None:
+            if value.startswith("error:"):
+                record(spec, "probe-error")
+                results[-1]["error"] = value
+                start_next(view)
+                return
             if "engine" in spec:
                 # Injected for the engine to judge; verdict comes from its refusal.
                 start_next(view)
@@ -283,7 +332,12 @@ def _run_probes(
             state["deadline"] = GLib.get_monotonic_time() + POLL_BUDGET_MS * 1000
             GLib.timeout_add(120, lambda: (poll_once(view), False)[1])
 
-        run_script(view, spec["js"] % {"loopback_port": loopback_port}, then)
+        source = (
+            spec["js"] % {"loopback_port": loopback_port, "denied_port": denied_port}
+        ).replace("__DENIED_HOST__", denied_host)
+        # Returning a DOM node or a Promise reports an unsupported result
+        # after executing the code. Only poll the scalar verdict separately.
+        run_script(view, f"(() => {{\n{source}\nreturn true;\n}})()", then)
 
     def on_load(_v, event):
         if event == WebKit2.LoadEvent.FINISHED:
@@ -291,12 +345,12 @@ def _run_probes(
         return False
 
     def watchdog() -> bool:
-        if pending or state.get("spec") is not None:
-            for spec in [state["spec"], *pending] if state.get("spec") else pending:
-                record(spec, "timeout")
-            pending.clear()
-            print("WebKit did not finish loading the artifact", file=sys.stderr)
-            Gtk.main_quit()
+        state["watchdog"] = None
+        if state.get("spec") is not None:
+            record(state["spec"], "timeout")
+        for spec in pending:
+            record(spec, "timeout")
+        Gtk.main_quit()
         return False
 
     win = Gtk.OffscreenWindow()
@@ -325,9 +379,12 @@ def _run_probes(
             os.dup2(console_log.fileno(), 1)
             os.dup2(console_log.fileno(), 2)
         view.load_uri(uri)
-        GLib.timeout_add_seconds(timeout_seconds, watchdog)
+        state["watchdog"] = GLib.timeout_add_seconds(timeout_seconds, watchdog)
         Gtk.main()
     finally:
+        if state.get("watchdog") is not None:
+            GLib.source_remove(state["watchdog"])
+        win.destroy()
         if console_log is not None:
             for stream in (sys.stdout, sys.stderr):
                 stream.flush()
@@ -341,9 +398,12 @@ def _run_probes(
         for fd in (1, 2):
             os.close(saved[fd])
 
-    for spec in (p for p in PROBES if "engine" in p):
-        refused = any(spec["engine"] in line for line in violations)
-        record(spec, "blocked" if refused else "loaded")
+    reported = {row["order"] for row in results}
+    for spec in (p for p in specs if "engine" in p and PROBES.index(p) not in reported):
+        path = spec["directive"].split("-")[0] + ".html"
+        url = f"http://{denied_host}:{denied_port}/{path}"
+        refused = any(url in line and spec["engine"] in line for line in violations)
+        record(spec, "blocked" if refused else "no-policy-refusal")
     results.sort(key=lambda r: r["order"])
     return results, violations
 
@@ -363,11 +423,30 @@ def main(argv: list[str] | None = None) -> int:
         print("built artifact carries no CSP meta tag", file=sys.stderr)
         return 1
 
-    server, port = _serve_loopback()
+    loopback, port = _serve_loopback("127.0.0.1")
     try:
-        results, violations = _run_probes(dist.as_uri(), args.timeout, port)
+        denied_host = _non_loopback_ipv4()
+        denied, denied_port = _serve_loopback(denied_host)
+        try:
+            results, violations = _run_probes(dist.as_uri(), args.timeout, port, denied_port, denied_host, PROBES)
+            control_specs = [spec for spec in PROBES if "control" in spec]
+            with tempfile.TemporaryDirectory(prefix="previewgen-csp-") as scratch:
+                control = Path(scratch) / "index.html"
+                control.write_text("<!doctype html><meta charset=utf-8><title>CSP control</title>", encoding="utf-8")
+                baseline, _ = _run_probes(control.as_uri(), args.timeout, port, denied_port, denied_host, control_specs)
+        finally:
+            denied.shutdown()
+            denied.server_close()
     finally:
-        server.shutdown()
+        loopback.shutdown()
+        loopback.server_close()
+
+    controls_by_order = {row["order"]: row["observed"] for row in baseline}
+    for row in results:
+        if "control" in PROBES[row["order"]]:
+            outcome = controls_by_order.get(row["order"], "missing")
+            row["controlObserved"] = outcome
+            row["passed"] = row["passed"] and outcome == "allowed"
 
     if len(results) != len(PROBES):
         print(f"only {len(results)}/{len(PROBES)} probes reported", file=sys.stderr)
@@ -378,7 +457,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"WebKit CSP enforcement against {dist}\n")
     for r in results:
         mark = "ok  " if r["passed"] else "FAIL"
-        print(f"  [{mark}] {r['probe']:<{width}} expected={r['expected']:<8} observed={r['observed']}")
+        control_note = f" unrestricted={r['controlObserved']}" if "controlObserved" in r else ""
+        print(f"  [{mark}] {r['probe']:<{width}} expected={r['expected']:<8} observed={r['observed']}{control_note}")
     print(f"\n{len(violations)} policy refusal(s) reported by the engine itself:")
     for text in violations[:12]:
         print(f"  - {text[:170]}")

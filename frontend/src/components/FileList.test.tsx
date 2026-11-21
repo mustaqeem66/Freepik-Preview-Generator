@@ -71,17 +71,22 @@ describe("FileList virtualization", () => {
     expect(onSelect).toHaveBeenLastCalledWith(0);
   });
 
-  it("provides screen-reader row count and active descendant metadata", () => {
+  it("provides screen-reader position metadata and active descendant", () => {
     const files = makeFiles(50);
     render(<FileList files={files} activeIndex={2} onSelect={() => {}} height={200} />);
 
     const list = screen.getByTestId("file-list");
-    expect(list.getAttribute("aria-rowcount")).toBe("50");
     expect(list.getAttribute("aria-activedescendant")).toBe("/assets/asset-2.png");
 
+    // `aria-rowcount`/`aria-rowindex` are grid-only. On role=listbox and
+    // role=option the ARIA 1.2 attributes are aria-setsize/aria-posinset,
+    // and axe-core rejects the grid attributes here.
+    expect(list.hasAttribute("aria-rowcount")).toBe(false);
+
     const rows = screen.getAllByTestId("file-row");
-    expect(rows[0].getAttribute("aria-rowindex")).toBe("1");
+    expect(rows[0].hasAttribute("aria-rowindex")).toBe(false);
     expect(rows[0].getAttribute("aria-posinset")).toBe("1");
+    expect(rows[0].getAttribute("aria-setsize")).toBe("50");
     expect(rows[2].getAttribute("aria-selected")).toBe("true");
     expect(rows[2].id).toBe("/assets/asset-2.png");
   });
@@ -143,5 +148,21 @@ describe("FileList virtualization", () => {
     fireEvent.keyDown(screen.getByTestId("file-list"), { key: "ArrowDown" });
     expect(onSelect).not.toHaveBeenCalled();
     expect(screen.getByText(/No matching assets/)).toBeTruthy();
+  });
+});
+
+describe("FileList contrast", () => {
+  it("does not dim the format badge with opacity", () => {
+    // `opacity` on text lowers its contrast against the surface below the
+    // 4.5:1 WCAG AA floor. The badge must use a colour token instead.
+    const files = makeFiles(3);
+    render(<FileList files={files} activeIndex={0} onSelect={() => {}} height={200} />);
+
+    const rows = screen.getAllByTestId("file-row");
+    const badge = rows[0].querySelector("span");
+    expect(badge).toBeTruthy();
+    expect(badge?.textContent).toBe("PNG");
+    expect(badge?.style.opacity).toBe("");
+    expect(badge?.style.color).toBe("var(--text-sec)");
   });
 });

@@ -1,9 +1,20 @@
+import type { CspViolation } from "./security/cspViolations";
+
 export interface FileInfo {
   name: string;
   path: string;
   ext: string;
   is_3d: boolean;
 }
+
+/**
+ * One Content Security Policy violation the engine refused to load.
+ *
+ * Every engine that backs the desktop WebView (WebKitGTK, WebView2, WKWebView)
+ * fires the standard `securitypolicyviolation` event, so this shape is the
+ * common denominator across platforms.
+ */
+export type CspViolationReport = CspViolation;
 
 /**
  * Stable identity for a discovered asset. Used as the React list key so that
@@ -184,6 +195,8 @@ export interface ScanFolderResult {
 
 export interface PyWebViewApi {
   frontend_ready: () => Promise<ApiResponse<string>>;
+  /** Report Content Security Policy violations the engine refused to load. */
+  report_csp_violations?: (violations: CspViolationReport[]) => Promise<ApiResponse<number>>;
   get_window_chrome?: () => Promise<ApiResponse<{ enabled: boolean; platform: "windows" | "linux" | "macos" | "unknown" }>>;
   window_action?: (action: "minimize" | "fullscreen" | "close") =>
     Promise<{ ok: boolean; error: string | null }>;
