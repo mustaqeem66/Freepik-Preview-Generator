@@ -17,6 +17,7 @@ a ratio below the floor without failing the suite.
 ``scripts/verify_theme_contrast.py`` proves the same property against the
 built bundle in a real engine; this test is the fast layer.
 """
+
 from __future__ import annotations
 
 import re
@@ -49,7 +50,7 @@ def _channel(value: int) -> float:
 
 def _luminance(hex_colour: str) -> float:
     clean = hex_colour.lstrip("#")
-    red, green, blue = (int(clean[index:index + 2], 16) for index in (0, 2, 4))
+    red, green, blue = (int(clean[index : index + 2], 16) for index in (0, 2, 4))
     return 0.2126 * _channel(red) + 0.7152 * _channel(green) + 0.0722 * _channel(blue)
 
 
@@ -63,13 +64,11 @@ def _contrast(foreground: str, background: str) -> float:
 def _mix(from_colour: str, to_colour: str, amount: float) -> str:
     def channels(colour: str) -> list[int]:
         clean = colour.lstrip("#")
-        return [int(clean[index:index + 2], 16) for index in (0, 2, 4)]
+        return [int(clean[index : index + 2], 16) for index in (0, 2, 4)]
 
     start = channels(from_colour)
     end = channels(to_colour)
-    blended = [
-        round(start[index] + (end[index] - start[index]) * amount) for index in range(3)
-    ]
+    blended = [round(start[index] + (end[index] - start[index]) * amount) for index in range(3)]
     return "#" + "".join(f"{value:02x}" for value in blended)
 
 
@@ -80,18 +79,14 @@ def _declarations(block: str) -> dict[str, str]:
     it is captured generically rather than as a colour literal.
     """
     found: dict[str, str] = {}
-    for name, value in re.findall(
-        r"--([\w-]+)\s*:\s*([^;]+);", block
-    ):
+    for name, value in re.findall(r"--([\w-]+)\s*:\s*([^;]+);", block):
         found[name] = value.strip()
     return found
 
 
 def _blocks(css: str, selector: str) -> list[dict[str, str]]:
     """Every declaration block for a selector, in source order."""
-    pattern = re.compile(
-        rf"(?:^|[\s,}}]){re.escape(selector)}\s*(?:,[^{{]*)?\{{([^}}]*)\}}", re.MULTILINE
-    )
+    pattern = re.compile(rf"(?:^|[\s,}}]){re.escape(selector)}\s*(?:,[^{{]*)?\{{([^}}]*)\}}", re.MULTILINE)
     return [_declarations(match.group(1)) for match in pattern.finditer(css)]
 
 
@@ -154,35 +149,24 @@ def test_accent_text_token_exists(light: dict[str, str], dark: dict[str, str]) -
 
 
 @pytest.mark.parametrize("surface", ["bg", "card-bg", "surface"])
-def test_accent_text_is_readable_on_every_surface(
-    light: dict[str, str], dark: dict[str, str], surface: str
-) -> None:
+def test_accent_text_is_readable_on_every_surface(light: dict[str, str], dark: dict[str, str], surface: str) -> None:
     for theme, values in (("light", light), ("dark", dark)):
         ratio = _contrast(values["accent-text"], values[surface])
-        assert ratio >= 4.5, (
-            f"{theme}: --accent-text on --{surface} is {ratio:.2f}:1, below the 4.5:1 floor"
-        )
+        assert ratio >= 4.5, f"{theme}: --accent-text on --{surface} is {ratio:.2f}:1, below the 4.5:1 floor"
 
 
 def test_accent_text_is_readable_on_the_selection_surface(dark: dict[str, str]) -> None:
     """--selection is a tinted surface, so the pressed-state label needs its own check."""
     ratio = _contrast(dark["text"], dark["selection"])
-    assert ratio >= 4.5, (
-        f"dark: --text on --selection is {ratio:.2f}:1, below the 4.5:1 floor"
-    )
+    assert ratio >= 4.5, f"dark: --text on --selection is {ratio:.2f}:1, below the 4.5:1 floor"
 
 
 @pytest.mark.parametrize("surface", ["accent", "accent-hover"])
-def test_accent_filled_button_label_is_readable(
-    light: dict[str, str], dark: dict[str, str], surface: str
-) -> None:
+def test_accent_filled_button_label_is_readable(light: dict[str, str], dark: dict[str, str], surface: str) -> None:
     """The label sits on the accent fill, so the pairing must clear the floor."""
     for theme, values in (("light", light), ("dark", dark)):
         ratio = _contrast(values["accent-label"], values[surface])
-        assert ratio >= 4.5, (
-            f"{theme}: --accent-label on --{surface} is {ratio:.2f}:1, "
-            "below the 4.5:1 floor"
-        )
+        assert ratio >= 4.5, f"{theme}: --accent-label on --{surface} is {ratio:.2f}:1, below the 4.5:1 floor"
 
 
 @pytest.mark.parametrize("token", ["text-sec", "text-muted"])
@@ -193,20 +177,14 @@ def test_secondary_text_is_readable_on_every_surface(
     """Secondary text lands on the page, the cards and the tinted chips."""
     for theme, values in (("light", light), ("dark", dark)):
         ratio = _contrast(values[token], values[surface])
-        assert ratio >= 4.5, (
-            f"{theme}: --{token} on --{surface} is {ratio:.2f}:1, below the 4.5:1 floor"
-        )
+        assert ratio >= 4.5, f"{theme}: --{token} on --{surface} is {ratio:.2f}:1, below the 4.5:1 floor"
 
 
 @pytest.mark.parametrize("token", ["success", "error"])
-def test_status_colours_are_readable_on_surfaces(
-    light: dict[str, str], dark: dict[str, str], token: str
-) -> None:
+def test_status_colours_are_readable_on_surfaces(light: dict[str, str], dark: dict[str, str], token: str) -> None:
     for theme, values in (("light", light), ("dark", dark)):
         ratio = _contrast(values[token], values["surface"])
-        assert ratio >= 4.5, (
-            f"{theme}: --{token} on --surface is {ratio:.2f}:1, below the 4.5:1 floor"
-        )
+        assert ratio >= 4.5, f"{theme}: --{token} on --surface is {ratio:.2f}:1, below the 4.5:1 floor"
 
 
 def test_the_palette_has_a_single_authority() -> None:
@@ -222,10 +200,29 @@ def test_the_palette_has_a_single_authority() -> None:
     own tokens, so the cascade cannot reorder the colours any more.
     """
     owned = {
-        "bg", "card-bg", "surface", "field-bg", "preview-bg", "card-border",
-        "field-border", "text", "text-main", "text-sec", "text-muted", "accent",
-        "accent-hover", "accent-label", "accent-text", "chip-bg", "btn-disabled",
-        "toolbar-bg", "selection", "success", "error", "danger", "focus-ring",
+        "bg",
+        "card-bg",
+        "surface",
+        "field-bg",
+        "preview-bg",
+        "card-border",
+        "field-border",
+        "text",
+        "text-main",
+        "text-sec",
+        "text-muted",
+        "accent",
+        "accent-hover",
+        "accent-label",
+        "accent-text",
+        "chip-bg",
+        "btn-disabled",
+        "toolbar-bg",
+        "selection",
+        "success",
+        "error",
+        "danger",
+        "focus-ring",
     }
     index_css = (SRC_DIR / "index.css").read_text(encoding="utf-8")
     declared = set()
@@ -249,3 +246,68 @@ def test_the_palette_has_a_single_authority() -> None:
                     f"{name} redefines palette token(s) {sorted(redefined)}; "
                     "the palette has a single authority in index.css"
                 )
+
+
+def test_the_contrast_gate_measures_settled_colours_not_an_animation_frame() -> None:
+    """The packaged gate must not sample a colour mid-transition.
+
+    The studio animates background-color when the theme changes while the
+    foreground changed instantly. `getComputedStyle` returns the interpolated
+    value during that animation, so the gate once measured the dark theme's
+    near-white foreground against the light theme's still-animating white
+    background and failed on colours the app never displayed.
+    """
+    script = (PROJECT_ROOT / "scripts" / "verify_theme_contrast.py").read_text(encoding="utf-8")
+
+    assert "SETTLE_JS" in script, "the gate must disable transitions before measuring"
+    assert "transition: none !important" in script, "the settle style must disable transitions"
+    # The settle style has to be applied before the theme toggle, otherwise
+    # the animation has already started and the frame on screen is sampled.
+    assert script.index("SETTLE_JS") < script.index("def apply_theme"), (
+        "the settle style must be defined before the theme toggle is driven"
+    )
+    assert "run_script(view, SETTLE_JS" in script, "the gate must run the settle script before measuring any theme"
+
+
+def _transitions_colour(rule_body: str) -> bool:
+    """True when a rule transitions the `color` property itself.
+
+    `border-color` and `background-color` both contain "color", so a plain
+    substring search would accept a background-only transition.
+    """
+    for declaration in rule_body.split(";"):
+        name, separator, value = declaration.partition(":")
+        if not separator:
+            continue
+        if name.strip() != "transition":
+            continue
+        # The transition shorthand lists the animated properties first and
+        # the timing functions last; a bare property name is a property.
+        for part in value.split(","):
+            token = part.strip().split()[0] if part.strip() else ""
+            if token == "color":
+                return True
+    return False
+
+
+def test_the_theme_transition_animates_the_foreground_with_the_background() -> None:
+    """A theme switch must not leave the text unreadable mid-animation.
+
+    The palette is applied to the root element, so switching the theme
+    changes every surface at once. A transition that animated only the
+    background moved the foreground to its new value first, which left
+    near-white text on a white surface for the length of the animation.
+    """
+    index_css = (SRC_DIR / "index.css").read_text(encoding="utf-8")
+
+    # Each rule may list several selectors, so match on the selector list that
+    # contains the target rather than on an exact selector string.
+    rules = re.findall(r"([^{}]+)\{([^}]*)\}", index_css)
+    for target in ("button, input, select", ".button, .icon-button"):
+        matching = [body for selectors, body in rules if target in selectors and "transition" in body]
+        assert matching, f"{target} must declare a transition"
+        assert any(_transitions_colour(body) for body in matching), (
+            f"{target} must transition `color` together with its background; "
+            "a background-only transition leaves the text unreadable while the "
+            "theme switch animates"
+        )

@@ -83,7 +83,13 @@ h1, h2, p { margin: 0; }
 button, input, select { font: inherit; }
 button { color: inherit; cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .48; }
-button, input, select { transition: background-color 120ms, border-color 120ms, box-shadow 120ms; }
+/* `color` must animate together with the backgrounds. The theme toggle
+   changes the palette on the root element, and a background-only transition
+   left the foreground at its new value while the background was still the
+   old one -- near-white text on a white surface for the length of the
+   animation, which is both unreadable and what the packaged contrast gate
+   was measuring. */
+button, input, select { transition: color 120ms, background-color 120ms, border-color 120ms, box-shadow 120ms; }
 button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   outline: 3px solid var(--focus-ring); outline-offset: 3px;
 }
@@ -264,7 +270,7 @@ body { -webkit-font-smoothing: antialiased; }
   backdrop-filter: saturate(145%) blur(16px);
 }
 .button, .icon-button, .segmented button, .export-toggle {
-  transition: background-color 140ms var(--ease-studio), border-color 140ms var(--ease-studio), transform 140ms var(--ease-studio), box-shadow 140ms var(--ease-studio);
+  transition: color 140ms var(--ease-studio), background-color 140ms var(--ease-studio), border-color 140ms var(--ease-studio), transform 140ms var(--ease-studio), box-shadow 140ms var(--ease-studio);
 }
 .button, .icon-button { min-height: 34px; border-radius: 8px; font-size: 12px; }
 .icon-button { width: 34px; }
