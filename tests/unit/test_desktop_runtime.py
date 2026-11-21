@@ -5,6 +5,7 @@ launch it must never be armed, or the window destroys itself a few seconds
 after opening. It also must not rely on ``os`` being imported inside the smoke
 branch (that produced a ``NameError`` on ordinary launches).
 """
+
 from __future__ import annotations
 
 import importlib
@@ -122,18 +123,14 @@ def test_normal_launch_does_not_arm_auto_close_watchdog(monkeypatch, tmp_path):
     assert exit_calls == []
 
 
-def test_smoke_watchdog_exits_zero_when_the_frontend_never_reports_ready(
-    monkeypatch, tmp_path
-):
+def test_smoke_watchdog_exits_zero_when_the_frontend_never_reports_ready(monkeypatch, tmp_path):
     """The packaged CI gates must assert the ready marker, not the exit code.
 
     Issue #19's packaged Windows build never finished bridge injection and never
     reported ready, yet the smoke watchdog still destroyed the window and called
     ``os._exit(0)``, so a gate that only checks the exit status passes it.
     """
-    runtime, fake_webview, _api = _load_runtime(
-        monkeypatch, tmp_path, ["previewgen", "--gui-smoke-test"]
-    )
+    runtime, fake_webview, _api = _load_runtime(monkeypatch, tmp_path, ["previewgen", "--gui-smoke-test"])
     monkeypatch.setattr(runtime.sys, "platform", "win32")
     monkeypatch.setattr(runtime, "SMOKE_READY_POLL_SECONDS", 0.001)
     marker = tmp_path / "never-written.marker"
@@ -155,6 +152,82 @@ def test_smoke_watchdog_exits_zero_when_the_frontend_never_reports_ready(
     assert not marker.exists()
 
 
+def test_smoke_watchdog_waits_for_the_csp_probe_after_the_frontend_is_ready(monkeypatch, tmp_path):
+    """The CSP probe must get its own budget, starting when the frontend is ready.
+
+    The packaged macOS gate once failed with no CSP marker even though the
+    frontend had mounted: the watchdog's single budget was spent from process
+    start, so a slow frontend mount left too little time for the probe, and
+    the watchdog destroyed the window while the probe was still running. The
+    probe's wait must therefore start when the frontend reports ready, and
+    the window must survive until the marker is written.
+    """
+    runtime, fake_webview, _api = _load_runtime(monkeypatch, tmp_path, ["previewgen", "--gui-smoke-test"])
+    monkeypatch.setattr(runtime.sys, "platform", "win32")
+    # A ready budget of two polls: the frontend is seen on the second poll,
+    # which leaves no budget in the old single-budget scheme for a probe that
+    # finishes afterwards.
+    monkeypatch.setattr(runtime, "SMOKE_READY_POLL_ATTEMPTS", 2)
+    monkeypatch.setattr(runtime, "SMOKE_READY_POLL_SECONDS", 0.05)
+    monkeypatch.setattr(runtime, "SMOKE_CSP_POLL_SECONDS", 0.01)
+
+    ready_marker = tmp_path / "ready.marker"
+    csp_marker = tmp_path / "csp_selftest.json"
+    monkeypatch.setenv("PREVIEWGEN_READY_MARKER", str(ready_marker))
+    monkeypatch.setenv("PREVIEWGEN_CSP_MARKER", str(csp_marker))
+
+    exited = threading.Event()
+    monkeypatch.setattr(runtime.os, "_exit", lambda _code: exited.set())
+
+    assert runtime.start_desktop_app() == 0
+
+    # The frontend reports ready on the second poll of the ready budget.
+    def _report_ready() -> None:
+        time.sleep(0.02)
+        ready_marker.write_text("READY\n", encoding="utf-8")
+
+    threading.Thread(target=_report_ready, daemon=True).start()
+
+    # The probe finishes after the ready budget would have been exhausted.
+    # A real probe runs inside the live WebView, so it can only produce a
+    # verdict while the window is still alive.
+    def _write_csp_late() -> None:
+        time.sleep(0.15)
+        if not fake_webview.window.destroyed:
+            csp_marker.write_text("{}", encoding="utf-8")
+
+    threading.Thread(target=_write_csp_late, daemon=True).start()
+
+    assert exited.wait(5.0), "smoke watchdog never terminated the process"
+    assert fake_webview.window.destroyed is True
+    assert csp_marker.exists(), "the window was destroyed before the CSP verdict"
+
+
+def test_smoke_watchdog_does_not_wait_for_the_csp_probe_when_never_ready(monkeypatch, tmp_path):
+    """A frontend that never mounts must not extend the smoke run.
+
+    The CSP probe only starts once the frontend reports ready, so a frontend
+    that never mounts has no probe to wait for. The watchdog must close the
+    window on the ready budget alone rather than adding the CSP budget on
+    top of it.
+    """
+    runtime, fake_webview, _api = _load_runtime(monkeypatch, tmp_path, ["previewgen", "--gui-smoke-test"])
+    monkeypatch.setattr(runtime.sys, "platform", "win32")
+    monkeypatch.setattr(runtime, "SMOKE_READY_POLL_SECONDS", 0.001)
+    monkeypatch.setattr(runtime, "SMOKE_CSP_POLL_SECONDS", 0.001)
+    monkeypatch.setattr(runtime, "SMOKE_CSP_POLL_ATTEMPTS", 100000)
+
+    monkeypatch.setenv("PREVIEWGEN_READY_MARKER", str(tmp_path / "never.marker"))
+    monkeypatch.setenv("PREVIEWGEN_CSP_MARKER", str(tmp_path / "csp.json"))
+
+    exited = threading.Event()
+    monkeypatch.setattr(runtime.os, "_exit", lambda _code: exited.set())
+
+    assert runtime.start_desktop_app() == 0
+    assert exited.wait(5.0), "smoke watchdog never terminated the process"
+    assert fake_webview.window.destroyed is True
+
+
 def test_linux_smoke_without_webview_bindings_fails_closed(monkeypatch, tmp_path):
     """A Linux smoke test with no `gi` must not report a pass.
 
@@ -163,13 +236,9 @@ def test_linux_smoke_without_webview_bindings_fails_closed(monkeypatch, tmp_path
     gate certify a GUI that was never created, and wrote the readiness marker
     the CI step asserts on.
     """
-    runtime, fake_webview, _fake_api = _load_runtime(
-        monkeypatch, tmp_path, ["previewgen", "--gui-smoke-test"]
-    )
+    runtime, fake_webview, _fake_api = _load_runtime(monkeypatch, tmp_path, ["previewgen", "--gui-smoke-test"])
     monkeypatch.setattr(runtime.sys, "platform", "linux")
-    monkeypatch.setattr(
-        importlib.util, "find_spec", lambda _name: None, raising=True
-    )
+    monkeypatch.setattr(importlib.util, "find_spec", lambda _name: None, raising=True)
 
     marker = tmp_path / "ready.marker"
     monkeypatch.setenv("PREVIEWGEN_READY_MARKER", str(marker))
@@ -180,9 +249,7 @@ def test_linux_smoke_without_webview_bindings_fails_closed(monkeypatch, tmp_path
 
 
 def test_native_titlebar_env_fallback_disables_frameless(monkeypatch, tmp_path):
-    runtime, fake_webview, fake_api = _load_runtime(
-        monkeypatch, tmp_path, ["previewgen"]
-    )
+    runtime, fake_webview, fake_api = _load_runtime(monkeypatch, tmp_path, ["previewgen"])
     monkeypatch.setenv("PREVIEWGEN_NATIVE_TITLEBAR", "1")
     assert runtime.start_desktop_app() == 0
     assert fake_webview.window_options["frameless"] is False

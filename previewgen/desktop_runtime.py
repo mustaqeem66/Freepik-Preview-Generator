@@ -5,6 +5,7 @@ GUI entry point. ONLY this module imports pywebview at module scope.
 CLI modes and pure modules (cli, scanner, settings, api, lifecycle, renderers)
 must never import this module, so they remain usable without a GUI runtime.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -26,11 +27,23 @@ from previewgen.dialogs import applescript_string
 from previewgen.resources import get_html_dist
 from previewgen.ui_watchdog import WindowHangDetector, log_thread_stacks, windows_window_responding
 
-# Smoke mode gives the frontend 15s to report ready, then closes the window and
+# Smoke mode gives the frontend time to report ready, then closes the window and
 # exits 0 regardless; only the ready marker separates a hung injection from a
 # clean run, so that is what the packaged CI gates assert on.
+#
+# The ready budget covers the frontend mount only and is spent from the moment
+# the process starts, because a frontend that never mounts must still time
+# out. The CSP self-test budget is additional and is spent from the moment the
+# frontend reports ready: the probe itself needs up to 8s in a live WebView,
+# and counting that time against the mount budget let a slow macOS mount
+# destroy the window mid-probe and lose the verdict.
 SMOKE_READY_POLL_ATTEMPTS = 30
 SMOKE_READY_POLL_SECONDS = 0.5
+# The probe itself polls for at most 8s inside a live WebView. This wait is
+# the outer guard for the file it writes, so it only needs enough room for
+# that probe plus the round trip of writing the marker.
+SMOKE_CSP_POLL_ATTEMPTS = 40
+SMOKE_CSP_POLL_SECONDS = 0.5
 
 
 def show_fatal_error(title: str, message: str) -> None:
@@ -39,6 +52,7 @@ def show_fatal_error(title: str, message: str) -> None:
     if sys.platform == "win32":
         try:
             import ctypes
+
             ctypes.windll.user32.MessageBoxW(0, message, title, 0x10)
             return
         except Exception:
@@ -46,9 +60,10 @@ def show_fatal_error(title: str, message: str) -> None:
     elif sys.platform == "darwin":
         try:
             import subprocess
+
             cmd = (
                 f"display dialog {applescript_string(message)} with title "
-                f"{applescript_string(title)} buttons {{\"OK\"}} default button \"OK\" with icon stop"
+                f'{applescript_string(title)} buttons {{"OK"}} default button "OK" with icon stop'
             )
             subprocess.run(["osascript", "-e", cmd], check=False, timeout=30)
             return
@@ -85,7 +100,7 @@ def start_desktop_app() -> int:
     if not html_dist.is_file():
         show_fatal_error(
             "PreviewGen - Missing Frontend Bundle",
-            f"Cannot find frontend bundle at: {html_dist}\n\nPlease reinstall PreviewGen."
+            f"Cannot find frontend bundle at: {html_dist}\n\nPlease reinstall PreviewGen.",
         )
         return 1
 
@@ -151,6 +166,7 @@ def start_desktop_app() -> int:
 
         logging.warning("Blocked privileged window navigation to external origin: %s", url)
         from urllib.parse import urlparse
+
         if urlparse(url).scheme in ("http", "https"):
             try:
                 webbrowser.open(url)
@@ -180,14 +196,14 @@ def start_desktop_app() -> int:
                     )
                 if bridge_is_stalled(api, now) and now - last_bridge_report >= 60.0:
                     last_bridge_report = now
-                    log_thread_stacks(
-                        "Backend operation active but no outgoing bridge events for >15s"
-                    )
+                    log_thread_stacks("Backend operation active but no outgoing bridge events for >15s")
             except Exception:
                 logging.debug("UI watchdog probe failed", exc_info=True)
 
     threading.Thread(
-        target=_watchdog_loop, name="previewgen-ui-watchdog", daemon=True,
+        target=_watchdog_loop,
+        name="previewgen-ui-watchdog",
+        daemon=True,
     ).start()
 
     try:
@@ -195,23 +211,33 @@ def start_desktop_app() -> int:
         if gui_type:
             start_kwargs["gui"] = gui_type
         if is_smoke and gui_type:
+
             def _auto_close_smoke(smoke_window: Any = window) -> None:
                 marker = os.environ.get("PREVIEWGEN_READY_MARKER")
                 # When the CSP self-test is enabled it needs a live WebView to
                 # run in, so the window must outlive the ready marker until the
-                # self-test has written its result.
+                # self-test has written its result. That wait gets its own
+                # budget, counted from the moment the frontend reports ready,
+                # so a slow frontend mount cannot starve the probe.
                 csp_marker = os.environ.get("PREVIEWGEN_CSP_MARKER")
+                ready_seen = False
                 for _ in range(SMOKE_READY_POLL_ATTEMPTS):
                     if marker and Path(marker).is_file():
-                        if not csp_marker:
-                            break
+                        ready_seen = True
+                        break
+                    time.sleep(SMOKE_READY_POLL_SECONDS)
+                # The probe only starts once the frontend has reported ready, so
+                # there is nothing to wait for when the mount never happened.
+                if csp_marker and ready_seen:
+                    for _ in range(SMOKE_CSP_POLL_ATTEMPTS):
                         if Path(csp_marker).is_file():
                             break
-                    time.sleep(SMOKE_READY_POLL_SECONDS)
+                        time.sleep(SMOKE_CSP_POLL_SECONDS)
                 with contextlib.suppress(Exception):
                     smoke_window.destroy()
                 # Terminate smoke test process so host subshell is never left waiting on Cocoa/Win32 event loops
                 threading.Timer(1.0, lambda: os._exit(0)).start()
+
             threading.Thread(target=_auto_close_smoke, daemon=True).start()
         # P1 root cause 8: Do not attempt to re-start pywebview in the same process
         # after a failure. A partial initialization leaves native state that causes hangs.
@@ -224,6 +250,7 @@ def start_desktop_app() -> int:
         api.cleanup()
     return 0
 
+
 def main() -> int:
     """
     Backward-compatible launcher.
@@ -232,6 +259,7 @@ def main() -> int:
     modes remain GUI-independent even when invoked via this module.
     """
     from previewgen.entrypoint import main as _entry
+
     return _entry()
 
 
