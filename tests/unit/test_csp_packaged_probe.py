@@ -5,9 +5,12 @@ once: the shipped policy refuses scripts, and the WebView can still load a
 JPEG from PreviewGen's own loopback transport. A probe that only observes a
 failure proves nothing, because an unreachable server fails the same way.
 """
+
 from __future__ import annotations
 
 import json
+import threading
+import time
 
 import pytest
 
@@ -43,9 +46,7 @@ def test_the_probe_requires_a_window(api):
 
 
 def test_a_blocked_policy_with_a_decoded_preview_passes(api):
-    api._window = _Window(
-        {"inlineScript": "blocked", "blobScript": "blocked", "previewJpeg": "loaded"}
-    )
+    api._window = _Window({"inlineScript": "blocked", "blobScript": "blocked", "previewJpeg": "loaded"})
 
     outcome = api._probe_packaged_csp()
 
@@ -57,9 +58,7 @@ def test_a_blocked_policy_with_a_decoded_preview_passes(api):
 
 
 def test_an_executed_script_fails_the_probe(api):
-    api._window = _Window(
-        {"inlineScript": "executed", "blobScript": "blocked", "previewJpeg": "loaded"}
-    )
+    api._window = _Window({"inlineScript": "executed", "blobScript": "blocked", "previewJpeg": "loaded"})
 
     outcome = api._probe_packaged_csp()
 
@@ -68,9 +67,7 @@ def test_an_executed_script_fails_the_probe(api):
 
 def test_a_failed_preview_control_is_reported(api):
     """The policy result is meaningless without a working preview transport."""
-    api._window = _Window(
-        {"inlineScript": "blocked", "blobScript": "blocked", "previewJpeg": "error"}
-    )
+    api._window = _Window({"inlineScript": "blocked", "blobScript": "blocked", "previewJpeg": "error"})
 
     outcome = api._probe_packaged_csp()
 
@@ -78,9 +75,7 @@ def test_a_failed_preview_control_is_reported(api):
 
 
 def test_an_unfinished_probe_is_reported_as_pending(api):
-    api._window = _Window(
-        {"inlineScript": "blocked", "blobScript": "pending", "previewJpeg": "loaded"}
-    )
+    api._window = _Window({"inlineScript": "blocked", "blobScript": "pending", "previewJpeg": "loaded"})
 
     outcome = api._probe_packaged_csp()
 
@@ -88,9 +83,7 @@ def test_an_unfinished_probe_is_reported_as_pending(api):
 
 
 def test_the_probe_publishes_the_preview_on_the_loopback_transport(api):
-    window = _Window(
-        {"inlineScript": "blocked", "blobScript": "blocked", "previewJpeg": "loaded"}
-    )
+    window = _Window({"inlineScript": "blocked", "blobScript": "blocked", "previewJpeg": "loaded"})
     api._window = window
 
     api._probe_packaged_csp()
@@ -101,9 +94,7 @@ def test_the_probe_publishes_the_preview_on_the_loopback_transport(api):
 
 
 def test_the_probe_releases_the_published_preview(api):
-    window = _Window(
-        {"inlineScript": "blocked", "blobScript": "blocked", "previewJpeg": "loaded"}
-    )
+    window = _Window({"inlineScript": "blocked", "blobScript": "blocked", "previewJpeg": "loaded"})
     api._window = window
 
     api._probe_packaged_csp()
@@ -116,3 +107,51 @@ def test_a_broken_webview_fails_closed(api):
 
     with pytest.raises(RuntimeError):
         api._probe_packaged_csp()
+
+
+def test_a_webview_that_never_answers_fails_closed_without_hanging(api):
+    """A WebView that never answers must not hang the smoke gate forever.
+
+    The pywebview backends block on a semaphore that is never released once
+    the window's main loop has stopped, so a probe that called `evaluate_js`
+    directly could hang for the lifetime of the process and the verdict would
+    never be written. The call has to be bounded, and a timeout has to
+    produce a verdict that fails the gate rather than silence.
+    """
+    api._window = _Window(verdict=None)
+    released = threading.Event()
+
+    def _never_returns(_script: str):
+        released.wait(30)
+        return "too late"
+
+    api._window.evaluate_js = _never_returns  # type: ignore[method-assign]
+    # Keep the test fast: the bound is what matters, not its exact value.
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(api, "_probe_evaluation_timeout", 0.05, raising=False)
+    try:
+        started = time.monotonic()
+        outcome = api._probe_packaged_csp()
+        elapsed = time.monotonic() - started
+    finally:
+        monkeypatch.undo()
+        released.set()
+
+    assert "error" in outcome, f"a timed-out probe must report an error: {outcome!r}"
+    # The probe must give up on its own. Without the bound it waits for the
+    # WebView to answer and the gate hangs for the lifetime of the process.
+    assert elapsed < 5.0, f"the probe waited {elapsed:.1f}s; the bound was not applied"
+
+
+def test_the_probe_reports_an_unreadable_verdict_instead_of_raising(api):
+    """A WebView that answers with something that is not the verdict fails closed."""
+    api._window = _Window(verdict=None)
+
+    def _returns_garbage(_script: str):
+        return "not json"
+
+    api._window.evaluate_js = _returns_garbage  # type: ignore[method-assign]
+
+    outcome = api._probe_packaged_csp()
+
+    assert "error" in outcome, f"an unreadable verdict must report an error: {outcome!r}"
