@@ -4,6 +4,7 @@ Unit tests for the loopback preview file server.
 Previews must be transferred as URLs (served over loopback) rather than as
 base64 payloads through the pywebview JS bridge.
 """
+
 import sys
 import urllib.error
 import urllib.request
@@ -98,8 +99,10 @@ def test_render_preview_returns_url_not_base64():
     finally:
         api.cleanup()
 
+
 def test_publish_evicts_by_total_bytes(server, monkeypatch):
     import previewgen.preview_server as ps
+
     monkeypatch.setattr(ps, "_MAX_TOTAL_BYTES", 500)
     monkeypatch.setattr(ps, "_KEEP_NEWEST", 1)
 
@@ -115,6 +118,7 @@ def test_publish_evicts_by_age(server, monkeypatch):
     import time
 
     import previewgen.preview_server as ps
+
     monkeypatch.setattr(ps, "_MAX_FILE_AGE_SECONDS", 1.0)
     monkeypatch.setattr(ps, "_KEEP_NEWEST", 1)
 
@@ -153,3 +157,37 @@ def test_stop_is_terminal_and_does_not_resurrect_the_listener():
     assert not server.running
     assert server._root is None
     assert server._httpd is None
+
+
+def test_binding_the_preview_server_never_performs_a_reverse_dns_lookup(monkeypatch):
+    """Publishing a preview must not depend on a DNS resolver answering.
+
+    ``HTTPServer.server_bind`` calls ``socket.getfqdn`` to fill in the
+    canonical name it puts in the access log. That is a reverse DNS lookup,
+    and on a host with no answer for the address it blocks until the
+    resolver gives up. On the macOS CI runner it held the bind for over
+    twenty seconds, which stalled the packaged CSP probe before it could
+    reach the WebView at all.
+
+    The server binds to loopback and serves an unguessable token, so the
+    canonical name is used for nothing but logging and must not be on the
+    path that publishes a preview.
+    """
+    import socket
+
+    calls: list[str] = []
+
+    def _spy_getfqdn(host: str = ""):
+        calls.append(host)
+        return "should-not-be-used.example"
+
+    monkeypatch.setattr(socket, "getfqdn", _spy_getfqdn)
+
+    srv = PreviewFileServer()
+    try:
+        url = srv.publish_jpeg(JPEG_BYTES)
+    finally:
+        srv.stop()
+
+    assert calls == [], f"the bind performed a reverse lookup: {calls}"
+    assert url.startswith("http://127.0.0.1:")
