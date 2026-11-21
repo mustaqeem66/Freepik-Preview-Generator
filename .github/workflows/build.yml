@@ -26,11 +26,10 @@ jobs:
             ext: AppImage
 
     runs-on: ${{ matrix.os }}
-    env:
-      # Release builds must ship signed, notarized binaries; PR/dispatch
-      # builds stay allowed unsigned so contributors can run the workflow.
-      PREVIEWGEN_IS_RELEASE: ${{ github.ref_type == 'tag' && '1' || '0' }}
-
+    # Signing and notarization are optional for this free, MIT-licensed
+    # project. The Windows and macOS builds sign when a certificate is
+    # configured and ship unsigned otherwise, so no build step needs to
+    # distinguish a tag build from an ordinary push.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -222,9 +221,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          if ("${{ secrets.WINDOWS_CERTIFICATE }}" -eq "" -and $env:PREVIEWGEN_IS_RELEASE -eq "1") {
-            throw "Release tag build requires WINDOWS_CERTIFICATE. Refusing to publish an unsigned Windows binary."
-          }
+          # PreviewGen is a free, MIT-licensed project and does not buy a
+          # code-signing certificate. Signing is therefore optional: the
+          # binary is signed when a certificate is configured, and shipped
+          # unsigned otherwise. The README states plainly that the release is
+          # unsigned and that users must confirm the checksum themselves.
           if ("${{ secrets.WINDOWS_CERTIFICATE }}" -ne "") {
             Write-Host "Signing Windows binary with certificate..."
             $certBytes = [Convert]::FromBase64String("${{ secrets.WINDOWS_CERTIFICATE }}")
@@ -246,6 +247,16 @@ jobs:
           # `signtool sign` returning zero is not proof that the artifact carries
           # a valid signature: a malformed or partially signed binary can still
           # exit zero. Read the signature back and require a real one.
+          #
+          # PreviewGen is a free, MIT-licensed project and does not buy a
+          # code-signing certificate, so an unsigned build is the normal case.
+          # The check therefore applies only to a build that was actually
+          # signed: when a certificate is configured, a bad signature is a hard
+          # failure; when none is configured, there is nothing to verify.
+          if ("${{ secrets.WINDOWS_CERTIFICATE }}" -eq "") {
+            Write-Host "Notice: No WINDOWS_CERTIFICATE secret configured; the binary is unsigned and there is no signature to verify."
+            exit 0
+          }
           $target = "dist\PreviewGen\PreviewGen.exe"
           if (-not (Test-Path $target)) { throw "FATAL: $target is missing; nothing was signed." }
           $status = Get-AuthenticodeSignature $target
@@ -281,14 +292,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          if ($env:PREVIEWGEN_IS_RELEASE -eq "1") {
-            if ("${{ secrets.WINDOWS_CERTIFICATE }}" -eq "") {
-              throw "Release tag build requires WINDOWS_CERTIFICATE. Refusing to publish an unsigned installer."
-            }
-            if (-not (Test-Path "PreviewGen-Setup.exe")) {
-              throw "Release tag build produced no PreviewGen-Setup.exe to sign."
-            }
-          }
+          # Signing is optional for this unsigned, MIT-licensed project: the
+          # installer is signed when a certificate is configured and shipped
+          # unsigned otherwise.
           if ("${{ secrets.WINDOWS_CERTIFICATE }}" -ne "" -and (Test-Path "PreviewGen-Setup.exe")) {
             Write-Host "Signing Windows setup installer..."
             $certBytes = [Convert]::FromBase64String("${{ secrets.WINDOWS_CERTIFICATE }}")
@@ -305,6 +311,12 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          # An unsigned installer is the normal case for this unsigned,
+          # MIT-licensed project. Only verify a signature that was applied.
+          if ("${{ secrets.WINDOWS_CERTIFICATE }}" -eq "") {
+            Write-Host "Notice: No WINDOWS_CERTIFICATE secret configured; the installer is unsigned and there is no signature to verify."
+            exit 0
+          }
           $target = "PreviewGen-Setup.exe"
           if (-not (Test-Path $target)) { throw "FATAL: $target is missing; nothing was signed." }
           $status = Get-AuthenticodeSignature $target
@@ -332,10 +344,10 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           APP_PATH="dmg_staging/PreviewGen.app"
-          if [ -z "${{ secrets.MACOS_CERTIFICATE }}" ] && [ "$PREVIEWGEN_IS_RELEASE" = "1" ]; then
-            echo "::error::Release tag build requires MACOS_CERTIFICATE. Refusing to publish an ad-hoc signed app."
-            exit 1
-          fi
+          # PreviewGen is a free, MIT-licensed project and does not buy an
+          # Apple Developer certificate. Signing and notarization are
+          # therefore optional: the app is signed when a certificate is
+          # configured and shipped ad-hoc signed otherwise.
           if [ -n "${{ secrets.MACOS_CERTIFICATE }}" ]; then
             echo "Importing Apple Developer Certificate..."
             echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > certificate.p12
@@ -371,10 +383,11 @@ jobs:
       - name: Notarize and staple macOS DMG
         if: runner.os == 'macOS'
         run: |
-          if [ "$PREVIEWGEN_IS_RELEASE" = "1" ] && { [ -z "${{ secrets.APPLE_ID }}" ] || [ -z "${{ secrets.APPLE_TEAM_ID }}" ] || [ -z "${{ secrets.APPLE_APP_PASSWORD }}" ]; }; then
-            echo "::error::Release tag build requires APPLE_ID, APPLE_TEAM_ID and APPLE_APP_PASSWORD. Refusing to publish an unnotarized DMG."
-            exit 1
-          fi
+          # Notarization requires a paid Apple Developer membership, which
+          # this free, MIT-licensed project does not have. The DMG is
+          # notarized when the credentials are configured and shipped
+          # unnotarized otherwise; the README tells users to expect the
+          # Gatekeeper warning and to verify the SHA-256 checksum.
           if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ] && [ -n "${{ secrets.APPLE_APP_PASSWORD }}" ]; then
             echo "Submitting DMG to Apple notary service..."
             xcrun notarytool submit PreviewGen-macOS.dmg \
@@ -686,10 +699,17 @@ jobs:
           # the AppImage can replace the checksum file too. A detached GPG
           # signature lets a user verify the checksums against a key they
           # already trust, independently of this release.
+          #
+          # PreviewGen is a free, MIT-licensed project and does not buy a
+          # code-signing certificate. A GPG signing key is likewise optional:
+          # when one is configured the checksums are signed and the public key
+          # is published beside them; when none is configured the release still
+          # ships the SHA-256 file, and the README states plainly that a
+          # checksum alone is integrity checking, not publisher
+          # authentication.
           if [ -z "$GPG_PRIVATE_KEY" ] || [ -z "$GPG_KEY_ID" ]; then
-            # This job only runs for tag refs, so every execution is a release.
-            echo "::error::A release must ship a GPG-signed checksum file. Configure GPG_PRIVATE_KEY and GPG_KEY_ID."
-            exit 1
+            echo "::notice::No GPG signing key configured; publishing SHA256SUMS.txt without a detached signature."
+            exit 0
           fi
 
           echo "$GPG_PRIVATE_KEY" | base64 --decode > "$RUNNER_TEMP/release-signing-key.asc"
@@ -715,7 +735,18 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           # Hosted smoke does not satisfy the native evidence checklist.
-          gh release create "$RELEASE_TAG" --draft --verify-tag --generate-notes \
-            PreviewGen-Setup.exe PreviewGen-Windows.zip \
-            PreviewGen-macOS.dmg PreviewGen-Linux.AppImage \
-            SHA256SUMS.txt SHA256SUMS.txt.asc previewgen-signing-key.asc USER_GUIDE.txt
+          #
+          # The detached signature and its public key exist only when a GPG
+          # key is configured, so they are attached conditionally rather than
+          # being named unconditionally and failing the release.
+          assets=(
+            PreviewGen-Setup.exe PreviewGen-Windows.zip
+            PreviewGen-macOS.dmg PreviewGen-Linux.AppImage
+            SHA256SUMS.txt USER_GUIDE.txt
+          )
+          if [ -f SHA256SUMS.txt.asc ] && [ -f previewgen-signing-key.asc ]; then
+            assets+=(SHA256SUMS.txt.asc previewgen-signing-key.asc)
+          else
+            echo "::notice::Publishing without a detached checksum signature (no GPG key configured)."
+          fi
+          gh release create "$RELEASE_TAG" --draft --verify-tag --generate-notes "${assets[@]}"

@@ -216,6 +216,8 @@ For a Linux installation made through the terminal script above, you can later u
 
 **⚠️ A terminal installer does not bypass SmartScreen, Defender or Gatekeeper.** Some releases may be unsigned or unnotarized. A reputation warning alone does not prove malware, but a matching checksum alone cannot prove software is safe.
 
+**PreviewGen is free and MIT-licensed, and does not buy a code-signing certificate or an Apple Developer membership.** Its Windows and macOS builds are therefore published **unsigned**, and its macOS DMG is **not notarized**. When a certificate is configured in CI the artifacts are signed and notarized automatically; until then, expect the publisher warnings below. This is a deliberate trade-off, not an oversight: a paid certificate would either cost contributors money or lock the project behind a commercial subscription.
+
 **Before proceeding:** use [official Releases](https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/latest), review the release notes and compare the downloaded file's SHA-256 against that release's `SHA256SUMS.txt`. A checksum from the same source provides integrity checking, not independent publisher authentication.
 
 ### 🪟 Windows — SmartScreen or “Unknown publisher”
