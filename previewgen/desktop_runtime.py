@@ -233,6 +233,12 @@ def start_desktop_app() -> int:
                         if Path(csp_marker).is_file():
                             break
                         time.sleep(SMOKE_CSP_POLL_SECONDS)
+                    else:
+                        # The probe did not write its verdict inside its
+                        # budget. Dump every thread's stack so the failure
+                        # says where the probe is stuck instead of only
+                        # reporting a missing marker.
+                        log_thread_stacks("the CSP smoke probe did not finish in time")
                 with contextlib.suppress(Exception):
                     smoke_window.destroy()
                 # Terminate smoke test process so host subshell is never left waiting on Cocoa/Win32 event loops

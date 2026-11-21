@@ -89,15 +89,19 @@ class PreviewFileServer:
             raise RuntimeError("preview file server has been stopped")
         if self._httpd is not None:
             return
+        logging.info("Preview file server: creating the session directory")
         self._root = create_temp_dir("previewgen_preview_")
+        logging.info("Preview file server: binding the loopback socket")
         httpd = _PreviewHTTPServer(("127.0.0.1", 0), _PreviewRequestHandler)
         httpd.preview_server = self
         self._httpd = httpd
         self._port = int(httpd.server_address[1])
+        logging.info("Preview file server: starting the serving thread")
         self._thread = threading.Thread(
             target=httpd.serve_forever, name="preview-http", daemon=True
         )
         self._thread.start()
+        logging.info("Preview file server: waiting for the port to accept")
         self._wait_until_accepting()
         logging.info("Preview file server listening on 127.0.0.1:%d", self._port)
 
