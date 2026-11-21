@@ -59,6 +59,8 @@ curl -fsSL https://raw.githubusercontent.com/mustaqeem66/Freepik-Preview-Generat
 
 Both scripts fetch the **latest published release when you run them**; they do not install ongoing automatic updates. **Review the [Windows script](install.ps1) or [macOS/Linux script](install.sh) before executing downloaded code.**
 
+Each script prints the release tag it resolved before downloading, and the running app shows its version beside the title bar — so you can always confirm which build you ended up with.
+
 Prefer downloading packages yourself? See [manual installation](#manual-installation). For first-launch publisher or OS security prompts, see [Security and first-run warnings](#security-warnings).
 
 ---

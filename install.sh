@@ -26,6 +26,16 @@ API_URL="$(get_release_info)"
 RELEASE_JSON="$TEMP_DIR/release.json"
 curl -fsSL "$API_URL" -o "$RELEASE_JSON"
 
+# The release tag is the only version the installer knows about. Say it
+# plainly, before the download, so a user who expected a newer build can stop
+# here instead of discovering it after installing.
+RELEASE_TAG="$(grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' "$RELEASE_JSON" | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')"
+if [ -n "$RELEASE_TAG" ]; then
+  echo "Installing PreviewGen release: $RELEASE_TAG"
+else
+  echo "Could not determine the release version; continuing."
+fi
+
 hash_sha256() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'

@@ -35,6 +35,7 @@ EXPECTED_BRIDGE = frozenset({
     "clear_selected_files",
     "export_preview",
     "frontend_ready",
+    "get_app_info",
     "get_initial_state",
     "get_scan_page",
     "get_window_chrome",

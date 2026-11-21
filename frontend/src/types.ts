@@ -198,6 +198,8 @@ export interface PyWebViewApi {
   /** Report Content Security Policy violations the engine refused to load. */
   report_csp_violations?: (violations: CspViolationReport[]) => Promise<ApiResponse<number>>;
   get_window_chrome?: () => Promise<ApiResponse<{ enabled: boolean; platform: "windows" | "linux" | "macos" | "unknown" }>>;
+  /** The running build's version, so a user can tell a current install from a stale one. */
+  get_app_info?: () => Promise<ApiResponse<{ version: string; platform: "windows" | "linux" | "macos" | "unknown" }>>;
   window_action?: (action: "minimize" | "fullscreen" | "close") =>
     Promise<{ ok: boolean; error: string | null }>;
   get_initial_state: () => Promise<ApiResponse<Partial<PreviewState>>>;

@@ -68,6 +68,24 @@ jobs:
       - name: Type-check Python (pyrefly)
         run: python -m pyrefly check
 
+      - name: Report release freshness
+        # The install scripts resolve /releases/latest, so the newest code a
+        # user can obtain is whatever was last published. This step makes the
+        # difference between the tree and the published release visible in the
+        # job log instead of leaving it to be discovered by a user who
+        # installed and found the old build.
+        #
+        # It never fails the build: a stale release is a publishing decision,
+        # not a code defect, and blocking every merge on it would make the
+        # gate unusable. A tag build uses --strict, because publishing a tag
+        # is exactly the moment the release must not be behind.
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            python scripts/check_release_freshness.py --strict
+          else
+            python scripts/check_release_freshness.py
+          fi
+
       # ── Frontend gate: typecheck -> tests -> production bundle ──
       # Packaging must not start unless the frontend passes all three gates.
       - name: Verify dependency lock integrity

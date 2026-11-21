@@ -25,6 +25,10 @@ try {
     $ShaPath = Join-Path $TempDir "SHA256SUMS.txt"
     $SigPath = Join-Path $TempDir "SHA256SUMS.txt.asc"
     Write-Host "Downloading PreviewGen $($Release.tag_name) setup..."
+    # The release tag is the only version the installer knows about. Say it
+    # plainly, before the download, so a user who expected a newer build can
+    # stop here instead of discovering it after installing.
+    Write-Host "Installing release: $($Release.tag_name) (published $($Release.published_at))"
     Invoke-WebRequest -Uri $SetupAsset.browser_download_url -OutFile $SetupPath -UseBasicParsing
     Invoke-WebRequest -Uri $ShaAsset.browser_download_url -OutFile $ShaPath -UseBasicParsing
 

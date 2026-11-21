@@ -38,6 +38,17 @@
   -webkit-user-select: none;
 }
 .titlebar-leading + .titlebar-drag { grid-column: 2; }
+/* The version sits beside the app name so a user can tell a current install
+   from a stale one without leaving the app. It is quiet by design: it is
+   reference information, not a control. */
+.titlebar-version {
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 560;
+  letter-spacing: .02em;
+  opacity: .82;
+}
 .titlebar-control {
   width: 34px;
   height: 31px;

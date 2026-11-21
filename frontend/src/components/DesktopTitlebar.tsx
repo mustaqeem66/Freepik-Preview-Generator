@@ -7,6 +7,7 @@ type WindowAction = "minimize" | "fullscreen" | "close";
 
 export function DesktopTitlebar() {
   const [platform, setPlatform] = useState<DesktopPlatform | null>(null);
+  const [version, setVersion] = useState<string | null>(null);
   const [inFlight, setInFlight] = useState(false);
 
   useEffect(() => {
@@ -22,6 +23,32 @@ export function DesktopTitlebar() {
       } catch {
         // In a browser dev server or native-titlebar fallback, OS chrome owns
         // minimize, fullscreen and close controls.
+      }
+    };
+    void detect();
+    window.addEventListener("pywebviewready", detect);
+    return () => {
+      mounted = false;
+      window.removeEventListener("pywebviewready", detect);
+    };
+  }, []);
+
+  // The running build's version is the only way a user can tell a current
+  // install from a stale one. The install scripts publish a release and then
+  // say nothing about which build they produced, so without this the app
+  // gives no evidence of what is actually running.
+  useEffect(() => {
+    let mounted = true;
+    const detect = async () => {
+      try {
+        const api = await ApiBridge.getApi(1500);
+        if (!api?.get_app_info) return;
+        const response = await api.get_app_info();
+        if (mounted && response.ok && response.value?.version) {
+          setVersion(response.value.version);
+        }
+      } catch {
+        // No version to show in browser dev mode; the title still renders.
       }
     };
     void detect();
@@ -65,6 +92,7 @@ export function DesktopTitlebar() {
     {platform !== "macos" && <div className="titlebar-leading">{controls(false)}</div>}
     <div className="pywebview-drag-region titlebar-drag" aria-hidden="true">
       <span>PreviewGen</span>
+      {version && <span className="titlebar-version" data-testid="titlebar-version">v{version}</span>}
     </div>
     {platform === "macos"
       ? <div className="titlebar-trailing">{controls(true)}</div>
