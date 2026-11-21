@@ -3,6 +3,7 @@ PreviewGen API Module
 Python-side API exposed to frontend via pywebview.
 Uses webview.Window type hints only (does not import webview at module scope).
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -123,9 +124,15 @@ class DesktopApi:
         # A separate one-item cache ensures source comparison does not evict
         # the active gallery images. Both share the bounded sync worker slot.
         self.comparison_coordinator = ThumbnailCoordinator(
-            self.preview_server, self.preview_coordinator.render_sync, self._dispatch_envelope,
-            max_visible=1, max_retained=1, max_dimension=850, timeout=10.0,
-            event_prefix="comparison", source_only=True,
+            self.preview_server,
+            self.preview_coordinator.render_sync,
+            self._dispatch_envelope,
+            max_visible=1,
+            max_retained=1,
+            max_dimension=850,
+            timeout=10.0,
+            event_prefix="comparison",
+            source_only=True,
         )
         self.probe_coordinator = ProbeCoordinator()
         self.probe_coordinator.set_dispatch_fn(self._dispatch_envelope)
@@ -162,9 +169,12 @@ class DesktopApi:
     def get_window_chrome(self) -> dict[str, Any]:
         """Advertise native titlebar support; disabled in browser/dev mode."""
         platform = (
-            "macos" if sys.platform == "darwin"
-            else "windows" if sys.platform == "win32"
-            else "linux" if sys.platform.startswith("linux")
+            "macos"
+            if sys.platform == "darwin"
+            else "windows"
+            if sys.platform == "win32"
+            else "linux"
+            if sys.platform.startswith("linux")
             else "unknown"
         )
         return {
@@ -199,6 +209,7 @@ class DesktopApi:
 
     def _register_default_authorized_paths(self) -> None:
         from previewgen.settings import get_log_directory, get_settings_directory
+
         self._add_authorized_folder(get_settings_directory())
         self._add_authorized_folder(get_log_directory())
 
@@ -257,10 +268,15 @@ class DesktopApi:
                     return "INVALID_SOURCE"
                 entry = entries[0]
                 entry_path = PurePosixPath(entry.replace("\\", "/"))
-                if (not entry or "\x00" in entry or entry_path.is_absolute()
-                        or ".." in entry_path.parts or entry_path.name in ("", ".", "..")
-                        or entry_path.suffix.lower() not in SUPPORTED_EXTENSIONS
-                        or entry_path.suffix.lower() == ".zip"):
+                if (
+                    not entry
+                    or "\x00" in entry
+                    or entry_path.is_absolute()
+                    or ".." in entry_path.parts
+                    or entry_path.name in ("", ".", "..")
+                    or entry_path.suffix.lower() not in SUPPORTED_EXTENSIONS
+                    or entry_path.suffix.lower() == ".zip"
+                ):
                     return "INVALID_SOURCE"
                 archive = Path(urllib.parse.unquote(uri.netloc + uri.path)).resolve()
                 if archive.suffix.lower() != ".zip":
@@ -272,8 +288,7 @@ class DesktopApi:
             selected = Path(source).resolve()
             if selected.suffix.lower() not in SUPPORTED_EXTENSIONS or selected.suffix.lower() == ".zip":
                 return "UNSUPPORTED_SOURCE"
-            if not (self._is_authorized_input_path(selected)
-                    or self._is_authorized_selected_file(selected)):
+            if not (self._is_authorized_input_path(selected) or self._is_authorized_selected_file(selected)):
                 return "UNAUTHORIZED_SOURCE"
             return None
         except (ValueError, OSError, TypeError):
@@ -316,9 +331,7 @@ class DesktopApi:
         except (OSError, ValueError, TypeError):
             return False
 
-    def _is_authorized_export_destination(
-        self, folder: Path | str, *, exact_file: bool = False
-    ) -> bool:
+    def _is_authorized_export_destination(self, folder: Path | str, *, exact_file: bool = False) -> bool:
         """Only explicit destination grants, or Same-as-input scanned folders.
 
         A broad folder authorization also covers diagnostics and user settings;
@@ -349,9 +362,12 @@ class DesktopApi:
         try:
             if self.lifecycle.get_active_operations():
                 return True
-            if (self.preview_coordinator.is_busy() or self.probe_coordinator.is_busy()
-                    or self.thumbnail_coordinator.is_busy()
-                    or self.comparison_coordinator.is_busy()):
+            if (
+                self.preview_coordinator.is_busy()
+                or self.probe_coordinator.is_busy()
+                or self.thumbnail_coordinator.is_busy()
+                or self.comparison_coordinator.is_busy()
+            ):
                 return True
             thread = self.scanner.active_scan_thread
             if thread is not None and thread.is_alive():
@@ -430,9 +446,7 @@ class DesktopApi:
         helper.start()
         budget = self._bridge_delivery_timeout_seconds
         if not delivered.wait(budget):
-            logging.warning(
-                "Bridge event delivery timed out after %.1fs; the window is closing", budget
-            )
+            logging.warning("Bridge event delivery timed out after %.1fs; the window is closing", budget)
 
     def _on_scan_progress(self, scan_id: str, count: int) -> None:
         self._dispatch_envelope("scan.progress", {"scanId": scan_id, "count": count}, operation_id=scan_id)
@@ -440,15 +454,19 @@ class DesktopApi:
     def _on_scan_finished(self, scan_id: str, result: dict[str, Any]) -> None:
         """Keep large scan rows off the synchronous evaluate_js event path."""
         files = result.get("files")
-        if (self._scan_paging_enabled and isinstance(files, list) and (
-            len(files) > SCAN_INLINE_RESULT_LIMIT
-            # ensure_ascii=False here would raise UnicodeEncodeError: os.walk
-            # decodes undecodable filename bytes with surrogateescape, and lone
-            # surrogates cannot be encoded back to UTF-8. The escaped form is
-            # also what _dispatch_envelope actually transmits, so measuring it
-            # keeps the byte budget honest.
-            or len(json.dumps(files).encode("utf-8")) > SCAN_PAGE_MAX_BYTES
-        )):
+        if (
+            self._scan_paging_enabled
+            and isinstance(files, list)
+            and (
+                len(files) > SCAN_INLINE_RESULT_LIMIT
+                # ensure_ascii=False here would raise UnicodeEncodeError: os.walk
+                # decodes undecodable filename bytes with surrogateescape, and lone
+                # surrogates cannot be encoded back to UTF-8. The escaped form is
+                # also what _dispatch_envelope actually transmits, so measuring it
+                # keeps the byte budget honest.
+                or len(json.dumps(files).encode("utf-8")) > SCAN_PAGE_MAX_BYTES
+            )
+        ):
             # Scanner callbacks can race a newer scan start just after their
             # own is-current check. Never replace the new scan's page cache.
             with self.scanner.scan_lock:
@@ -469,8 +487,10 @@ class DesktopApi:
                     self._scan_page_state = None
             metadata = result
         self._dispatch_envelope(
-            "scan.finished", {"scanId": scan_id, "result": metadata},
-            operation_id=scan_id, terminal=True,
+            "scan.finished",
+            {"scanId": scan_id, "result": metadata},
+            operation_id=scan_id,
+            terminal=True,
         )
 
     def get_scan_page(self, scan_id: str, offset: int, limit: int = SCAN_PAGE_MAX_ITEMS) -> dict[str, Any]:
@@ -480,10 +500,16 @@ class DesktopApi:
         would have sent in scan.finished; it does not grant filesystem access.
         Pages are consumed in order, with no second unbounded JS injection.
         """
-        if (not isinstance(scan_id, str) or not scan_id
-                or isinstance(offset, bool) or not isinstance(offset, int)
-                or isinstance(limit, bool) or not isinstance(limit, int)
-                or not 1 <= limit <= SCAN_PAGE_MAX_ITEMS or offset < 0):
+        if (
+            not isinstance(scan_id, str)
+            or not scan_id
+            or isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= SCAN_PAGE_MAX_ITEMS
+            or offset < 0
+        ):
             return {"ok": False, "value": None, "error": "INVALID_SCAN_PAGE"}
         with self._scan_page_lock:
             stored = self._scan_page_state
@@ -495,7 +521,7 @@ class DesktopApi:
 
             chunk: list[dict[str, Any]] = []
             payload_bytes = 512
-            for file in files[offset:offset + limit]:
+            for file in files[offset : offset + limit]:
                 encoded_size = len(json.dumps(file).encode("utf-8")) + 2
                 if payload_bytes + encoded_size > SCAN_PAGE_MAX_BYTES:
                     if not chunk:
@@ -509,25 +535,32 @@ class DesktopApi:
             else:
                 self._scan_page_state = (scan_id, files, next_offset)
             return {
-                "ok": True, "error": None,
+                "ok": True,
+                "error": None,
                 "value": {
-                    "scanId": scan_id, "offset": offset, "total": len(files),
-                    "nextOffset": next_offset, "files": chunk,
+                    "scanId": scan_id,
+                    "offset": offset,
+                    "total": len(files),
+                    "nextOffset": next_offset,
+                    "files": chunk,
                 },
             }
 
-    def _on_batch_finished(
-        self, summary: dict[str, Any], operation_id: str = "", notify_enabled: bool = False
-    ) -> None:
+    def _on_batch_finished(self, summary: dict[str, Any], operation_id: str = "", notify_enabled: bool = False) -> None:
         self._dispatch_envelope(
-            "batch.finished", self._sanitize_batch_summary(summary),
-            operation_id=operation_id or self._batch_operation_id, terminal=True,
+            "batch.finished",
+            self._sanitize_batch_summary(summary),
+            operation_id=operation_id or self._batch_operation_id,
+            terminal=True,
         )
         if notify_enabled:
             from previewgen.notifications import notify_batch_finished
+
             threading.Thread(
-                target=notify_batch_finished, args=(self._sanitize_batch_summary(summary),),
-                name="previewgen-desktop-notify", daemon=True,
+                target=notify_batch_finished,
+                args=(self._sanitize_batch_summary(summary),),
+                name="previewgen-desktop-notify",
+                daemon=True,
             ).start()
 
     @staticmethod
@@ -540,6 +573,7 @@ class DesktopApi:
             result["errorsTruncated"] = len(errors) > 50
             result["errors"] = errors[:50]
         return result
+
     # ============================================================
     # Frontend-facing API methods
     # ============================================================
@@ -556,7 +590,10 @@ class DesktopApi:
         if "--gui-smoke-test" in sys.argv and self._window:
             if os.environ.get("PREVIEWGEN_CSP_MARKER"):
                 if self._csp_smoke_started.acquire(blocking=False):
+                    logging.info("Starting the CSP smoke probe thread.")
                     threading.Thread(target=self._run_csp_selftest_then_close, daemon=True).start()
+                else:
+                    logging.warning("The CSP smoke probe was already started; not starting it again.")
             else:
                 # Destroy window after bridge response completes so clean machine tests exit promptly
                 threading.Timer(0.5, self._window.destroy).start()
@@ -564,11 +601,13 @@ class DesktopApi:
 
     def _run_csp_selftest_then_close(self) -> None:
         """Write one smoke verdict before closing the native window."""
+        logging.info("CSP smoke probe started.")
         try:
             outcome = self._probe_packaged_csp()
         except Exception as exc:
             logging.warning("CSP smoke probe could not complete: %s", exc)
             outcome = {"error": "CSP_PROBE_UNAVAILABLE"}
+        logging.info("CSP smoke probe finished: %s", outcome)
         try:
             marker = os.environ["PREVIEWGEN_CSP_MARKER"]
             Path(marker).write_text(json.dumps(outcome, sort_keys=True) + "\n", encoding="utf-8")
@@ -613,6 +652,48 @@ class DesktopApi:
             except Exception as exc:
                 logging.warning("Could not write CSP violation marker: %s", exc)
         return {"ok": True, "value": len(recorded), "error": None}
+
+    #: Bound on a single WebView evaluation during the CSP smoke probe.
+    _probe_evaluation_timeout = 5.0
+
+    def _evaluate_js_bounded(self, window: Any, script: str, timeout: float) -> str | None:
+        """Run JavaScript in the WebView and return its result, or None on timeout.
+
+        The pywebview GTK backend's ``evaluate_js`` schedules the call on the
+        GTK main loop and waits on a semaphore that is never released once the
+        main loop has stopped, so a call from a worker thread against a
+        closing window blocks for the lifetime of the process. The WKWebView
+        backend has the same problem from a thread that is not the main one.
+
+        The call therefore runs on a helper thread and is awaited with a
+        bounded timeout. A timed-out call is abandoned: the helper is a daemon
+        thread, so it cannot hold the process open.
+
+        A WebView that *raises* is a different failure from one that never
+        answers, so the exception is re-raised in the caller and the probe
+        fails closed on it rather than reporting a verdict it never obtained.
+        """
+        result: list[str | None] = []
+        failure: list[BaseException] = []
+        finished = threading.Event()
+
+        def _run() -> None:
+            try:
+                value = window.evaluate_js(script)
+                result.append(value if isinstance(value, str) else str(value))
+            except BaseException as exc:
+                failure.append(exc)
+            finally:
+                finished.set()
+
+        helper = threading.Thread(target=_run, name="csp-probe-eval", daemon=True)
+        helper.start()
+        if not finished.wait(timeout):
+            logging.warning("WebView evaluation timed out after %.1fs", timeout)
+            return None
+        if failure:
+            raise failure[0]
+        return result[0] if result else None
 
     def _probe_packaged_csp(self) -> dict[str, Any]:
         """Exercise script-src and the loopback JPEG control in the live WebView."""
@@ -664,13 +745,25 @@ class DesktopApi:
                 return true;
               })()
             """.replace("__PREVIEW_URL__", json.dumps(url))
-            window.evaluate_js(script)
+            # The probe runs on a worker thread, so every call into the
+            # WebView must be bounded: a direct `evaluate_js` from here can
+            # block forever against a window whose main loop has stopped, and
+            # the verdict would never be written.
+            if self._evaluate_js_bounded(window, script, self._probe_evaluation_timeout) is None:
+                return {"error": "CSP_PROBE_SCRIPT_TIMEOUT"}
             deadline = time.monotonic() + 8.0
             outcome = {"inlineScript": "pending", "blobScript": "pending", "previewJpeg": "pending"}
             while time.monotonic() < deadline:
-                raw = window.evaluate_js("JSON.stringify(window.__pgCsp)")
-                observed = json.loads(raw)
-                outcome = {key: str(observed[key]) for key in outcome}
+                raw = self._evaluate_js_bounded(
+                    window, "JSON.stringify(window.__pgCsp)", self._probe_evaluation_timeout
+                )
+                if raw is None:
+                    return {"error": "CSP_PROBE_READ_TIMEOUT"}
+                try:
+                    observed = json.loads(raw)
+                except json.JSONDecodeError:
+                    return {"error": "CSP_PROBE_UNREADABLE"}
+                outcome = {key: str(observed.get(key, "pending")) for key in outcome}
                 if "pending" not in outcome.values():
                     break
                 time.sleep(0.1)
@@ -710,14 +803,11 @@ class DesktopApi:
         # arbitrary path and then calling get_initial_state() to launder that
         # unselected path into an authorized output directory.
         input_folder = settings_dict.get("inputFolder")
-        if (isinstance(input_folder, str) and input_folder.strip()
-                and not self._is_authorized_input_path(input_folder)):
-            return {"ok": False, "value": False, "error": "UNAUTHORIZED_INPUT_PATH",
-                    "code": "UNAUTHORIZED_INPUT_PATH"}
+        if isinstance(input_folder, str) and input_folder.strip() and not self._is_authorized_input_path(input_folder):
+            return {"ok": False, "value": False, "error": "UNAUTHORIZED_INPUT_PATH", "code": "UNAUTHORIZED_INPUT_PATH"}
         auxiliary_error = self._auxiliary_read_error(settings_dict)
         if auxiliary_error:
-            return {"ok": False, "value": False, "error": auxiliary_error,
-                    "code": auxiliary_error}
+            return {"ok": False, "value": False, "error": auxiliary_error, "code": auxiliary_error}
         output_folder = settings_dict.get("outputFolder")
         if (
             isinstance(output_folder, str)
@@ -725,7 +815,9 @@ class DesktopApi:
             and not self._is_authorized_output_path(output_folder)
         ):
             return {
-                "ok": False, "value": False, "error": "UNAUTHORIZED_OUTPUT_PATH",
+                "ok": False,
+                "value": False,
+                "error": "UNAUTHORIZED_OUTPUT_PATH",
                 "code": "UNAUTHORIZED_OUTPUT_PATH",
             }
         try:
@@ -733,6 +825,7 @@ class DesktopApi:
                 return {"ok": True, "value": True, "error": None}
             else:
                 from previewgen.settings import get_current_revision
+
                 curr_rev = get_current_revision()
                 req_rev = settings_dict.get("revision")
                 if req_rev is not None and isinstance(req_rev, (int, float)) and req_rev < curr_rev:
@@ -786,13 +879,15 @@ class DesktopApi:
                         rejected.append(f"{target.name}: session selection limit (5000 files) reached")
                         continue
                     self._authorized_files.add(target)
-                files.append({
-                    "name": target.name, "path": str(target),
-                    "ext": extension.lstrip(".").upper(),
-                    "is_3d": (
-                        extension in SUPPORTED_3D_EXTENSIONS and extension != ".blend"
-                    ) or extension in (".step", ".stp", ".iges", ".igs"),
-                })
+                files.append(
+                    {
+                        "name": target.name,
+                        "path": str(target),
+                        "ext": extension.lstrip(".").upper(),
+                        "is_3d": (extension in SUPPORTED_3D_EXTENSIONS and extension != ".blend")
+                        or extension in (".step", ".stp", ".iges", ".igs"),
+                    }
+                )
             return {"ok": True, "value": {"files": files, "rejected": rejected}, "error": None}
         except Exception as exc:
             logging.warning("Native multi-file picker failed: %s", exc)
@@ -838,6 +933,7 @@ class DesktopApi:
         except Exception as exc:
             logging.warning("Folder dialog failed: %s", exc)
             return ""
+
     def browse_logo(self) -> str:
         """Open native file picker for logo."""
         if not self._window:
@@ -849,7 +945,7 @@ class DesktopApi:
                 file_types=(
                     "Image Files (*.png;*.webp;*.svg;*.ico;*.jpg;*.jpeg)",
                     "*.png;*.webp;*.svg;*.ico;*.jpg;*.jpeg",
-                )
+                ),
             )
             selected = res[0] if res else ""
             if selected:
@@ -867,8 +963,7 @@ class DesktopApi:
         try:
             open_kind = _resolve_file_dialog_kind("OPEN")
             res = self._window.create_file_dialog(
-                open_kind,
-                file_types=("Font Files (*.ttf;*.otf;*.woff;*.woff2)", "*.ttf;*.otf;*.woff;*.woff2")
+                open_kind, file_types=("Font Files (*.ttf;*.otf;*.woff;*.woff2)", "*.ttf;*.otf;*.woff;*.woff2")
             )
             selected = res[0] if res else ""
             if selected:
@@ -893,6 +988,7 @@ class DesktopApi:
                 os.startfile(target)  # type: ignore
             elif sys.platform == "darwin":
                 import subprocess
+
                 subprocess.Popen(
                     ["open", str(target)],
                     stdin=subprocess.DEVNULL,
@@ -902,6 +998,7 @@ class DesktopApi:
                 )
             else:
                 import subprocess
+
                 opener = shutil.which("xdg-open")
                 gio = shutil.which("gio") if not opener else None
                 if opener:
@@ -996,8 +1093,12 @@ class DesktopApi:
                     parsed = urllib.parse.urlparse(raw)
                     archive = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
                     entry = urllib.parse.parse_qs(parsed.query).get("entry", [""])[0]
-                    if (not entry or Path(entry).suffix.lower() not in SUPPORTED_EXTENSIONS
-                            or Path(entry).suffix.lower() == ".zip" or archive.suffix.lower() != ".zip"):
+                    if (
+                        not entry
+                        or Path(entry).suffix.lower() not in SUPPORTED_EXTENSIONS
+                        or Path(entry).suffix.lower() == ".zip"
+                        or archive.suffix.lower() != ".zip"
+                    ):
                         return {"ok": False, "value": None, "error": "INVALID_THUMBNAIL_SELECTION"}
                     source = archive
                 else:
@@ -1043,10 +1144,12 @@ class DesktopApi:
             else:
                 target = Path(source).resolve()
                 extension = target.suffix.lower()
-            if (extension not in SUPPORTED_EXTENSIONS
-                    or extension == ".zip"
-                    or extension in SUPPORTED_3D_EXTENSIONS
-                    or extension in {".step", ".stp", ".iges", ".igs"}):
+            if (
+                extension not in SUPPORTED_EXTENSIONS
+                or extension == ".zip"
+                or extension in SUPPORTED_3D_EXTENSIONS
+                or extension in {".step", ".stp", ".iges", ".igs"}
+            ):
                 return {"ok": False, "value": None, "error": "UNSUPPORTED_SOURCE_COMPARISON"}
             if self._source_read_error(source):
                 return {"ok": False, "value": None, "error": "UNAUTHORIZED_SOURCE"}
@@ -1081,6 +1184,7 @@ class DesktopApi:
             # the worker thread so a large zip:// member never blocks the bridge.
             if file_path.startswith("zip://"):
                 import urllib.parse
+
                 parsed = urllib.parse.urlparse(file_path)
                 zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
                 entry_name = urllib.parse.parse_qs(parsed.query).get("entry", [""])[0]
@@ -1132,6 +1236,7 @@ class DesktopApi:
 
             if file_path.startswith("zip://"):
                 import urllib.parse
+
                 parsed = urllib.parse.urlparse(file_path)
                 zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
                 entry_name = urllib.parse.parse_qs(parsed.query).get("entry", [""])[0]
@@ -1167,17 +1272,18 @@ class DesktopApi:
         except Exception as exc:
             logging.warning("render_preview failure: %s", exc)
             from previewgen.errors import classify_exception
+
             code, msg = classify_exception(exc)
             return {"ok": False, "value": None, "error": msg, "code": code}
         finally:
             self.lifecycle.unregister_operation(op_id)
+
     def release_preview(self, handle: str) -> dict[str, Any]:
         """Release a preview handle and reclaim storage."""
         if not isinstance(handle, str) or not handle.strip():
             return {"ok": False, "value": False, "error": "Empty preview handle"}
         removed = self.preview_server.release_jpeg(handle, force=True)
         return {"ok": True, "value": removed, "error": None}
-
 
     def start_probe(self, file_path: str, request_id: int | None = None) -> dict[str, Any]:
         """
@@ -1195,6 +1301,7 @@ class DesktopApi:
         try:
             if file_path.startswith("zip://"):
                 import urllib.parse
+
                 parsed = urllib.parse.urlparse(file_path)
                 zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
                 entry_name = urllib.parse.parse_qs(parsed.query).get("entry", [""])[0]
@@ -1213,6 +1320,7 @@ class DesktopApi:
         except Exception as exc:
             logging.warning("start_probe submission notice: %s", exc)
             return {"ok": False, "error": str(exc)}
+
     def cancel_probe(self, operation_id: str | None = None) -> dict[str, Any]:
         """Cancel running and queued asset probing."""
         self.probe_coordinator.cancel_active(operation_id)
@@ -1233,6 +1341,7 @@ class DesktopApi:
 
             if file_path.startswith("zip://"):
                 import urllib.parse
+
                 parsed = urllib.parse.urlparse(file_path)
                 zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
                 qs = urllib.parse.parse_qs(parsed.query)
@@ -1258,6 +1367,7 @@ class DesktopApi:
         except Exception as exc:
             logging.warning("probe_asset failure: %s", exc)
             from previewgen.errors import classify_exception
+
             code, msg = classify_exception(exc)
             return {"ok": False, "value": None, "error": msg, "code": code}
         finally:
@@ -1279,6 +1389,7 @@ class DesktopApi:
 
             if file_path.startswith("zip://"):
                 import urllib.parse
+
                 parsed = urllib.parse.urlparse(file_path)
                 zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
                 qs = urllib.parse.parse_qs(parsed.query)
@@ -1303,11 +1414,13 @@ class DesktopApi:
         except Exception as exc:
             logging.warning("calculate_export_dimensions failure: %s", exc)
             from previewgen.errors import classify_exception
+
             code, msg = classify_exception(exc)
             return {"ok": False, "value": None, "error": msg, "code": code}
         finally:
             if temp_dir and temp_dir.exists():
                 safe_rmtree(temp_dir, "on-demand dimension temp")
+
     def export_preview(self, file_path: str, config_dict: dict[str, Any]) -> dict[str, Any]:
         """Render a single asset to a JPG at the configured export size.
 
@@ -1340,6 +1453,7 @@ class DesktopApi:
 
             if file_path.startswith("zip://"):
                 import urllib.parse
+
                 parsed = urllib.parse.urlparse(file_path)
                 zip_path = Path(urllib.parse.unquote(parsed.netloc + parsed.path)).resolve()
                 qs = urllib.parse.parse_qs(parsed.query)
@@ -1362,10 +1476,7 @@ class DesktopApi:
             out_dir = Path(
                 requested_out if isinstance(requested_out, str) and requested_out.strip() else default_out_dir
             ).resolve()
-            selected_exact = (
-                not file_path.startswith("zip://")
-                and self._is_authorized_selected_file(source_path)
-            )
+            selected_exact = not file_path.startswith("zip://") and self._is_authorized_selected_file(source_path)
             if not self._is_authorized_export_destination(out_dir, exact_file=selected_exact):
                 code = "UNAUTHORIZED_OUTPUT_PATH" if selected_exact else "UNAUTHORIZED_PATH"
                 return {"ok": False, "value": None, "error": code, "code": code}
@@ -1386,6 +1497,7 @@ class DesktopApi:
                 return {"ok": False, "value": None, "error": "Export failed"}
 
             from PIL import Image
+
             w, h = None, None
             try:
                 with Image.open(dest_file) as im:
@@ -1407,6 +1519,7 @@ class DesktopApi:
         except Exception as exc:
             logging.warning("export_preview failure: %s", exc)
             from previewgen.errors import classify_exception
+
             code, msg = classify_exception(exc)
             return {"ok": False, "value": None, "error": msg, "code": code}
         finally:
@@ -1439,9 +1552,12 @@ class DesktopApi:
             with self._batch_start_lock:
                 self._batch_operation_id = op_id
                 self.lifecycle.start_batch(
-                    source, output, cfg,
+                    source,
+                    output,
+                    cfg,
                     progress_callback=lambda cur, tot, msg: self._dispatch_envelope(
-                        "batch.progress", {"current": cur, "total": tot, "message": msg},
+                        "batch.progress",
+                        {"current": cur, "total": tot, "message": msg},
                         operation_id=op_id,
                     ),
                     is_cancelled=lambda: False,
@@ -1486,8 +1602,11 @@ class DesktopApi:
                 source = Path(raw).resolve()
                 if not self._is_authorized_selected_file(source):
                     return {"ok": False, "error": "UNAUTHORIZED_SELECTED_FILE"}
-                if (not source.is_file() or source.suffix.lower() not in SUPPORTED_EXTENSIONS
-                    or source.suffix.lower() == ".zip"):
+                if (
+                    not source.is_file()
+                    or source.suffix.lower() not in SUPPORTED_EXTENSIONS
+                    or source.suffix.lower() == ".zip"
+                ):
                     return {"ok": False, "error": f"INVALID_SELECTED_FILE: {source.name}"}
                 if source not in seen:
                     seen.add(source)
@@ -1499,9 +1618,12 @@ class DesktopApi:
             with self._batch_start_lock:
                 self._batch_operation_id = op_id
                 self.lifecycle.start_batch(
-                    output, output, cfg,
+                    output,
+                    output,
+                    cfg,
                     progress_callback=lambda cur, tot, msg: self._dispatch_envelope(
-                        "batch.progress", {"current": cur, "total": tot, "message": msg},
+                        "batch.progress",
+                        {"current": cur, "total": tot, "message": msg},
                         operation_id=op_id,
                     ),
                     is_cancelled=lambda: False,
@@ -1534,6 +1656,7 @@ class DesktopApi:
         self.probe_coordinator.shutdown()
         self.lifecycle.cleanup()
         self.preview_server.stop()
+
 
 # Note: Desktop shortcut management is the responsibility of system installers
 # Runtime auto-shortcut creation removed per security and packaging best practices.
