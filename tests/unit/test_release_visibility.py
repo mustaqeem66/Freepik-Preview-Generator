@@ -176,7 +176,57 @@ def test_freshness_gate_reads_the_version_without_importing_the_package(monkeypa
     assert module._tree_version() == previewgen.__version__
 
 
+def test_tag_check_passes_when_the_tag_names_the_tree_version(monkeypatch):
+    """A tag build must confirm the tag matches the version it ships.
+
+    The tag build is the moment the release is created, so the published
+    release cannot exist yet. Checking that it does would be circular and
+    would fail the very workflow that publishes it. The invariant that
+    actually holds -- and that a mismatch would violate -- is that the tag
+    names the version the tree declares.
+    """
+    module = _load_freshness_module()
+    monkeypatch.setattr(module, "_tree_version", lambda: "2.1.3")
+
+    assert module.main(["--tag", "v2.1.3"]) == 0
+
+
+def test_tag_check_fails_when_the_tag_contradicts_the_tree_version(monkeypatch):
+    """A tag that disagrees with the tree would publish contradictory artifacts."""
+    module = _load_freshness_module()
+    monkeypatch.setattr(module, "_tree_version", lambda: "2.1.3")
+
+    assert module.main(["--tag", "v2.1.2"]) == 1
+    assert module.main(["--tag", "2.1.3"]) == 0
+
+
+def test_tag_check_does_not_consult_the_published_release(monkeypatch):
+    """The tag check must not depend on a release existing yet."""
+    module = _load_freshness_module()
+    monkeypatch.setattr(module, "_tree_version", lambda: "2.1.3")
+
+    def _fail(repo):
+        raise AssertionError("the tag check must not query the published release")
+
+    monkeypatch.setattr(module, "_latest_published_release", _fail)
+
+    assert module.main(["--tag", "v2.1.3"]) == 0
+
+
 def test_workflow_reports_release_freshness():
     """The build must surface the difference between tree and release."""
     workflow = (PROJECT_ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
     assert "check_release_freshness.py" in workflow
+
+
+def test_workflow_freshness_step_uses_bash_on_every_runner():
+    """The freshness step must not parse as PowerShell on Windows.
+
+    `if [ ... ]; then` is a PowerShell ParserError, and the Windows runner
+    defaults to pwsh. The step therefore declares `shell: bash` explicitly,
+    the same way the dependency-install step does.
+    """
+    workflow = (PROJECT_ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+    step = workflow.split("- name: Report release freshness", 1)[1].split("\n\n", 1)[0]
+    assert "shell: bash" in step
+    assert "check_release_freshness.py --tag" in step

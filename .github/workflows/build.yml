@@ -75,13 +75,21 @@ jobs:
         # job log instead of leaving it to be discovered by a user who
         # installed and found the old build.
         #
-        # It never fails the build: a stale release is a publishing decision,
-        # not a code defect, and blocking every merge on it would make the
-        # gate unusable. A tag build uses --strict, because publishing a tag
-        # is exactly the moment the release must not be behind.
+        # On a branch it only reports: a stale release is a publishing
+        # decision, not a code defect, and failing every merge on it would
+        # make the gate unusable.
+        #
+        # On a tag it checks that the tag names the version the tree
+        # declares. It cannot check that the release is published, because
+        # this workflow is what creates it -- that check would be circular
+        # and would fail the very job that publishes the release.
+        #
+        # bash, not the Windows runner's default pwsh: `if [ ... ]; then` is
+        # a PowerShell ParserError.
+        shell: bash
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
-            python scripts/check_release_freshness.py --strict
+            python scripts/check_release_freshness.py --tag "${{ github.ref_name }}"
           else
             python scripts/check_release_freshness.py
           fi

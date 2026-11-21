@@ -105,14 +105,48 @@ def _unreleased_commit_count(repo: str, tag: str | None) -> int | None:
         return None
 
 
+def _check_tag(tag: str, tree_version: str) -> int:
+    """Validate the tag being cut against the version the tree declares.
+
+    A tag build is the moment a release is created, so the published release
+    cannot exist yet -- demanding that it does would make the check circular
+    and fail the very workflow that creates it.
+
+    The meaningful invariant is narrower and stronger: the tag must name the
+    version the tree declares. A tag that disagrees with the tree would
+    publish artifacts whose own version metadata contradicts the tag, and a
+    user reading the release page would see one version while the app
+    reported another.
+    """
+    tag_version = tag.lstrip("vV")
+    if tag_version == tree_version:
+        print(f"Release tag {tag} matches the tree version {tree_version}.")
+        return 0
+    print(
+        f"Release tag mismatch: the tag is {tag} but the tree declares {tree_version}. "
+        "The published artifact would contradict the tag.",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub owner/name")
     parser.add_argument("--strict", action="store_true", help="exit non-zero when the tree is ahead")
     parser.add_argument("--json", action="store_true", dest="as_json", help="emit JSON")
+    parser.add_argument(
+        "--tag",
+        default=None,
+        help="validate this release tag against the tree version instead of comparing to the published release",
+    )
     args = parser.parse_args(argv)
 
     tree_version = _tree_version()
+
+    if args.tag:
+        return _check_tag(args.tag, tree_version)
+
     latest_tag, published_at = _latest_published_release(args.repo)
 
     if latest_tag is None:
