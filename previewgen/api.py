@@ -707,7 +707,6 @@ class DesktopApi:
         with Image.new("RGB", (8, 8), "red") as image, io.BytesIO() as buffer:
             image.save(buffer, "JPEG")
             url = self.preview_server.publish_jpeg(buffer.getvalue())
-        logging.info("CSP probe: published %s", url)
         try:
             # Both scripts write only a smoke sentinel. Inline scripts execute
             # synchronously on insertion; the blob has no DNS or network path.
