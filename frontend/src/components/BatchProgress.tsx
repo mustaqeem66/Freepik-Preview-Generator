@@ -11,6 +11,8 @@ export interface BatchProgressProps {
   onStartBatch: () => void;
   onCancelBatch: () => void;
   canStart: boolean;
+  /** Why the start button is unavailable, shown to the user on hover. */
+  disabledReason?: string;
   truncated?: boolean;
   truncationReasons?: string[];
   discovered?: number;
@@ -18,7 +20,7 @@ export interface BatchProgressProps {
 
 export const BatchProgress: React.FC<BatchProgressProps> = ({
   isProcessing, canCancelBatch = true, isCancelling = false, progress, stats, batchErrors, onStartBatch, onCancelBatch,
-  canStart, truncated = false, truncationReasons = [], discovered = 0,
+  canStart, disabledReason, truncated = false, truncationReasons = [], discovered = 0,
 }) => {
   const percent = progress.total > 0
     ? Math.min(100, Math.max(0, Math.round(progress.current / progress.total * 100)))
@@ -38,10 +40,15 @@ export const BatchProgress: React.FC<BatchProgressProps> = ({
               disabled={!canCancelBatch || isCancelling}>
               {isCancelling ? "Cancelling…" : canCancelBatch ? "Cancel Batch" : "Starting…"}
             </button>
-          : <button type="button" className="button primary" onClick={onStartBatch} disabled={!canStart}>
+          : <button type="button" className="button primary" onClick={onStartBatch} disabled={!canStart}
+              title={!canStart && disabledReason ? disabledReason : undefined}
+              aria-describedby={!canStart && disabledReason ? "batch-start-disabled-reason" : undefined}>
               Generate Previews
             </button>}
       </div>
+      {!isProcessing && !canStart && disabledReason && (
+        <p className="muted bp-disabled-reason" id="batch-start-disabled-reason">{disabledReason}</p>
+      )}
       {isProcessing && <div className="bp-body">
         <div className="bp-row"><span>Processing selected assets</span><span className="bp-percent">{percent}%</span></div>
         <div className="bp-track" role="progressbar" aria-label="Batch generation progress"

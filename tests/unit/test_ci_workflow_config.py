@@ -249,3 +249,61 @@ def test_no_posix_only_syntax_runs_under_powershell(workflow: Path) -> None:
             f"{workflow.name}:{line_number} uses POSIX-only syntax {offenders} "
             f"without 'shell: bash' or a single-OS guard (guard: {context!r})"
         )
+
+
+def test_the_release_job_signs_its_checksum_file() -> None:
+    """A checksum published beside the artifact proves nothing on its own.
+
+    An attacker who can replace the download can replace SHA256SUMS.txt too.
+    A detached GPG signature over the checksum file is what lets a user
+    verify the artifacts against a key they already trust, independently of
+    the release channel.
+    """
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+
+    assert "--detach-sign" in text, "the release must produce a detached signature"
+    assert "gpg --batch --verify" in text, "the produced signature must be verified"
+    assert "SHA256SUMS.txt.asc" in text, "the signature must be published with the release"
+    # The signature must be a release requirement, not an optional nicety.
+    assert "GPG_PRIVATE_KEY" in text
+    assert "A release must ship a GPG-signed checksum file" in text
+
+
+def test_windows_artifacts_are_signature_verified_after_signing() -> None:
+    """`signtool sign` exiting zero is not proof of a valid signature.
+
+    The macOS job already verifies its own signature; the Windows job did not,
+    so an unsigned or partially signed artifact could be published unnoticed.
+    """
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+
+    assert text.count("Get-AuthenticodeSignature") >= 2, (
+        "both the executable and the installer must have their signature read back"
+    )
+    assert 'if ($status.Status -ne "Valid")' in text, (
+        "a non-Valid Authenticode status must fail the job"
+    )
+    assert "TimeStamperCertificate" in text, (
+        "an untimestamped signature expires with the certificate and must fail"
+    )
+
+
+def test_the_windows_installer_verifies_more_than_a_self_consistent_checksum() -> None:
+    """install.ps1 must not trust a checksum fetched from the same release.
+
+    A checksum file downloaded next to the artifact proves only that the two
+    agree. Verifying the detached signature over the checksums, and reading
+    back the installer's Authenticode signature, are what establish who
+    produced the file.
+    """
+    installer = ROOT / "install.ps1"
+    text = installer.read_text(encoding="utf-8")
+
+    assert "SHA256SUMS.txt.asc" in text, "the installer must fetch the detached signature"
+    assert "previewgen-signing-key.asc" in text, "the installer must fetch the public key"
+    assert "--verify" in text, "the installer must verify the detached signature"
+    assert "Get-AuthenticodeSignature" in text, (
+        "the installer must read back the setup binary's Authenticode signature"
+    )

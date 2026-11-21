@@ -140,7 +140,14 @@ def test_superseding_batch_queues_without_bridge_wait(tmp_path, monkeypatch):
     lifecycle.start_batch(tmp_path, tmp_path / "second", PreviewConfig(),
         lambda *_: None, lambda: False, operation_id="batch_second",
         finished_callback=lambda summary, op_id: completed.append(op_id))
-    assert time.monotonic() - before < 0.2
+    elapsed = time.monotonic() - before
+    # The bridge call must not wait for the superseded batch, which is held
+    # open by `release` below. The budget is generous on purpose: it only has
+    # to distinguish "returned immediately" from "waited for the batch to
+    # finish" (which would take the full 4s hold). A tight bound would fail
+    # on a loaded CI runner purely from scheduler contention, which is not
+    # what this test is about.
+    assert elapsed < 1.0, f"start_batch blocked the bridge thread for {elapsed:.2f}s"
     release.set()
     lifecycle.batch_thread.join(timeout=5)
     assert not lifecycle.batch_thread.is_alive()

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { ApiBridge, bridgeEvents, BridgeEventMeta } from "./bridge";
+import { ApiBridge, bridgeEvents, BridgeEventMeta, isBrowserHostedDocument } from "./bridge";
 
 describe("bridge typed event hub", () => {
   afterEach(() => {
@@ -107,5 +107,64 @@ describe("ApiBridge cache", () => {
     delete window.pywebview;
     await vi.waitFor(() => expect(window.pywebview).toBeUndefined());
     expect(await ApiBridge.getApi(100)).toBe(api);
+  });
+});
+
+describe("ApiBridge teardown safety", () => {
+  afterEach(() => {
+    ApiBridge.clearCache();
+    delete window.pywebview;
+    vi.restoreAllMocks();
+  });
+
+  it("does not reject when the native bridge throws while being torn down", async () => {
+    // pywebview rebuilds `window.pywebview.api` on every page load. Reading it
+    // during teardown can throw, and an escaping rejection would surface as an
+    // unhandled error that fails the whole test run and the CI gate.
+    Object.defineProperty(window, "pywebview", {
+      configurable: true,
+      get() {
+        throw new Error("bridge is being torn down");
+      },
+    });
+
+    await expect(ApiBridge.getApi(50)).resolves.toBeUndefined();
+  });
+});
+
+describe("ApiBridge browser hosting", () => {
+  afterEach(() => {
+    ApiBridge.clearCache();
+    delete window.pywebview;
+    vi.restoreAllMocks();
+  });
+
+  it("recognises a browser-hosted document by its protocol", () => {
+    // The packaged desktop app loads the bundled frontend over `file:`, so an
+    // http(s) document is a browser session with no native bridge coming.
+    expect(isBrowserHostedDocument("http:")).toBe(true);
+    expect(isBrowserHostedDocument("https:")).toBe(true);
+    expect(isBrowserHostedDocument("file:")).toBe(false);
+  });
+
+  it("does not wait out the handshake window in a plain browser", async () => {
+    const restore = ApiBridge.setProtocolOverride("http:");
+    const started = Date.now();
+
+    const api = await ApiBridge.getApi(4000);
+
+    expect(api).toBeDefined();
+    expect(Date.now() - started).toBeLessThan(1000);
+    restore();
+  });
+
+  it("still waits for the native bridge on a file: document", async () => {
+    // A failed native handshake must stay a failure: the desktop app must
+    // never silently downgrade to the in-memory browser demo.
+    const restore = ApiBridge.setProtocolOverride("file:");
+
+    await expect(ApiBridge.getApi(50)).resolves.toBeUndefined();
+
+    restore();
   });
 });

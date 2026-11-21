@@ -175,7 +175,7 @@ def test_output_directory_locking_prevents_concurrent_runs():
 
 def test_global_resource_limit_oversized_file():
     """Verify source files exceeding MAX_SOURCE_FILE_BYTES are rejected safely."""
-    from processor import load_source_image
+    from previewgen.renderers import load_source_image
     with tempfile.TemporaryDirectory() as tmp_dir:
         huge_file = Path(tmp_dir) / "huge.png"
         huge_file.write_bytes(b"0" * 1024)

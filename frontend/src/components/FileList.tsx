@@ -21,7 +21,9 @@ const FileRow = memo(function FileRow({ file, index, position, active, top, onSe
       id={assetId(file)}
       role="option"
       aria-selected={active}
-      aria-rowindex={position + 1}
+      // `aria-posinset`/`aria-setsize` are the ARIA 1.2 attributes for a
+      // virtualized listbox's options. `aria-rowindex`/`aria-rowcount` are
+      // grid-only and axe-core rejects them on role=listbox/role=option.
       aria-posinset={position + 1}
       aria-setsize={filesLength}
       data-testid="file-row"
@@ -48,7 +50,11 @@ const FileRow = memo(function FileRow({ file, index, position, active, top, onSe
         boxSizing: "border-box",
       }}
     >
-      <span style={{ opacity: 0.6, flex: "0 0 40px" }}>{file.ext}</span>
+      {/* `opacity` dims the foreground against whatever is behind it, which
+          drops the format badge below the 4.5:1 contrast floor. Use the
+          secondary-text token, whose contrast is guaranteed against the
+          surface, instead of an opacity overlay. */}
+      <span style={{ color: "var(--text-sec)", flex: "0 0 40px" }}>{file.ext}</span>
       <span style={{ overflow: "hidden", textOverflow: "ellipsis" }} title={file.name}>{file.name}</span>
     </div>
   );
@@ -155,7 +161,6 @@ export function FileList({ files, activeIndex, onSelect, height = 320,
         ref={containerRef}
         role="listbox"
         aria-label="Asset list"
-        aria-rowcount={count}
         aria-activedescendant={selectedPosition >= 0 && selectedPosition < count && files[activeIndex]
           ? assetId(files[activeIndex]) : undefined}
         data-testid="file-list"

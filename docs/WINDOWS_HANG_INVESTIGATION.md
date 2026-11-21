@@ -47,7 +47,7 @@ A multi-megabyte `run_js` payload is also what produced `Error occurred in scrip
 
 **Fix status.** PR #74 (merged 2026-10-22 11:49, *after* every logged storm) renamed the attribute to `_window` and marked every internal object `_serializable = False`, which removes the toolkit graph from the walk entirely; the two new tests pin the flat surface, forbid any dotted name, and bound the injected payload size. The original screenshot's cause is therefore identified and closed at the source level.
 
-**Still open for this issue.** No Windows machine has run a build that contains #74, and the affected install has since been removed from this host, so acceptance needs the packaged Windows idle test below. Residual amplifiers deliberately left in place, each of which turns *any* future pump stall into a permanent hang rather than a stutter: `evaluate_js` has no timeout; the 500 ms `timer_tick` plus `Join(500)` main-loop keep two 2 Hz Python↔.NET handoffs on the pump; two `Lenis` `autoRaf` loops keep WebView2 compositing at 60 fps while the app looks idle; and the gallery/comparison 60 s pollers each force a full pump round trip and can serialize behind `render_sync`.
+**Still open for this issue.** Acceptance still requires the installed and portable Windows idle and interaction matrix below. Residual amplifiers: `evaluate_js` has no timeout; the 500 ms `timer_tick` plus `Join(500)` main-loop keep two 2 Hz Python↔.NET handoffs on the pump; two `Lenis` `autoRaf` loops keep WebView2 compositing at 60 fps while the app looks idle; and the gallery/comparison 60 s pollers each force a full pump round trip and can serialize behind `render_sync`.
 
 ## 2026-10-20 audit — what could not be concluded then
 
@@ -81,3 +81,44 @@ A UI responsiveness timeout is not proof of a Python deadlock. The Windows probe
 - Add optional copy-redacted-diagnostics support only with explicit user review/consent. Never upload crash data or artwork automatically.
 
 **Current status:** Root cause is identified from the packaged Windows traces and reproduced by `tests/unit/test_bridge_surface_exposure.py`; PR #74 removes the .NET graph from the bridge walk. Remaining for issue #19 closure: run the packaged Windows idle health test (`scripts/windows_idle_health.py`, 300 s) on a build that contains #74, on installed and portable, at 100/125/150/200% DPI.
+
+## November portable observation — not a passing idle test
+
+Tested the portable EXE from [CI run 44778995430](https://github.com/mustaqeem66/Freepik-Preview-Generator/actions/runs/44778995430), commit `5215863460205aca1c4c61a0c4a315e0caec9bb0`, EXE SHA-256 `4fa5296aaf77802bd3cebc657bc76e4d61e34784eaac6ea03935cb460fce199e`. Windows 11 build 26200, WebView2 `157.0.4341.60`, window DPI 96 (100%).
+
+The frontend reported ready. The 300-second monitor recorded 83 responsive, 0 unresponsive, then 18 no-window samples. The window disappeared about 250 seconds into the observation; the app logged orderly shutdown. The reason for closing was not established. The monitor correctly failed the 300-second acceptance check; this did not reproduce the original message-pump hang.
+
+Local evidence: `local-native/windows-portable-5215863/idle.csv` and `app-lifecycle.log`. The installer and other DPI settings were not tested.
+
+## November installed observation — the freeze reproduced, on a stale build
+
+Tested the **installed** PreviewGen 2.1.2 at `%LOCALAPPDATA%\Programs\PreviewGen\PreviewGen.exe`, SHA-256 `a5492e5c61223357489994cb258b22231998346dcb6dcdc665a4f82bbdff440e`, Windows 11 build 26200, WebView2 `157.0.4341.60`, DPI 96 (100%). Authenticode: `NotSigned`.
+
+The 300-second monitor recorded **1 responsive and 100 unresponsive** samples. The window was present and matched by title throughout; the process stayed at 11 threads with all threads waiting, and `CloseMainWindow` never completed. The monitor failed the acceptance check.
+
+The application log explains why:
+
+```
+[ERROR] pywebview: Error while processing window.native.AccessibilityObject.Bounds.Empty.Empty.Empty...
+[ERROR] pywebview: Error while processing window.native.DefaultImeMode.AlphaFull.AlphaFull.AlphaFull...
+[ERROR] pywebview: Error while processing window.native.browser.webview.AllowExternalDrop:
+    CoreWebView2Controller members can only be accessed from the UI thread.
+```
+
+That is the bridge injection storm: pywebview walked the live `window.native` .NET graph and injected it into the page. It is the same defect PR #74 fixed by renaming the attribute to `_window`.
+
+**This installed build predates the fix.** The `v2.1.2` tag points at `2958525` (2026-10-20); the bridge fix is `de1b6e6` (2026-10-22). The installed EXE's own file timestamp is **2026-10-20 15:40**, two days before the fix. The frozen binary was therefore built from a commit before the fix, so this reproduction confirms the original defect and the fix's premise — it does **not** show that current `main` is still affected.
+
+Evidence: `local-native/windows-installed-2.1.2/idle.csv` (SHA-256 `0b3869a56fb9f41309eb4a40d006c6be5079919d732a83a11a7a02f49dd2a641`) and `diagnostics.log`.
+
+The remaining acceptance work is unchanged: run the same 300-second check against a build that contains `de1b6e6`, on installed and portable, at 100/125/150/200% DPI. Until that passes, issue #19 stays open.
+
+## November CI candidate observation — the fix holds
+
+Ran the same 300-second check against the portable EXE from [CI run 44778995430](https://github.com/mustaqeem66/Freepik-Preview-Generator/actions/runs/44778995430), commit `5215863460205aca1c4c61a0c4a315e0caec9bb0`, EXE SHA-256 `4fa5296aaf77802bd3cebc657bc76e4d61e34784eaac6ea03935cb460fce199e` — a build that **contains** the bridge fix `de1b6e6`.
+
+Result: **99 responsive, 0 unresponsive**, and the monitor exited `0` (PASS). The last two samples report `no-window` because the app was closing after the observation window; the window was present and matched by title for the rest of the run. The candidate's own isolated log contains **no** `Error while processing` entries, unlike the stale installed build above.
+
+Evidence: `local-native/windows-candidate-5215863/idle.csv` (SHA-256 `9f5b36c545c33032a703c7d58819354f2af645775565f2d0293a7925eac72458`).
+
+So the bridge injection storm was the cause of the original freeze, and the fix removes it on Windows at 100% DPI. **Issue #19 still stays open**: the installed build, the installer/upgrade/uninstall path, and the 125/150/200% DPI matrix are not covered by this run.

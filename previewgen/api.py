@@ -6,6 +6,7 @@ Uses webview.Window type hints only (does not import webview at module scope).
 from __future__ import annotations
 
 import contextlib
+import io
 import itertools
 import json
 import logging
@@ -47,6 +48,55 @@ SCAN_INLINE_RESULT_LIMIT = 128
 SCAN_PAGE_MAX_ITEMS = 128
 SCAN_PAGE_MAX_BYTES = 32 * 1024
 
+# A bridge event delivery waits on the native main loop. A closing window can
+# stop that loop without releasing the wait, so the delivery is bounded: past
+# this budget the frontend is gone and the event is dropped instead of
+# stranding the worker that produced it.
+BRIDGE_DELIVERY_TIMEOUT_SECONDS = 5.0
+
+
+def _resolve_file_dialog_kind(kind: str) -> int:
+    """Return one native file-dialog kind for the installed pywebview.
+
+    ``FileDialog`` replaced the module-level ``OPEN_DIALOG``/``FOLDER_DIALOG``
+    constants, which now emit a deprecation warning on every call. Older
+    pywebview releases only expose the constants, so both spellings are
+    accepted. Each kind is resolved on its own so a caller that only opens a
+    file picker never depends on the folder constant being present.
+    """
+    import webview
+
+    dialog_enum = getattr(webview, "FileDialog", None)
+    if dialog_enum is not None:
+        return int(getattr(dialog_enum, kind))
+    return int(getattr(webview, f"{kind}_DIALOG"))
+
+
+def _resolve_export_destination(
+    out_dir: Path,
+    stem: str,
+    overwrite_policy: str,
+    protected: set[Path] | None = None,
+) -> tuple[Path, bool]:
+    """Resolve the destination file for an export, honouring the overwrite policy.
+
+    Returns the destination path and whether the export must be skipped because
+    the file already exists. The destination is never allowed to overwrite a
+    protected source file, whatever the policy says.
+    """
+    protected = protected or set()
+    destination = protect_source_destinations(out_dir / f"{stem}.jpg", protected)
+    if not destination.exists():
+        return destination, False
+    if overwrite_policy == "skip":
+        return destination, True
+    if overwrite_policy == "rename":
+        counter = 1
+        while destination.exists() or destination.resolve() in protected:
+            destination = out_dir / f"{stem}_copy{counter}.jpg"
+            counter += 1
+    return destination, False
+
 
 class DesktopApi:
     """
@@ -56,6 +106,9 @@ class DesktopApi:
 
     def __init__(self) -> None:
         self._window: Any | None = None  # webview.Window when running
+        # Bounded budget for one bridge delivery. Overridable per instance so
+        # a test can exercise the timeout path without a long wait.
+        self._bridge_delivery_timeout_seconds = BRIDGE_DELIVERY_TIMEOUT_SECONDS
         self._custom_chrome_enabled = False
         self.session_zip_dir: Path | None = None
         self.scanner = get_scanner()
@@ -90,6 +143,7 @@ class DesktopApi:
         self._scan_page_lock = threading.Lock()
         self._scan_page_state: tuple[str, list[dict[str, Any]], int] | None = None
         self._scan_paging_enabled = False
+        self._csp_smoke_started = threading.Lock()
         self._last_heartbeat_time = time.time()
         self._register_default_authorized_paths()
 
@@ -310,6 +364,16 @@ class DesktopApi:
             return True
         return False
 
+    def _detach_window(self) -> None:
+        """Forget the native window so no worker can dispatch into a dead one.
+
+        A worker thread that calls ``evaluate_js`` after the window was
+        destroyed waits on a main loop that has already stopped. Clearing the
+        reference turns that dispatch into a no-op instead of a wait on a loop
+        that will never run again.
+        """
+        self._window = None
+
     def _dispatch_envelope(
         self, event_name: str, payload: dict[str, Any], operation_id: str = "", terminal: bool = False
     ) -> None:
@@ -321,7 +385,8 @@ class DesktopApi:
         marks the final event of an operation so the frontend can reject any
         non-terminal event that arrives late for a completed operation.
         """
-        if not self._window:
+        window = self._window
+        if not window:
             return
         self._last_heartbeat_time = time.time()
         seq = next(self._sequence_counter)
@@ -334,8 +399,40 @@ class DesktopApi:
             "payload": payload,
         }
         script = f"window.__onBridgeEvent && window.__onBridgeEvent({json.dumps(envelope)})"
-        with contextlib.suppress(Exception):
-            self._window.evaluate_js(script)
+        self._deliver_bridge_event(window, script)
+
+    def _deliver_bridge_event(self, window: Any, script: str) -> None:
+        """Deliver one bridge event without ever stranding the calling worker.
+
+        The delivery is synchronous so the caller observes the event before it
+        returns and the frontend receives envelopes in the exact sequence order
+        it validates against.
+
+        The pywebview GTK backend's ``evaluate_js`` schedules the call on the
+        GTK main loop and waits on a semaphore that is never released once the
+        main loop has stopped. An inline call on a closing window therefore
+        blocks the worker for the lifetime of the process. The call is made on
+        a helper thread and awaited with a bounded timeout; on timeout the
+        helper is abandoned (it is a daemon thread, so it cannot hold the
+        process open) and the event is dropped, which is correct because the
+        frontend is gone along with the window.
+        """
+        delivered = threading.Event()
+
+        def _run() -> None:
+            try:
+                with contextlib.suppress(Exception):
+                    window.evaluate_js(script)
+            finally:
+                delivered.set()
+
+        helper = threading.Thread(target=_run, name="bridge-delivery", daemon=True)
+        helper.start()
+        budget = self._bridge_delivery_timeout_seconds
+        if not delivered.wait(budget):
+            logging.warning(
+                "Bridge event delivery timed out after %.1fs; the window is closing", budget
+            )
 
     def _on_scan_progress(self, scan_id: str, count: int) -> None:
         self._dispatch_envelope("scan.progress", {"scanId": scan_id, "count": count}, operation_id=scan_id)
@@ -457,9 +554,130 @@ class DesktopApi:
             except Exception as exc:
                 logging.warning("Could not write ready marker: %s", exc)
         if "--gui-smoke-test" in sys.argv and self._window:
-            # Destroy window after bridge response completes so clean machine tests exit promptly
-            threading.Timer(0.5, self._window.destroy).start()
+            if os.environ.get("PREVIEWGEN_CSP_MARKER"):
+                if self._csp_smoke_started.acquire(blocking=False):
+                    threading.Thread(target=self._run_csp_selftest_then_close, daemon=True).start()
+            else:
+                # Destroy window after bridge response completes so clean machine tests exit promptly
+                threading.Timer(0.5, self._window.destroy).start()
         return {"ok": True, "value": "ready", "error": None}
+
+    def _run_csp_selftest_then_close(self) -> None:
+        """Write one smoke verdict before closing the native window."""
+        try:
+            outcome = self._probe_packaged_csp()
+        except Exception as exc:
+            logging.warning("CSP smoke probe could not complete: %s", exc)
+            outcome = {"error": "CSP_PROBE_UNAVAILABLE"}
+        try:
+            marker = os.environ["PREVIEWGEN_CSP_MARKER"]
+            Path(marker).write_text(json.dumps(outcome, sort_keys=True) + "\n", encoding="utf-8")
+        except (OSError, KeyError):
+            logging.exception("Could not write CSP smoke verdict")
+        finally:
+            if self._window is not None:
+                self._window.destroy()
+
+    def report_csp_violations(self, violations: list[dict[str, Any]]) -> dict[str, Any]:
+        """Log diagnostics sent by the frontend, not a policy enforcement verdict.
+
+        Deliberate smoke probes may themselves generate violations. Some engines
+        omit these events, so the smoke gate uses a separate result file.
+        """
+        marker = os.environ.get("PREVIEWGEN_CSP_VIOLATIONS")
+        recorded: list[dict[str, Any]] = []
+        if isinstance(violations, list):
+            for entry in violations[:100]:
+                if not isinstance(entry, dict):
+                    continue
+                recorded.append(
+                    {
+                        "effectiveDirective": str(entry.get("effectiveDirective", "")),
+                        "blockedURI": str(entry.get("blockedURI", "")),
+                        "violatedDirective": str(entry.get("violatedDirective", "")),
+                        "resourceType": str(entry.get("resourceType", "")),
+                    }
+                )
+        for violation in recorded:
+            logging.warning(
+                "Content Security Policy violation: directive=%s blocked=%s resource=%s",
+                violation["effectiveDirective"],
+                violation["blockedURI"],
+                violation["resourceType"],
+            )
+        if marker and recorded:
+            try:
+                with open(marker, "a", encoding="utf-8") as handle:
+                    for violation in recorded:
+                        handle.write(json.dumps(violation, sort_keys=True) + "\n")
+            except Exception as exc:
+                logging.warning("Could not write CSP violation marker: %s", exc)
+        return {"ok": True, "value": len(recorded), "error": None}
+
+    def _probe_packaged_csp(self) -> dict[str, Any]:
+        """Exercise script-src and the loopback JPEG control in the live WebView."""
+        from PIL import Image
+
+        window = self._window
+        if window is None:
+            return {"error": "NO_WINDOW"}
+
+        with Image.new("RGB", (8, 8), "red") as image, io.BytesIO() as buffer:
+            image.save(buffer, "JPEG")
+            url = self.preview_server.publish_jpeg(buffer.getvalue())
+        try:
+            # Both scripts write only a smoke sentinel. Inline scripts execute
+            # synchronously on insertion; the blob has no DNS or network path.
+            script = """
+              (() => {
+                const result = window.__pgCsp = {
+                  inlineScript: 'blocked', blobScript: 'pending', previewJpeg: 'pending'
+                };
+                const inline = document.createElement('script');
+                inline.textContent = "window.__pgCsp.inlineScript = 'executed'";
+                document.head.appendChild(inline);
+                inline.remove();
+
+                const external = document.createElement('script');
+                const blobUrl = URL.createObjectURL(new Blob(
+                  ["window.__pgCsp.blobScript = 'executed'"], { type: 'text/javascript' }
+                ));
+                function finishScript() {
+                  URL.revokeObjectURL(blobUrl);
+                  external.remove();
+                }
+                external.onload = () => {
+                  if (result.blobScript === 'pending') result.blobScript = 'unexpected-load';
+                  finishScript();
+                };
+                external.onerror = () => { result.blobScript = 'blocked'; finishScript(); };
+                external.src = blobUrl;
+                document.head.appendChild(external);
+
+                const preview = new Image();
+                preview.onload = () => {
+                  result.previewJpeg = preview.naturalWidth === 8 && preview.naturalHeight === 8
+                    ? 'loaded' : 'invalid-image';
+                };
+                preview.onerror = () => { result.previewJpeg = 'error'; };
+                preview.src = __PREVIEW_URL__;
+                return true;
+              })()
+            """.replace("__PREVIEW_URL__", json.dumps(url))
+            window.evaluate_js(script)
+            deadline = time.monotonic() + 8.0
+            outcome = {"inlineScript": "pending", "blobScript": "pending", "previewJpeg": "pending"}
+            while time.monotonic() < deadline:
+                raw = window.evaluate_js("JSON.stringify(window.__pgCsp)")
+                observed = json.loads(raw)
+                outcome = {key: str(observed[key]) for key in outcome}
+                if "pending" not in outcome.values():
+                    break
+                time.sleep(0.1)
+            return outcome
+        finally:
+            self.preview_server.release_jpeg(url)
+
     def get_initial_state(self) -> dict[str, Any]:
         """Load persistent user preferences with schema version validation."""
         validated = load_settings()
@@ -534,9 +752,8 @@ class DesktopApi:
         if not self._window:
             return {"ok": False, "value": None, "error": "Native file picker is unavailable"}
         try:
-            res = self._window.create_file_dialog(
-                int(__import__("webview").OPEN_DIALOG), allow_multiple=True,
-            )
+            open_kind = _resolve_file_dialog_kind("OPEN")
+            res = self._window.create_file_dialog(open_kind, allow_multiple=True)
             if not res:
                 return {"ok": True, "value": {"files": [], "rejected": []}, "error": None}
             files: list[dict[str, Any]] = []
@@ -597,7 +814,8 @@ class DesktopApi:
         if not self._window:
             return ""
         try:
-            res = self._window.create_file_dialog(int(__import__('webview').FOLDER_DIALOG))
+            folder_kind = _resolve_file_dialog_kind("FOLDER")
+            res = self._window.create_file_dialog(folder_kind)
             path = res[0] if res else ""
             if path:
                 self._add_authorized_input_folder(path)
@@ -611,7 +829,8 @@ class DesktopApi:
         if not self._window:
             return ""
         try:
-            res = self._window.create_file_dialog(int(__import__('webview').FOLDER_DIALOG))
+            folder_kind = _resolve_file_dialog_kind("FOLDER")
+            res = self._window.create_file_dialog(folder_kind)
             path = res[0] if res else ""
             if path:
                 self._add_authorized_output_folder(path)
@@ -624,8 +843,9 @@ class DesktopApi:
         if not self._window:
             return ""
         try:
+            open_kind = _resolve_file_dialog_kind("OPEN")
             res = self._window.create_file_dialog(
-                int(__import__('webview').OPEN_DIALOG),
+                open_kind,
                 file_types=(
                     "Image Files (*.png;*.webp;*.svg;*.ico;*.jpg;*.jpeg)",
                     "*.png;*.webp;*.svg;*.ico;*.jpg;*.jpeg",
@@ -645,8 +865,9 @@ class DesktopApi:
         if not self._window:
             return ""
         try:
+            open_kind = _resolve_file_dialog_kind("OPEN")
             res = self._window.create_file_dialog(
-                int(__import__('webview').OPEN_DIALOG),
+                open_kind,
                 file_types=("Font Files (*.ttf;*.otf;*.woff;*.woff2)", "*.ttf;*.otf;*.woff;*.woff2")
             )
             selected = res[0] if res else ""
@@ -1152,18 +1373,12 @@ class DesktopApi:
             cfg = PreviewConfig.from_mapping(config_dict, mode="strict-export")
             out_dir.mkdir(parents=True, exist_ok=True)
 
-            dest_file = protect_source_destinations(
-                out_dir / f"{source_path.stem}.jpg", {source_path.resolve()}
+            dest_file, skipped = _resolve_export_destination(
+                out_dir,
+                source_path.stem,
+                cfg.overwrite_policy,
+                {source_path.resolve()},
             )
-            skipped = False
-            if dest_file.exists():
-                if cfg.overwrite_policy == "skip":
-                    skipped = True
-                elif cfg.overwrite_policy == "rename":
-                    counter = 1
-                    while dest_file.exists() or dest_file.resolve() == source_path.resolve():
-                        dest_file = out_dir / f"{source_path.stem}_copy{counter}.jpg"
-                        counter += 1
 
             if not skipped:
                 render_file_isolated(source_path, dest_file, cfg, timeout_seconds=60.0)
@@ -1307,6 +1522,10 @@ class DesktopApi:
 
     def cleanup(self) -> None:
         """Orderly shutdown sequence."""
+        # Detach the window first. A worker that finishes during shutdown would
+        # otherwise call evaluate_js on a window whose main loop has stopped,
+        # which blocks that worker forever on GTK.
+        self._detach_window()
         with self._scan_page_lock:
             self._scan_page_state = None
         self.comparison_coordinator.close()

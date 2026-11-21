@@ -236,3 +236,90 @@ Native installer operation, Windows/macOS idle behaviour, renderer image fidelit
 against an independent oracle, and code signing/notarization remain unproven —
 they need real machines and signed artifacts, and are tracked in
 `docs/engineering/2026-10-28-audit-verification-progress-and-release-plan.md`.
+
+## November audit continuation — packaged WebView and release evidence
+
+- **Windows idle (#19):** The freeze reproduced, and its cause is confirmed.
+  The *installed* 2.1.2 build gave 1 responsive and 100 unresponsive samples
+  over 300 seconds, and its log shows the pywebview bridge walking
+  `window.native...` — the injection storm that PR #74 fixed. That installed
+  build predates the fix commit `de1b6e6`. The CI candidate that **contains**
+  the fix gave 99 responsive, 0 unresponsive and a monitor exit code of 0,
+  with no bridge injection errors in its own log. The bridge fix therefore
+  removes the freeze on Windows at 100% DPI. The portable build's earlier
+  probe failed differently: 83 responsive samples, then 18 with no window, and
+  an orderly shutdown with no established cause. See
+  `docs/WINDOWS_HANG_INVESTIGATION.md` for exact artifacts, runtime and
+  evidence. Still open: the installed build, the installer/upgrade/uninstall
+  path, and the 125/150/200% DPI matrix.
+- **CSP (#20):** Clean-machine CI now checks the live bridge and a decoded
+  loopback JPEG, together with denial of inline and blob scripts. Socket
+  errors and elapsed time are not accepted as proof of a CSP block. A Linux
+  WebKitGTK run of the desktop runtime blocked both scripts with the
+  production bundle; removing the CSP from a throwaway copy executed both
+  scripts and failed the checker while the JPEG still decoded. The broader
+  WebKitGTK harness matched all 11 expected outcomes, with three engine
+  refusals captured. The fresh local PyInstaller build timed out; exact
+  packaged verdicts for this change remain unverified. CSP is not a sandbox.
+- **Release (#22):** Tagged CI stages a draft instead of publishing a stable
+  release after smoke tests alone. The checksum step rejects missing
+  binaries. Review exact-artifact receipts before publishing. The
+  Windows CI candidate's portable EXE and setup both reported `NotSigned`
+  through Windows Authenticode; they are not signing evidence.
+  The signing gate now *reads the signature back* instead of trusting
+  `signtool sign` to exit zero: the Windows job verifies the Authenticode
+  status of both `PreviewGen.exe` and `PreviewGen-Setup.exe`, requires a
+  signer certificate, and requires an RFC3161 timestamp, so an unsigned or
+  untimestamped artifact fails the build. The release job now produces a
+  detached GPG signature over `SHA256SUMS.txt`, verifies that signature
+  before publishing it, and publishes the public key beside it. `install.ps1`
+  now verifies that detached signature against the published key and reads
+  back the installer's Authenticode signature, instead of trusting a
+  checksum fetched from the same release it is supposed to protect. These
+  are enforced by `tests/unit/test_ci_workflow_config.py`.
+  Still open: the signing material (`WINDOWS_CERTIFICATE`, `MACOS_CERTIFICATE`,
+  `GPG_PRIVATE_KEY`, `GPG_KEY_ID`) is not configured in this repository, so
+  no signed release can be produced until those secrets are supplied, and the
+  Windows candidate still reports `NotSigned`.
+- **Renderers (#60):** The strict gate is implemented and fails correctly.
+  `scripts/audit_renderer_matrix.py --verify-fixtures --strict` was run
+  against the current tree and reported: 11 of 46 previewable extensions have
+  a fixture, all 12 fixtures render without failure, and **0 of 12** have an
+  independently approved visual oracle. The 35 extensions without a fixture
+  are `.abr`, `.afdesign`, `.afphoto`, `.afpub`, `.ai`, `.blend`, `.bmp`,
+  `.brush`, `.brushset`, `.clip`, `.dwg`, `.eps`, `.f3d`, `.gif`, `.gltf`,
+  `.ico`, `.iges`, `.indd`, `.jpeg`, `.kra`, `.ma`, `.max`, `.mb`, `.otf`,
+  `.ply`, `.procreate`, `.stl`, `.stp`, `.svgz`, `.tif`, `.tiff`, `.ttf`,
+  `.webp`, `.woff`, `.woff2`.
+  The gate already refuses synthetic oracles, requires an identified
+  independent source application with a version, and requires a named human
+  reviewer, so the remaining work cannot be completed by generating more
+  fixtures: it needs licensed, versioned authoring-application samples and a
+  recorded human review of each reference image. The capability catalog is
+  consistent (`advertisedWithoutCapability` and
+  `catalogWithoutAdvertisedExtension` are both empty) and every format
+  declares its own fidelity caveat, so the app does not overpromise.
+  Report: `renderer-matrix-local.json`.
+- **Studio 2.2 (#23):** The engineering and UX work in this tracker is
+  complete; the release work is not. Resizable panels, the command palette,
+  the bounded thumbnail browser and the native Add Files path are all
+  implemented. An axe-core 4.13.0 audit of the production bundle in a real
+  browser engine found and fixed three accessibility defects: invalid
+  grid-only ARIA (`aria-rowcount`/`aria-rowindex`) on the asset listbox,
+  a format badge dimmed with `opacity: 0.6` that measured 3.91–4.21:1
+  against the surface, and two independently scrolling panes that were not
+  keyboard reachable. The audit now reports **0 violations** in both light
+  and dark themes. See `docs/PREMIUM_UI_UX_PLAN.md`.
+  The frontend test run also reported `Errors 1` while every test passed.
+  Vitest exits non-zero on an unhandled error, so this would have failed the
+  CI gate despite a green test list. The cause was real: `useBackend` awaited
+  `ApiBridge.getApi(4000)` outside its error boundary, and reading
+  `window.pywebview.api` can throw while pywebview tears the bridge down
+  mid-navigation. The wait is now guarded, and `ApiBridge` reads the live
+  bridge through a helper that cannot let a teardown throw. A regression test
+  drives a throwing `window.pywebview` getter and asserts the handshake
+  resolves rather than rejects.
+  Keep open: source tests and native smoke are distinct from installed
+  workflows, cross-platform grants and picker acceptance, release signing
+  and independent visual fidelity. The Windows and macOS DPI matrix,
+  real screen-reader behaviour, and a signed release remain unverified.

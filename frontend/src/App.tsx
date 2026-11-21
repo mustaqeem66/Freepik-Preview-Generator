@@ -142,6 +142,21 @@ export default function App() {
   const { isProcessing, canCancelBatch, batchStatus, progress, stats, batchErrors, truncationReasons, discovered,
     requiresTruncationAck, acknowledgeTruncation, startBatch, cancelBatch } = useBatch();
   const busy = isProcessing || isExporting || pickerBusy;
+  const batchStartBlockedReason = !capabilities.canBatchGenerate
+    ? (isBrowserDemo
+      ? "Batch export runs in the desktop app. In the browser demo, download a single JPG instead."
+      : "Batch export needs the desktop backend.")
+    : !scanReady
+      ? (usingFiles ? "Add individual artwork files to export them." : "Choose a source folder to export its assets.")
+      : !destinationReady
+        ? "Choose an output folder for the exported JPGs."
+        : fileList.length === 0
+          ? "No assets are ready to export."
+          : requiresTruncationAck
+            ? "Acknowledge the truncation notice before exporting."
+            : busy
+              ? "Wait for the current operation to finish."
+              : undefined;
   const is3D = activeFile?.is_3d === true;
   const lifecycle: LifecycleState = isProcessing ? (batchStatus === "batch-cancelling" ? batchStatus : "generating")
     : !usingFiles && isScanning ? (scanStatus === "scan-cancelling" ? scanStatus : "scanning")
@@ -391,7 +406,8 @@ export default function App() {
     } : isWideWorkspace ? {
       gridTemplateColumns: `${actualLibraryWidth}px 6px minmax(280px, 1fr) 6px ${actualInspectorWidth}px`
     } : undefined}>
-      {!isFocused && <aside className="library-pane" aria-label="Asset library" ref={libraryScrollRef}>
+      {!isFocused && <aside className="library-pane" aria-label="Asset library" ref={libraryScrollRef}
+        tabIndex={0}>
         <div className="library-scroll-content">
         <FolderPicker inputFolder={state.inputFolder} outputFolder={state.outputFolder} sameFolder={state.sameFolder}
           forceSeparateOutput={usingFiles}
@@ -487,12 +503,14 @@ export default function App() {
           ); }}
           onCancelBatch={() => void cancelBatch()} canStart={capabilities.canBatchGenerate && !busy && scanReady && destinationReady &&
             fileList.length > 0 && !requiresTruncationAck}
+          disabledReason={batchStartBlockedReason}
           canOpenOutput={Boolean(usingFiles ? state.outputFolder : state.inputFolder) && capabilities.canOpenReport && !busy}
           onOpenOutput={() => void openOutput()} />
       </section>
       {!isFocused && isWideWorkspace && <PaneResizer label="Resize inspector" value={actualInspectorWidth}
         initial={300} min={260} max={380} reverse onChange={setInspectorWidth} />}
-      {!isFocused && <aside className="inspector-pane" aria-label="Preview inspector" ref={inspectorScrollRef}>
+      {!isFocused && <aside className="inspector-pane" aria-label="Preview inspector" ref={inspectorScrollRef}
+        tabIndex={0}>
         <div className="inspector-scroll-content">
         <div className="inspector-heading"><h2>Inspector</h2><span className="muted">Live adjustments</span></div>
         <fieldset disabled={busy || !isLoaded}><legend className="sr-only">Preview settings</legend>
