@@ -1,0 +1,16 @@
+{
+  "name": "previewgen-promo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deterministic renderer for the PreviewGen promotional video.",
+  "type": "module",
+  "scripts": {
+    "render": "node render.mjs",
+    "encode": "node encode.mjs",
+    "build": "node render.mjs && node encode.mjs"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "playwright-core": "^1.56.0"
+  }
+}

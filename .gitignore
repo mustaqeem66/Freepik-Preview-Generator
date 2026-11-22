@@ -58,7 +58,13 @@ input_png/
 !preview.png
 !preview-light.png
 !preview-dark.png
+!preview-promo.webp
+!preview-promo.mp4
+!preview-promo-poster.jpg
 !app.ico
+# Promo source assets: the real exports the promo video plays back.
+!promo/public/assets/*.jpg
+!promo/public/assets/*.webp
 
 # Allow deterministic render fixtures (must ship for the release render gate)
 !tests/fixtures/*.jpg
