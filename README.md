@@ -25,14 +25,6 @@ Choose artwork, refine its presentation and generate consistent JPG previews in 
   <img src="https://img.shields.io/badge/Linux-AppImage-FCC624" alt="Linux">
 </p>
 
-<p>
-  <a href="https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/latest">
-    <img src="preview-promo.webp" alt="PreviewGen promo: fifty files become one consistent signature" width="900">
-  </a>
-</p>
-
-<p><sub>28-second tour: the batch grind, the diagonal-split signature, and one run across every file.</sub></p>
-
 </div>
 
 ---
@@ -89,16 +81,6 @@ PreviewGen prepares presentation images; each marketplace still determines its o
 | :---: | :---: |
 | ![PreviewGen Studio dark interface](preview-dark.png) | ![PreviewGen Studio light interface](preview-light.png) |
 | The asset library on the left, the live preview in the middle, every adjustment on the right | The same studio in a bright theme, with the signature diagonal split and printed checkerboard |
-
-### 🎞️ The 28-second tour
-
-<p>
-  <a href="https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/latest">
-    <img src="preview-promo.webp" alt="PreviewGen promo: fifty files become one consistent signature" width="900">
-  </a>
-</p>
-
-<p>The grind of doing it by hand, the turn to one reusable signature, and a single run that exports the whole batch.</p>
 
 ## 👩‍🎨 Who is PreviewGen for?
 
@@ -302,7 +284,7 @@ PreviewGen reads the formats these applications author. The marks below identify
 
 | Procreate | Clip Studio Paint | Krita | Affinity Designer | Affinity Photo | Affinity Publisher |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| ![Procreate](docs/logos/procreate.webp) | ![Clip Studio Paint](docs/logos/clip-studio-paint.png) | ![Krita](docs/logos/krita.svg) | ![Affinity Designer](docs/logos/affinity-designer.svg) | ![Affinity Photo](docs/logos/affinity-photo.svg) | ![Affinity Publisher](docs/logos/affinity-publisher.svg) |
+| <img src="docs/logos/procreate.webp" width="24" height="24" alt="Procreate"> | <img src="docs/logos/clip-studio-paint.png" width="24" height="24" alt="Clip Studio Paint"> | ![Krita](docs/logos/krita.svg) | ![Affinity Designer](docs/logos/affinity-designer.svg) | ![Affinity Photo](docs/logos/affinity-photo.svg) | ![Affinity Publisher](docs/logos/affinity-publisher.svg) |
 | `PROCREATE` `BRUSH` `BRUSHSET` | `CLIP` | `KRA` | `AFDESIGN` | `AFPHOTO` | `AFPUB` |
 
 ### 3D & CAD
