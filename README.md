@@ -80,7 +80,7 @@ PreviewGen prepares presentation images; each marketplace still determines its o
 | Dark Studio | Light Studio |
 | :---: | :---: |
 | ![PreviewGen Studio dark interface](preview-dark.png) | ![PreviewGen Studio light interface](preview-light.png) |
-| Comfortable for detail-focused creative work | A clean, bright workspace for everyday editing |
+| The asset library on the left, the live preview in the middle, every adjustment on the right | The same studio in a bright theme, with the signature diagonal split and printed checkerboard |
 
 ## 👩‍🎨 Who is PreviewGen for?
 
