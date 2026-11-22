@@ -91,17 +91,33 @@ class PreviewFileServer:
         # Reference counts per preview handle (filename). A preview addressed by
         # several consumers survives until the last one releases it.
         self._refs: dict[str, int] = {}
+        # Bind the listening socket now, while the constructor runs on the
+        # thread that created this object. ``bind()`` issued from a worker
+        # thread yields a loopback socket that some kernels (WSL2 among them)
+        # refuse to route connections to: the socket sits in LISTEN state and
+        # the port looks bound, but every connect is answered with ECONNREFUSED.
+        # The preview coordinator publishes from a worker thread, so binding
+        # lazily on the first publish put the listener exactly where the
+        # kernel stopped routing to it. Binding eagerly in the constructor
+        # keeps the listener on the creating thread; the accept loop still
+        # runs on its own daemon thread.
+        self.start()
 
     @property
     def running(self) -> bool:
         return self._httpd is not None
 
     def start(self) -> None:
-        """Start the server on a loopback ephemeral port (idempotent).
+        """Bind the loopback socket and start serving (idempotent).
 
         ``stop()`` is terminal: it is called from the one-way application
         teardown, and a late preview request must not rebind a port and recreate
         the session directory behind a shutdown that already happened.
+
+        The socket is bound here, on the calling thread, and the accept loop
+        runs on its own daemon thread. Callers reach this method from the
+        constructor (the main thread) and from ``publish_jpeg`` (a preview
+        coordinator worker thread); only the first call binds.
         """
         if self._stopped:
             raise RuntimeError("preview file server has been stopped")
@@ -110,29 +126,51 @@ class PreviewFileServer:
         logging.info("Preview file server: creating the session directory")
         self._root = create_temp_dir("previewgen_preview_")
         logging.info("Preview file server: binding the loopback socket")
-        httpd = _PreviewHTTPServer(("127.0.0.1", 0), _PreviewRequestHandler)
+        try:
+            httpd = _PreviewHTTPServer(("127.0.0.1", 0), _PreviewRequestHandler)
+        except OSError:
+            # The session directory was created before the bind, so a failed
+            # bind has to take it down again; otherwise every failed start
+            # leaves an orphaned temp directory behind.
+            if self._root is not None:
+                safe_rmtree(self._root, "preview server temp [failed bind]")
+                self._root = None
+            raise
         httpd.preview_server = self
         self._httpd = httpd
         self._port = int(httpd.server_address[1])
         self._thread = threading.Thread(target=httpd.serve_forever, name="preview-http", daemon=True)
         self._thread.start()
-        self._wait_until_accepting()
+        if not self._wait_until_accepting():
+            # The socket is bound but the kernel will not route to it. This is
+            # the exact failure the eager bind exists to prevent, so it is
+            # logged loudly instead of surfacing later as an unexplained
+            # "Preview unavailable" in the UI.
+            logging.error(
+                "Preview file server bound 127.0.0.1:%d but the port never accepted a connection; "
+                "previews will not load",
+                self._port,
+            )
         logging.info("Preview file server listening on 127.0.0.1:%d", self._port)
 
-    def _wait_until_accepting(self, timeout: float = 2.0) -> None:
+    def _wait_until_accepting(self, timeout: float = 2.0) -> bool:
         """Block briefly until the loopback port actually accepts connections.
 
         On some kernels (notably WSL2) a freshly bound listening socket can
         refuse a connection for a few milliseconds. Waiting here guarantees a
         published URL is immediately fetchable by the webview.
+
+        Returns ``True`` once the port accepts a connection, ``False`` if the
+        timeout expired without one.
         """
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             try:
                 with socket.create_connection(("127.0.0.1", self._port), timeout=0.25):
-                    return
+                    return True
             except OSError:
                 time.sleep(0.01)
+        return False
 
     def publish_jpeg(self, data: bytes) -> str:
         """Persist a preview JPEG and return the loopback URL that serves it."""

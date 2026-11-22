@@ -159,6 +159,73 @@ def test_stop_is_terminal_and_does_not_resurrect_the_listener():
     assert server._httpd is None
 
 
+def test_preview_published_from_a_worker_thread_is_reachable_over_loopback():
+    """A preview published off the main thread must still be fetchable.
+
+    The preview coordinator publishes from its own worker thread, not the
+    main thread. On kernels that refuse to route connections to a loopback
+    socket bound from a worker thread (WSL2 among them), binding lazily on
+    the first publish produced a listener that sat in LISTEN state while
+    every connect was answered with ECONNREFUSED: the UI showed
+    "Preview unavailable" and the image never loaded.
+
+    The server binds in its constructor, so the socket is created on the
+    thread that constructed it. This test drives the production path --
+    publish from a worker thread -- and fetches the result.
+    """
+    import threading
+
+    srv = PreviewFileServer()
+    try:
+        published: dict[str, str] = {}
+
+        def _publish() -> None:
+            published["url"] = srv.publish_jpeg(JPEG_BYTES)
+
+        worker = threading.Thread(target=_publish, name="preview-coordinator-test")
+        worker.start()
+        worker.join(timeout=10)
+        assert not worker.is_alive(), "the publishing worker did not finish"
+
+        url = published["url"]
+        with _get(url) as resp:
+            assert resp.status == 200
+            assert resp.read() == JPEG_BYTES
+    finally:
+        srv.stop()
+
+
+def test_a_failed_bind_does_not_leave_an_orphaned_session_directory(monkeypatch):
+    """A bind that cannot succeed must not strand the session temp directory.
+
+    The session directory is created before the socket is bound, so a bind
+    failure has to take the directory down again. Otherwise every failed
+    start leaves an orphaned temp directory on disk.
+    """
+    import previewgen.preview_server as preview_server_module
+
+    created: list = []
+    real_create = preview_server_module.create_temp_dir
+
+    def _track(prefix: str):
+        path = real_create(prefix)
+        created.append(path)
+        return path
+
+    def _fail_bind(*args, **kwargs):
+        raise OSError("no ephemeral ports available")
+
+    monkeypatch.setattr(preview_server_module, "create_temp_dir", _track)
+    monkeypatch.setattr(preview_server_module, "_PreviewHTTPServer", _fail_bind)
+
+    with pytest.raises(OSError, match="no ephemeral ports available"):
+        PreviewFileServer()
+
+    assert created, "the session directory was never created"
+    for path in created:
+        assert not path.exists(), f"the failed bind left {path} behind"
+
+
 def test_binding_the_preview_server_never_performs_a_reverse_dns_lookup(monkeypatch):
     """Publishing a preview must not depend on a DNS resolver answering.
 
