@@ -43,6 +43,14 @@ property of their respective owners and are used here for identification only.
 - `krita.svg` had no `viewBox` in its source; a `0 0 1024 1024` viewBox was
   added to match its declared 1024×1024 user-space geometry. This is a
   rendering fix only — the artwork is unmodified.
+- The two raster marks are rendered at `width="24" height="24"` in the README
+  with HTML `<img>` tags, because Markdown image syntax cannot size an image
+  and the SVGs above size themselves from their own `width` and `height`.
+- `procreate.webp` had its flat `#242424` backing plate removed by a border
+  flood fill, so only the brush mark carries pixels. The removal was verified
+  pixel-by-pixel: every pixel of the mark itself is byte-identical to the
+  source. The result was then cropped to the mark's bounding box so it fills
+  its cell like the other marks.
 - Marks sourced from Iconify and Simple Icons use `fill="currentColor"`, which
   renders in the reader's text colour and stays legible on both the light and
   dark GitHub README themes.

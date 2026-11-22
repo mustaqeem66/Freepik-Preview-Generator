@@ -302,7 +302,7 @@ PreviewGen reads the formats these applications author. The marks below identify
 
 | Procreate | Clip Studio Paint | Krita | Affinity Designer | Affinity Photo | Affinity Publisher |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| ![Procreate](docs/logos/procreate.webp) | ![Clip Studio Paint](docs/logos/clip-studio-paint.png) | ![Krita](docs/logos/krita.svg) | ![Affinity Designer](docs/logos/affinity-designer.svg) | ![Affinity Photo](docs/logos/affinity-photo.svg) | ![Affinity Publisher](docs/logos/affinity-publisher.svg) |
+| <img src="docs/logos/procreate.webp" width="24" height="24" alt="Procreate"> | <img src="docs/logos/clip-studio-paint.png" width="24" height="24" alt="Clip Studio Paint"> | ![Krita](docs/logos/krita.svg) | ![Affinity Designer](docs/logos/affinity-designer.svg) | ![Affinity Photo](docs/logos/affinity-photo.svg) | ![Affinity Publisher](docs/logos/affinity-publisher.svg) |
 | `PROCREATE` `BRUSH` `BRUSHSET` | `CLIP` | `KRA` | `AFDESIGN` | `AFPHOTO` | `AFPUB` |
 
 ### 3D & CAD
