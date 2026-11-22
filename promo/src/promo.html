@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PreviewGen — promo</title>
+<style>
+  @font-face{font-family:"Bricolage";src:url("../public/fonts/bricolage.woff2") format("woff2");font-weight:100 900;font-display:block}
+  @font-face{font-family:"Instrument Serif";src:url("../public/fonts/instrument-serif.woff2") format("woff2");font-weight:400;font-display:block}
+  @font-face{font-family:"DM Sans";src:url("../public/fonts/dm-sans.woff2") format("woff2");font-weight:100 1000;font-display:block}
+
+  :root{
+    --bg:#111113; --soft:#1b1b1f; --line:#343239;
+    --text:#f6f3ef; --muted:#b6b2bd;
+    --lilac:#d1bfff; --mint:#b5ddca; --paper:#baa2db;
+  }
+
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg)}
+  body{font-family:"DM Sans",system-ui,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased}
+
+  #stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:var(--bg)}
+  .scene{position:absolute;inset:0;opacity:0;will-change:opacity;z-index:2}
+
+  #grain{position:absolute;inset:-80px;opacity:.045;pointer-events:none;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='220' height='220' filter='url(%23n)'/></svg>")}
+  #vig{position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(122% 94% at 50% 44%, transparent 40%, rgba(0,0,0,.34) 80%, rgba(0,0,0,.68) 100%)}
+
+  /* ── kinetic type primitives ───────────────────────────────── */
+  /* The mask box is slightly wider than the glyphs so descenders and italic
+     overhang are not clipped. The negative margin cancels that extra width so
+     the optical spacing between words matches the raw text. */
+  .line{display:block;overflow:hidden;padding:0 .09em;margin:0 -.09em}
+  .w{display:inline-block;overflow:hidden;vertical-align:top;padding:0 .05em;margin:0 -.05em}
+  .wi{display:inline-block;will-change:transform,opacity,filter}
+
+  .display{font-family:"Bricolage",system-ui,sans-serif;font-weight:600;letter-spacing:-.045em;line-height:.94}
+  .serif{font-family:"Instrument Serif",Georgia,serif;font-weight:400;font-style:italic;letter-spacing:-.01em}
+
+  /* ── shared chrome ─────────────────────────────────────────── */
+  .topbar{position:absolute;top:54px;left:64px;right:64px;display:flex;align-items:center;justify-content:space-between}
+  .brand{display:flex;align-items:center;gap:14px}
+  .brand svg{width:34px;height:34px;color:var(--text);display:block}
+  .brand span{font-family:"Bricolage",sans-serif;font-weight:600;font-size:26px;letter-spacing:-.03em}
+  .tl{font-family:"DM Sans",sans-serif;font-weight:700;font-size:17px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .tl b{color:var(--lilac);font-weight:700}
+
+  /* ══ S1 · hook ══════════════════════════════════════════════ */
+  /* Every slot sits at the same origin so words replace each other in place. */
+  #s1 .stack{position:absolute;left:118px;top:318px;width:1040px}
+  /* Each slot occupies the same band, so a new line replaces the old one in
+     place instead of stacking up. The punchline sits below the headline. */
+  #s1 .slot{position:absolute;left:0;width:1040px}
+  #s1 .slot.a{top:0}
+  #s1 .slot.b{top:0}
+  #s1 .slot.c{top:196px}
+  #s1 .a{font-size:150px;line-height:.92;white-space:nowrap}
+  #s1 .b{font-size:96px;line-height:.98;white-space:nowrap}
+  #s1 .c{font-family:"Instrument Serif",serif;font-style:italic;font-size:44px;color:var(--muted);line-height:1.15}
+  .flash{position:absolute;left:118px;top:318px;width:12px;height:12px;margin-top:56px;border-radius:50%;
+    background:var(--lilac);opacity:0;mix-blend-mode:screen}
+
+  /* ══ the card cluster (shared across S1–S5) ═════════════════ */
+  #cards{position:absolute;inset:0;pointer-events:none;z-index:1}
+  .card{position:absolute;left:0;top:0;width:196px;height:196px;border-radius:4px;overflow:hidden;
+    box-shadow:0 26px 48px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06);
+    will-change:transform,opacity,filter}
+  .card img{width:100%;height:100%;object-fit:cover;display:block}
+
+  /* ══ S2 · the grind ═════════════════════════════════════════ */
+  #s2 .col{position:absolute;left:118px;top:270px;width:900px}
+  .step{display:flex;align-items:baseline;gap:30px;margin-bottom:30px;white-space:nowrap}
+  .step .n{font-family:"DM Sans",sans-serif;font-weight:700;font-size:19px;letter-spacing:.2em;color:var(--lilac);width:54px;flex:none}
+  .step .t{font-family:"Bricolage",sans-serif;font-weight:600;font-size:68px;letter-spacing:-.04em;line-height:1}
+  .step .x{font-family:"DM Sans",sans-serif;font-weight:600;font-size:30px;color:var(--muted);letter-spacing:.02em}
+  #s2 .count{position:absolute;left:118px;bottom:118px;text-align:left}
+  #s2 .count .n{font-family:"Bricolage",sans-serif;font-weight:600;font-size:190px;line-height:.8;letter-spacing:-.05em}
+  #s2 .count .cap{font-size:18px;letter-spacing:.24em;color:var(--muted);margin-top:18px;text-transform:uppercase;font-weight:700}
+
+  /* ══ S3 · the turn ══════════════════════════════════════════ */
+  #s3 .center{position:absolute;left:118px;top:250px;display:flex;flex-direction:column;align-items:flex-start;gap:20px}
+  #s3 .word{font-size:150px;line-height:.9;white-space:nowrap}
+  .wipeband{position:absolute;top:-20%;bottom:-20%;width:300px;background:linear-gradient(90deg,transparent,var(--lilac),transparent);
+    filter:blur(30px);opacity:0;mix-blend-mode:screen;pointer-events:none}
+
+  /* ══ S4 · the product ═══════════════════════════════════════ */
+  #s4 .stagebox{position:absolute;left:50%;top:446px;transform:translate(-50%,-50%);width:660px;height:660px}
+  .shot{position:absolute;inset:0}
+  .shot .frame{position:relative;width:660px;height:660px;overflow:hidden;border-radius:5px;
+    box-shadow:0 60px 120px rgba(0,0,0,.62), 0 0 0 1px rgba(255,255,255,.07)}
+  .shot .board{position:absolute;inset:0;
+    background-image:
+      linear-gradient(45deg, #3a3a42 25%, transparent 25%, transparent 75%, #3a3a42 75%),
+      linear-gradient(45deg, #3a3a42 25%, #26262c 25%, #26262c 75%, #3a3a42 75%);
+    background-size:32px 32px;background-position:0 0,16px 16px}
+  .shot .frame img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .shot .exp{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  #s4 .cap{position:absolute;left:0;right:0;bottom:104px;text-align:center;font-size:66px}
+  #s4 .tag{position:absolute;font-family:"DM Sans",sans-serif;font-weight:700;font-size:16px;letter-spacing:.24em;text-transform:uppercase;color:var(--muted)}
+  #s4 .tag.on{color:var(--lilac)}
+
+  /* ══ S5 · the batch ══════════════════════════════════════════ */
+  #s5 .head{position:absolute;left:118px;top:214px;font-size:64px}
+  #s5 .sub{position:absolute;left:118px;top:304px;font-family:"Instrument Serif",serif;font-style:italic;
+    font-size:34px;color:var(--muted)}
+  #s5 .bar{position:absolute;left:118px;right:118px;bottom:104px;height:3px;background:rgba(255,255,255,.09)}
+  #s5 .fill{position:absolute;left:0;top:0;bottom:0;background:var(--lilac);box-shadow:0 0 22px rgba(209,191,255,.6)}
+  #s5 .barTxt{position:absolute;right:118px;bottom:128px;font-family:"DM Sans",sans-serif;font-weight:700;font-size:18px;letter-spacing:.2em;color:var(--muted)}
+  #s5 .barTxt b{color:var(--lilac)}
+
+  /* ══ S6 · close ═════════════════════════════════════════════ */
+  #s6 .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  #s6 .mark{width:104px;height:104px;color:var(--lilac);display:block}
+  #s6 .word{font-family:"Bricolage",sans-serif;font-weight:600;font-size:130px;letter-spacing:-.05em;line-height:1;margin-top:30px}
+  #s6 .tagline{font-family:"Instrument Serif",serif;font-style:italic;font-size:40px;color:var(--muted);margin-top:26px}
+  #s6 .underline{position:absolute;height:9px;background:var(--lilac);transform-origin:left center;
+    box-shadow:0 0 30px rgba(209,191,255,.45)}
+  #s6 .url{position:absolute;bottom:78px;left:0;right:0;text-align:center;
+    font-family:"DM Sans",sans-serif;font-weight:700;font-size:18px;letter-spacing:.18em;color:var(--muted)}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="s1" class="scene"></div>
+  <div id="s2" class="scene"></div>
+  <div id="s3" class="scene"></div>
+  <div id="s4" class="scene"></div>
+  <div id="s5" class="scene"></div>
+  <div id="s6" class="scene"></div>
+  <div id="cards"></div>
+  <div id="grain"></div>
+  <div id="vig"></div>
+</div>
+
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════════════════
+   PreviewGen promo — deterministic scene renderer.
+
+   Every visual is a pure function of `t` (seconds). Nothing animates via
+   CSS transitions or keyframes; the renderer computes each frame's state
+   and writes it as inline styles. That keeps the render reproducible and
+   makes any single frame addressable.
+   ══════════════════════════════════════════════════════════════════════ */
+
+const DUR = 28;
+const STUDIES = [
+  {webp:'asset_00.webp', jpg:'asset_01.jpg'},
+  {webp:'asset_02.webp', jpg:'asset_03.jpg'},
+  {webp:'asset_04.webp', jpg:'asset_05.jpg'},
+  {webp:'asset_06.webp', jpg:'asset_07.jpg'},
+  {webp:'asset_08.webp', jpg:'asset_09.jpg'},
+  {webp:'asset_10.webp', jpg:'asset_11.jpg'},
+  {webp:'asset_12.webp', jpg:'asset_13.jpg'},
+  {webp:'asset_14.webp', jpg:'asset_15.jpg'},
+];
+const BRAND_MARK = '<svg viewBox="0 0 38 38" fill="none"><path fill="currentColor" d="M2 23 21 4l7 2L8 26zm5 6L29 7l6 3-22 23zm9 5 20-20v8L24 34z"/></svg>';
+
+/* The card cluster. "chaos" is the scattered, inconsistent arrangement;
+   "aligned" is the single ordered row the product produces. */
+const CARD = 196, GAP = 24;
+const ROW_W = STUDIES.length * CARD + (STUDIES.length - 1) * GAP;
+const ROW_X = (1920 - ROW_W) / 2;
+const ROW_Y = 712;
+/* The chaos cluster stays clear of the left column, where the headline
+   lives in scenes 1 to 3. */
+const CHAOS = [
+  {x:1352, y:268, r:-14, s:1.04},
+  {x:1596, y:404, r:  9, s:0.92},
+  {x:1272, y:536, r: 18, s:0.84},
+  {x:1644, y:634, r: -7, s:1.00},
+  {x:1400, y:786, r: 24, s:0.76},
+  {x:1120, y:396, r:-20, s:0.70},
+  {x:1740, y:280, r: 12, s:0.66},
+  {x:1186, y:700, r: -9, s:0.86},
+];
+
+/* ── easing ─────────────────────────────────────────────────── */
+const clamp = (v,a=0,b=1)=>v<a?a:v>b?b:v;
+const E = {
+  out:  t=>1-Math.pow(1-t,3),
+  outQ: t=>1-Math.pow(1-t,4),
+  outE: t=>t>=1?1:1-Math.pow(2,-10*t),
+  in:   t=>t*t*t,
+  io:   t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2,
+  back: t=>{const c1=1.5,c3=c1+1;return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2)},
+};
+/* 0→1 across [start, start+dur] */
+const prog = (t,start,dur)=>clamp((t-start)/dur);
+const mix = (a,b,p)=>a+(b-a)*p;
+/* deterministic pseudo-random */
+const rnd = (seed)=>{let s=seed>>>0||1;return()=>{s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;return s/4294967296}};
+
+/* ── tiny DOM helpers ───────────────────────────────────────── */
+const mk=(tag,cls,parent,html)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(html!==undefined)e.innerHTML=html;if(parent)parent.appendChild(e);return e;};
+const set=(e,st)=>{for(const k in st)e.style[k]=st[k];};
+
+/* split text into masked word spans (kinetic reveal).
+   A real space text node is inserted between words; adjacent inline-block
+   elements otherwise have no gap between them and the line reads as one
+   solid word. */
+function words(parent, text){
+  const out=[];
+  const parts=text.split(' ');
+  parts.forEach((w,i)=>{
+    const span=mk('span','w',parent);
+    const inner=mk('span','wi',span,w);
+    out.push(inner);
+    if(i<parts.length-1) parent.appendChild(document.createTextNode(' '));
+  });
+  return out;
+}
+
+/* build a masked line; returns the inner word elements */
+function line(parent, text){
+  const l=mk('span','line',parent);
+  return words(l,text);
+}
+
+/* ══════════════ BUILD ══════════════ */
+const S={};
+const build=()=>{
+  const chrome=(sc,label)=>{
+    const tb=mk('div','topbar',sc);
+    mk('div','brand',tb,BRAND_MARK+'<span>PreviewGen</span>');
+    mk('div','tl',tb,label);
+  };
+
+  /* ── S1: hook ── */
+  {
+    const sc=S.s1=document.getElementById('s1');
+    chrome(sc,'<b>01</b> &nbsp;THE PROBLEM');
+    const stack=mk('div','stack',sc);
+
+    // Slot A — the workload
+    const a=mk('div','slot a',stack);
+    const aDisp=mk('div','display a',a);
+    const aw=words(mk('span','line',aDisp),'FIFTY FILES.');
+
+    // Slot B — the consequence
+    const b=mk('div','slot b',stack);
+    const b1=mk('div','display b',b);
+    const bw1=words(mk('span','line',b1),'FIFTY DIFFERENT');
+    const b2=mk('div','display b',b);
+    const bw2=words(mk('span','line',b2),'PREVIEWS.');
+
+    // Slot C — the punchline
+    const c=mk('div','slot c',stack);
+    const cDisp=mk('div','c',c);
+    const cw=words(mk('span','line',cDisp),'That part is never billed.');
+
+    const flash=mk('div','flash',sc);
+    S.s1={sc,aw,bw1,bw2,cw,flash,stack};
+  }
+
+  /* ── S2: the grind ── */
+  {
+    const sc=S.s2=document.getElementById('s2');
+    chrome(sc,'<b>02</b> &nbsp;THE GRIND');
+    const col=mk('div','col',sc);
+    const steps=[];
+    [['01','OPEN EACH FILE','one by one'],['02','CROP IT','by hand'],['03','REPEAT','× fifty'],['04','EXPORT','one by one']]
+      .forEach(([n,t,x])=>{
+        const row=mk('div','step',col);
+        mk('span','n',row,n);
+        const tt=mk('span','t',row);
+        const ws=words(tt,t);
+        mk('span','x',row,x);
+        steps.push({n:row.querySelector('.n'),ws,x:row.querySelector('.x')});
+      });
+    const count=mk('div','count',sc);
+    const cn=mk('div','n',count,'1');
+    mk('div','cap',count,'FILES, ONE BY ONE');
+
+    S.s2={sc,steps,cn,count};
+  }
+
+  /* ── S3: the turn ── */
+  {
+    const sc=S.s3=document.getElementById('s3');
+    chrome(sc,'<b>03</b> &nbsp;THE TURN');
+    const c=mk('div','center',sc);
+    const a=mk('div','display word',c);
+    const aw=words(mk('span','line',a),'50 FILES.');
+    const b=mk('div','display word',c);
+    const bw=words(mk('span','line',b),'ONE SIGNATURE.');
+    const band=mk('div','wipeband',sc);
+    S.s3={sc,aw,bw,band};
+  }
+
+  /* ── S4: the product ── */
+  {
+    const sc=S.s4=document.getElementById('s4');
+    chrome(sc,'<b>04</b> &nbsp;THE PRODUCT');
+    const box=mk('div','stagebox',sc);
+    const shot=mk('div','shot',box);
+    const frame=mk('div','frame',shot);
+    // Layer order: checkerboard → raw transparent asset → exported JPG.
+    // The JPG is revealed by a diagonal edge, which is exactly how the app
+    // renders its split preview.
+    mk('div','board',frame);
+    const src=mk('img','',frame);
+    src.src='../public/assets/'+STUDIES[0].webp;
+    const jpg=mk('img','exp',frame);
+    jpg.src='../public/assets/'+STUDIES[0].jpg;
+    const tagL=mk('div','tag',sc,'SOURCE');
+    const tagR=mk('div','tag',sc,'EXPORT');
+    const cap=mk('div','display cap',sc);
+    const capw=words(mk('span','line',cap),'The diagonal is the signature.');
+    S.s4={sc,jpg,src,tagL,tagR,cap,capw,frame,box};
+  }
+
+  /* ── S5: the batch ── */
+  {
+    const sc=S.s5=document.getElementById('s5');
+    chrome(sc,'<b>05</b> &nbsp;THE BATCH');
+    const head=mk('div','display head',sc);
+    const headw=words(mk('span','line',head),'ONE RUN. EIGHT EXPORTS.');
+    const sub=mk('div','sub',sc,'Same signature. Every file.');
+    const bar=mk('div','bar',sc);
+    const fill=mk('div','fill',bar);
+    const bt=mk('div','barTxt',sc,'<b>0</b> / 8');
+    S.s5={sc,fill,bt,head,headw,sub};
+  }
+
+  /* ── S6: close ── */
+  {
+    const sc=S.s6=document.getElementById('s6');
+    const c=mk('div','center',sc);
+    const mark=mk('div','mark',c,BRAND_MARK);
+    const w=mk('div','word',c);
+    const ww=words(mk('span','line',w),'PreviewGen');
+    const tag=mk('div','tagline',c,'Presentation-ready previews, on your desktop.');
+    const ul=mk('div','underline',sc);
+    const url=mk('div','url',sc,'github.com/mustaqeem66/Freepik-Preview-Generator');
+    S.s6={sc,mark,ww,tag,ul,url,w};
+  }
+
+  /* ── the shared card cluster ── */
+  {
+    const layer=document.getElementById('cards');
+    const cards=STUDIES.map((s,i)=>{
+      const el=mk('div','card',layer);
+      const im=mk('img','',el); im.src='../public/assets/'+s.jpg;
+      return {el,im};
+    });
+    S.cards={layer,cards};
+  }
+};
+
+/* ══════════════ RENDER ══════════════ */
+function render(t){
+  const g=document.getElementById('grain');
+  const r=rnd(Math.floor(t*30)+7);
+  set(g,{transform:`translate(${Math.round(r()*60-30)}px,${Math.round(r()*60-30)}px)`});
+
+  /* ── S1 ─────────────────────────────────────────────── */
+  {
+    const s=S.s1, sc=s.sc;
+    const out=prog(t,4.95,0.45);
+
+    // Slot A — "FIFTY FILES." slams in with a scale punch, holds, then
+    // slides up and out.
+    const aOut=prog(t,1.95,0.34);
+    s.aw.forEach((el,i)=>{
+      const p=prog(t,0.10+i*0.045,0.52), ee=E.out(p);
+      set(el,{transform:`translate3d(0,${mix(-90,0,ee)-aOut*70}px,0) scale(${mix(1.18,1,ee)*(1-aOut*0.08)})`,
+        opacity:(p>0?Math.min(1,ee*1.8):0)*(1-aOut), filter:aOut>0&&aOut<1?`blur(${aOut*12}px)`:'none'});
+    });
+    // impact flash
+    const fl=prog(t,0.10,0.30);
+    const fr=prog(t,0.10,0.62);
+    set(s.flash,{opacity:fl>0?(1-fr)*0.45:0,transform:`scale(${mix(0.5,40,Math.pow(fr,.55))})`});
+
+    // Slot B — "FIFTY DIFFERENT / PREVIEWS." rises into the same band and
+    // holds long enough to read both lines.
+    s.bw1.forEach((el,i)=>{
+      const q=prog(t,2.35+i*0.05,0.50), qe=E.out(q);
+      const xo=prog(t,3.40,0.32);
+      set(el,{transform:`translate3d(0,${mix(70,0,qe)-xo*70}px,0)`,
+        opacity:(q>0?Math.min(1,qe*1.8):0)*(1-xo), filter:xo>0&&xo<1?`blur(${xo*12}px)`:'none'});
+    });
+    s.bw2.forEach((el,i)=>{
+      const q=prog(t,2.55+i*0.05,0.50), qe=E.out(q);
+      const xo=prog(t,3.40,0.32);
+      set(el,{transform:`translate3d(0,${mix(70,0,qe)-xo*70}px,0)`,
+        opacity:(q>0?Math.min(1,qe*1.8):0)*(1-xo), filter:xo>0&&xo<1?`blur(${xo*12}px)`:'none'});
+    });
+    s.bw2.forEach(el=>el.style.color='var(--lilac)');
+
+    // Slot C — the punchline lands under the workload and holds.
+    s.cw.forEach((el,i)=>{
+      const p=prog(t,3.70+i*0.05,0.58), ee=E.out(p);
+      const xo=prog(t,4.95,0.45);
+      set(el,{transform:`translate3d(0,${mix(50,0,ee)-xo*60}px,0)`,
+        opacity:(p>0?Math.min(1,ee*1.6):0)*(1-xo), filter:xo>0&&xo<1?`blur(${xo*10}px)`:'none'});
+    });
+
+    set(sc,{opacity:1,filter:out>0&&out<1?`blur(${out*18}px)`:'none',transform:`scale(${1+out*0.04})`});
+  }
+
+  /* ── S2 ─────────────────────────────────────────────── */
+  {
+    const s=S.s2, sc=s.sc;
+    const lt=t-5.4;
+    const out=prog(t,8.95,0.45);
+    // The steps accumulate: each one lands and stays, so the list builds
+    // up to show the full manual workflow.
+    s.steps.forEach((st,i)=>{
+      const start=0.18+i*0.30;
+      st.ws.forEach((el,j)=>{
+        const q=prog(lt,start+j*0.035,0.44), qe=E.out(q);
+        set(el,{transform:`translate3d(${mix(-52,0,qe)}px,0,0)`,
+          opacity:q>0?Math.min(1,qe*1.7):0, filter:q>0&&q<1?`blur(${mix(9,0,qe)}px)`:'none'});
+      });
+      const p=prog(lt,start,0.44), ee=E.out(p);
+      set(st.n,{opacity:p>0?Math.min(1,ee*1.7):0});
+      set(st.x,{opacity:p>0?Math.min(1,ee*1.7):0});
+    });
+    // counter counts 1..50
+    const cp=prog(lt,0.20,2.0);
+    const val=Math.max(1,Math.round(E.out(cp)*50));
+    if(s.cn.textContent!==String(val)) s.cn.textContent=val;
+    const co=prog(lt,0.20,0.4);
+    set(s.cn,{opacity:co>0?Math.min(1,E.out(co)*1.6):0, transform:`scale(${mix(0.82,1,E.out(co))})`});
+    set(sc,{opacity:1,filter:out>0&&out<1?`blur(${out*18}px)`:'none',transform:`scale(${1+out*0.04})`});
+  }
+
+  /* ── S3 ─────────────────────────────────────────────── */
+  {
+    const s=S.s3, sc=s.sc;
+    const lt=t-9.4;
+    const out=prog(t,12.15,0.45);
+    // 50 FILES. out
+    s.aw.forEach((el,i)=>{
+      const p=prog(lt,0.10+i*0.05,0.46), ee=E.out(p);
+      const xo=prog(lt,1.30,0.40);
+      set(el,{transform:`translate3d(0,${mix(60,0,ee)-xo*80}px,0) scale(${mix(0.94,1,ee)})`,
+        opacity:(p>0?Math.min(1,ee*1.8):0)*(1-xo), filter:xo>0&&xo<1?`blur(${xo*14}px)`:'none'});
+    });
+    // ONE SIGNATURE. in
+    s.bw.forEach((el,i)=>{
+      const p=prog(lt,1.75+i*0.05,0.50), ee=E.out(p);
+      set(el,{transform:`translate3d(0,${mix(70,0,ee)}px,0) scale(${mix(0.96,1,ee)})`,
+        opacity:p>0?Math.min(1,ee*1.8):0, filter:p>0&&p<1?`blur(${mix(10,0,ee)}px)`:'none'});
+    });
+    s.bw.forEach(el=>el.style.color='var(--lilac)');
+    // the wipe band crosses at the turn
+    const bp=prog(lt,1.20,0.55);
+    if(bp>0&&bp<1){
+      set(s.band,{opacity:0.85, transform:`translateX(${mix(-900,2100,E.io(bp))}px) rotate(-12deg)`});
+    } else set(s.band,{opacity:0});
+    set(sc,{opacity:1,filter:out>0&&out<1?`blur(${out*18}px)`:'none',transform:`scale(${1+out*0.04})`});
+  }
+
+  /* ── S4 ─────────────────────────────────────────────── */
+  {
+    const s=S.s4, sc=s.sc;
+    const lt=t-12.6;
+    const out=prog(t,17.75,0.45);
+
+    // frame enters
+    const ip=prog(lt,0.05,0.70), ie=E.out(ip);
+    set(s.box,{transform:`translate(-50%,-50%) scale(${mix(0.90,1,ie)}) rotate(${mix(-1.6,0,ie)}deg)`, opacity:ip>0?Math.min(1,ie*1.5):0});
+
+    // The product's own diagonal split: the exported JPG is revealed by a
+    // diagonal edge sweeping across the raw asset, exactly the way the app
+    // draws its split preview.
+    const sp=prog(lt,0.85,1.05);
+    // The edge travels from the right edge of the frame to the left.
+    const cut = mix(130, -30, E.io(sp));
+    s.jpg.style.clipPath = sp>=1 ? 'none'
+      : `polygon(${cut}% 0%, 100% 0%, 100% 100%, ${cut-24}% 100%)`;
+    s.src.style.clipPath = sp>=1 ? 'none'
+      : `polygon(0% 0%, ${cut}% 0%, ${cut-24}% 100%, 0% 100%)`;
+    s.src.style.opacity = sp>=1 ? 0 : 1;
+    set(s.jpg,{opacity:sp>0.001?1:0});
+
+    // tags: SOURCE is lit while the raw asset is on screen, EXPORT once the
+    // split has crossed and the JPG is what remains.
+    const tl=prog(lt,0.70,0.45), tr=prog(lt,1.55,0.45);
+    // The frame spans x 630 to 1290. The tags sit clear of it so each label
+    // points at the half of the split that it names without touching it.
+    set(s.tagL,{left:'510px',top:'286px',opacity:tl>0?Math.min(1,E.out(tl)):0});
+    set(s.tagR,{right:'510px',top:'286px',opacity:tr>0?Math.min(1,E.out(tr)):0});
+    s.tagL.classList.toggle('on',sp<0.5);
+    s.tagR.classList.toggle('on',sp>=0.5);
+
+    // caption
+    s.capw.forEach((el,i)=>{
+      const p=prog(lt,1.95+i*0.045,0.55), ee=E.out(p);
+      const xo=prog(lt,4.85,0.40);
+      set(el,{transform:`translate3d(0,${mix(44,0,ee)-xo*50}px,0)`,
+        opacity:(p>0?Math.min(1,ee*1.7):0)*(1-xo), filter:xo>0&&xo<1?`blur(${xo*10}px)`:'none'});
+    });
+    set(sc,{opacity:1,filter:out>0&&out<1?`blur(${out*18}px)`:'none'});
+  }
+
+  /* ── S5 ─────────────────────────────────────────────── */
+  {
+    const s=S.s5, sc=s.sc;
+    const lt=t-18.2;
+    const out=prog(t,23.75,0.45);
+
+    // heading
+    s.headw.forEach((el,i)=>{
+      const p=prog(lt,0.05+i*0.05,0.55), ee=E.out(p);
+      set(el,{transform:`translate3d(0,${mix(44,0,ee)}px,0)`,
+        opacity:p>0?Math.min(1,ee*1.8):0, filter:p>0&&p<1?`blur(${mix(10,0,ee)}px)`:'none'});
+    });
+
+    // subtitle
+    const sp2=prog(lt,0.35,0.55), se2=E.out(sp2);
+    set(s.sub,{opacity:sp2>0?Math.min(1,se2):0,transform:`translateY(${mix(22,0,se2)}px)`});
+
+    // progress bar
+    const bp=prog(lt,1.75,1.15);
+    set(s.fill,{width:`${E.io(bp)*100}%`});
+    const n=Math.round(E.io(bp)*8);
+    const btHTML=`<b>${n}</b> / 8`;
+    if(s.bt.innerHTML!==btHTML) s.bt.innerHTML=btHTML;
+    set(s.bt,{opacity:prog(lt,1.75,0.4)>0?1:0});
+
+    set(sc,{opacity:1,filter:out>0&&out<1?`blur(${out*18}px)`:'none'});
+  }
+
+  /* ── S6 ─────────────────────────────────────────────── */
+  {
+    const s=S.s6, sc=s.sc;
+    const lt=t-24.2;
+
+    // mark
+    const mp=prog(lt,0.05,0.55), me=E.out(mp);
+    set(s.mark,{opacity:mp>0?Math.min(1,me*1.6):0,transform:`scale(${mix(0.6,1,me)}) rotate(${mix(-40,0,me)}deg)`});
+
+    // wordmark letters
+    s.ww.forEach((el,i)=>{
+      const p=prog(lt,0.40+i*0.045,0.55), ee=E.out(p);
+      set(el,{transform:`translate3d(0,${mix(80,0,ee)}px,0)`,
+        opacity:p>0?Math.min(1,ee*1.8):0, filter:p>0&&p<1?`blur(${mix(12,0,ee)}px)`:'none'});
+    });
+
+    // tagline
+    const tp=prog(lt,1.25,0.6), te=E.out(tp);
+    set(s.tag,{opacity:tp>0?Math.min(1,te):0,transform:`translateY(${mix(26,0,te)}px)`});
+
+    // underline sweeps under the wordmark
+    const up=prog(lt,1.00,0.72);
+    const wr=s.w.getBoundingClientRect();
+    const stg=document.getElementById('stage').getBoundingClientRect();
+    const ux=(wr.left-stg.left)+28, uy=(wr.bottom-stg.top)+8;
+    set(s.ul,{left:ux+'px',top:uy+'px',width:`${E.out(up)*wr.width}px`,opacity:up>0?1:0});
+
+    // url
+    const xp=prog(lt,1.95,0.6), xe=E.out(xp);
+    set(s.url,{opacity:xp>0?Math.min(1,xe):0,transform:`translateY(${mix(16,0,xe)}px)`});
+
+    // The scene element itself must become visible; the .scene rule starts
+    // every scene at opacity 0.
+    set(sc,{opacity:1});
+  }
+
+  /* ── the card cluster: chaos → aligned ───────────────────── */
+  {
+    const {layer,cards}=S.cards;
+    // hide = 1 while the product shot owns the frame; come = 1 once the
+    // cards return for the batch run; gone = 1 once the closing scene takes
+    // over and the row clears the frame.
+    const hide=prog(t,12.3,0.5);
+    const come=prog(t,17.3,0.7);
+    const gone=prog(t,23.7,0.7);
+    const visible = come>=1 ? (1-gone) : (1-hide);
+    // The row recedes behind the product shot and returns to the front.
+    const recede=prog(t,12.8,0.9);
+    const returnFront=prog(t,17.1,0.9);
+
+    layer.style.display = visible>0.001 ? 'block' : 'none';
+    layer.style.opacity = visible;
+
+    cards.forEach((c,i)=>{
+      const ch=CHAOS[i];
+      // The card transform treats x and y as the card's centre, so the
+      // aligned row is built from centre coordinates.
+      const alignedX=ROW_X + CARD/2 + i*(CARD+GAP);
+      // A little stagger so the row snaps in rather than moving as a block.
+      const local=E.back(prog(t,10.25+i*0.055,1.05));
+      const x=mix(ch.x,alignedX,local);
+      // The row lifts into the upper half for the batch scene, where the
+      // heading and subtitle occupy the top and the progress bar the bottom.
+      const batchShift=prog(t,18.3,0.8)*150;
+      const y=mix(ch.y,ROW_Y-batchShift,local);
+      const r=mix(ch.r,0,local);
+      const sc2=mix(ch.s,1,local);
+
+      // idle life: a slow deterministic drift so the cards feel alive
+      const ph=t*0.9+i*1.7;
+      const jx=Math.sin(ph)*5*(1-local);
+      const jy=Math.cos(ph*1.3)*4*(1-local);
+      const jr=Math.sin(ph*0.7)*0.9*(1-local);
+
+      // entry
+      const inP=prog(t,0.45+i*0.07,0.6);
+      const inE=E.out(inP);
+      // depth: full size in the chaos, pushed back behind the product shot,
+      // then forward again for the batch.
+      const depth=mix(mix(1,0.30,recede),1,returnFront);
+
+      set(c.el,{
+        transform:`translate3d(${x+jx-CARD/2}px,${y+jy-CARD/2}px,0) rotate(${r+jr}deg) scale(${sc2*depth*mix(0.72,1,inE)})`,
+        opacity:inP>0?Math.min(1,inE*1.4):0,
+        filter:(inP>0&&inP<1)?`blur(${mix(10,0,inE)}px)`:(recede>0&&recede<1?`blur(${recede*16}px)`:(returnFront>0&&returnFront<1?`blur(${(1-returnFront)*16}px)`:'none')),
+        zIndex: Math.round(mix(1,50,local)),
+      });
+    });
+  }
+
+  // scene visibility
+  const bounds=[[0,5.4],[5.4,9.4],[9.4,12.6],[12.6,18.2],[18.2,24.2],[24.2,DUR+1]];
+  ['s1','s2','s3','s4','s5','s6'].forEach((k,i)=>{
+    const [a,b]=bounds[i];
+    const el=S[k].sc;
+    const vis = t>=a && t<b ? 1 : 0;
+    if(el.dataset.vis!==String(vis)){el.dataset.vis=String(vis);el.style.display=vis?'block':'none';}
+  });
+}
+
+build();
+window.__render = render;
+window.__ready = true;
+</script>
+</body>
+</html>
