@@ -268,6 +268,45 @@ The following are the extensions recognized by PreviewGen's discovery configurat
 
 **Resource safety:** The app enforces bounds on source file size, pixels, geometry, archive extraction and rendering time/memory. Files exceeding these limits can fail gracefully rather than rendering.
 
+<a id="software-we-read-files-from"></a>
+## 🧰 Software we read files from
+
+PreviewGen reads the formats these applications author. The marks below identify each application — they are used for recognition only and do not imply sponsorship or endorsement by any of these vendors.
+
+### Adobe
+
+| Photoshop | Illustrator | InDesign |
+| :---: | :---: | :---: |
+| ![Adobe Photoshop](docs/logos/adobe-photoshop.svg) | ![Adobe Illustrator](docs/logos/adobe-illustrator.svg) | ![Adobe InDesign](docs/logos/adobe-indesign.svg) |
+| `PSD` `ABR` | `AI` `EPS` | `INDD` |
+
+### Illustration, painting & design
+
+| Procreate | Clip Studio Paint | Krita | Affinity Designer | Affinity Photo | Affinity Publisher |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| ![Procreate](docs/logos/procreate.svg) | ![Clip Studio Paint](docs/logos/clip-studio-paint.svg) | ![Krita](docs/logos/krita.svg) | ![Affinity Designer](docs/logos/affinity-designer.svg) | ![Affinity Photo](docs/logos/affinity-photo.svg) | ![Affinity Publisher](docs/logos/affinity-publisher.svg) |
+| `PROCREATE` `BRUSH` `BRUSHSET` | `CLIP` | `KRA` | `AFDESIGN` | `AFPHOTO` | `AFPUB` |
+
+### 3D & CAD
+
+| Blender | Maya | 3ds Max | Fusion 360 | AutoCAD | glTF |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| ![Blender](docs/logos/blender.svg) | ![Autodesk Maya](docs/logos/autodesk-maya.svg) | ![Autodesk 3ds Max](docs/logos/autodesk-3ds-max.svg) | ![Autodesk Fusion 360](docs/logos/autodesk-fusion-360.svg) | ![Autodesk AutoCAD](docs/logos/autodesk-autocad.svg) | ![glTF](docs/logos/gltf.svg) |
+| `BLEND` | `MB` `MA` | `MAX` | `F3D` | `DXF` `DWG` | `GLB` `GLTF` |
+
+### Fonts, images & archives
+
+| Fonts | Inkscape | Google | Windows | ZIP |
+| :---: | :---: | :---: | :---: | :---: |
+| ![Google Fonts](docs/logos/google-fonts.svg) | ![Inkscape](docs/logos/inkscape.svg) | ![Google](docs/logos/google.svg) | ![Microsoft Windows](docs/logos/microsoft-windows.svg) | ![ZIP archive](docs/logos/zip.svg) |
+| `TTF` `OTF` `WOFF` `WOFF2` | `SVG` `SVGZ` | `WEBP` | `ICO` `BMP` | `ZIP` |
+
+### Also handled
+
+Other recognized formats are read through open, vendor-neutral specifications rather than an authoring application — `GLB`/`GLTF`/`DAE` (glTF and Collada), `OBJ`/`STL`/`PLY`/`3MF`, `STEP`/`STP`/`IGES`/`IGS`, `PNG`/`JPG`/`JPEG`/`GIF`, and `TIF`/`TIFF`.
+
+> **Logo credits:** sources and licenses are listed in [`docs/logos/ATTRIBUTION.md`](docs/logos/ATTRIBUTION.md).
+
 ## ❓ Common questions
 
 <details>
