@@ -365,3 +365,51 @@ def test_the_windows_installer_verifies_more_than_a_self_consistent_checksum() -
     assert "previewgen-signing-key.asc" in text, "the installer must fetch the public key"
     assert "--verify" in text, "the installer must verify the detached signature"
     assert "Get-AuthenticodeSignature" in text, "the installer must read back the setup binary's Authenticode signature"
+
+
+def test_linux_release_verifies_the_final_downloadable_appimage() -> None:
+    """The onedir gate cannot prove what AppImage assembly produced."""
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+
+    package_index = text.index("ARCH=x86_64 ./appimagetool")
+    verify_index = text.index("python scripts/verify_linux_webkit_bundle.py PreviewGen-Linux.AppImage")
+    upload_index = text.index("name: ${{ matrix.artifact }}", package_index)
+
+    assert package_index < verify_index < upload_index
+
+
+def test_linux_clean_machine_gate_requires_a_newer_host_webkit_package() -> None:
+    """Distribution labels do not prove the WebKitGTK package versions differ."""
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+    clean_machine_job = text.split("clean-machine-test:", 1)[1]
+
+    assert "webkit_manifest.json" in clean_machine_job
+    assert "dpkg --compare-versions" in clean_machine_job
+    assert "gt" in clean_machine_job
+    assert "FATAL: acceptance host WebKitGTK package is not newer" in clean_machine_job
+
+
+def test_linux_clean_machine_gate_covers_x11_xvfb_and_wayland_sessions() -> None:
+    """Each display backend must independently reach the frontend-ready marker."""
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+    clean_machine_job = text.split("clean-machine-test:", 1)[1]
+
+    for scenario in ("xvfb", "x11", "wayland"):
+        assert f"gui_ready_{scenario}.txt" in clean_machine_job
+    assert "GDK_BACKEND=x11" in clean_machine_job
+    assert "GDK_BACKEND=wayland" in clean_machine_job
+    assert "weston --backend=headless-backend.so" in clean_machine_job
+    assert "WKBundleInitialize" in clean_machine_job
+    assert "WebKitWebProcess" in clean_machine_job
+
+
+def test_linux_setuptools_collection_is_attached_to_the_pyinstaller_command() -> None:
+    """A collection flag elsewhere in the workflow cannot fix frozen bootstrap."""
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+    pyinstaller_block = next(body for _, body in _run_blocks(text) if "pyinstaller --noconsole" in body)
+
+    assert "--collect-all setuptools" in pyinstaller_block

@@ -9,7 +9,13 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks.gi import GiModuleInfo
 
-from previewgen.linux_webkit import INJECTED_BUNDLE_DIRNAME
+from previewgen.linux_webkit import (
+    INJECTED_BUNDLE_DIRNAME,
+    build_webkit_manifest,
+    read_dpkg_package_version,
+    read_elf_needed_libraries,
+    write_webkit_manifest,
+)
 
 binaries = []
 datas = []
@@ -37,5 +43,20 @@ for version in ("4.1", "4.0"):
         if injected_bundle is None:
             candidates = ", ".join(str(path) for path in injected_bundle_candidates)
             raise RuntimeError(f"WebKitGTK {version} injected bundle not found; checked: {candidates}")
+
+        library_path = library_path / f"libwebkit2gtk-{version}.so.0"
+        if not library_path.is_file():
+            raise RuntimeError(f"WebKitGTK {version} shared library not found: {library_path}")
+        package_name = f"libwebkit2gtk-{version}-0"
+        manifest = build_webkit_manifest(
+            api_version=version,
+            package_name=package_name,
+            package_version=read_dpkg_package_version(package_name),
+            library_path=library_path,
+            injected_bundle_path=injected_bundle,
+            injected_bundle_needed=read_elf_needed_libraries(injected_bundle),
+        )
+        manifest_path = write_webkit_manifest(manifest)
         datas.append((str(injected_bundle), INJECTED_BUNDLE_DIRNAME))
+        datas.append((str(manifest_path), INJECTED_BUNDLE_DIRNAME))
         break

@@ -90,7 +90,7 @@ This isolated the missing matching bundle as the cause without changing React, t
 
 ### Packaging contract
 
-`hooks/hook-gi.repository.WebKit2.py` now discovers the injected bundle from the same selected WebKitGTK package and freezes it in `webkit_injected_bundle/`.
+`hooks/hook-gi.repository.WebKit2.py` now discovers the injected bundle from the same selected WebKitGTK package and freezes it in `webkit_injected_bundle/`. It also records a `webkit_manifest.json` provenance record beside the bundle. The manifest names the selected API and Debian package version, and records SHA-256 checksums for the exact build-host WebKitGTK library and injected bundle. The verifier recomputes both packaged checksums and requires the injected bundle's ELF `DT_NEEDED` list to name the same frozen library, so a 4.0/4.1 mix or a substituted file fails closed.
 
 Ubuntu 22.04 and 24.04 install the file at this path relative to the selected shared-library directory:
 
@@ -128,10 +128,12 @@ The runtime requirement now caps Pillow below 13, and all three hash-pinned Pyth
 
 `scripts/verify_linux_webkit_bundle.py` accepts a PyInstaller onedir directory or an AppImage. It requires:
 
-- a frozen WebKitGTK 4.1 or 4.0 shared library; and
-- `libwebkit2gtkinjectedbundle.so` in the required `webkit_injected_bundle/` directory.
+- a frozen WebKitGTK 4.1 or 4.0 shared library;
+- `libwebkit2gtkinjectedbundle.so` in the required `webkit_injected_bundle/` directory;
+- a valid `webkit_manifest.json` with package, API, and checksum provenance; and
+- matching packaged library and injected-bundle checksums with a consistent ELF dependency declaration.
 
-The Linux build job runs this verifier before AppImage creation. The clean-machine Linux matrix now runs the published artifact on both Ubuntu 22.04 and Ubuntu 24.04, so a build-host/runtime WebKitGTK version split fails before release promotion.
+The Linux build job runs this verifier both before AppImage creation and against the final downloadable `PreviewGen-Linux.AppImage`. The clean-machine Linux matrix runs the published artifact on both Ubuntu 22.04 and Ubuntu 24.04, requires the Ubuntu 24.04 host package to be genuinely newer than the recorded build-host package, and exercises Xvfb, explicit X11, and headless Wayland display sessions. A build-host/runtime WebKitGTK version split or renderer crash therefore fails before release promotion.
 
 The verifier rejects the known-bad `v2.1.3` AppImage:
 
@@ -149,17 +151,20 @@ Automated tests now cover:
 - source-checkout pass-through without changing the host WebKit environment;
 - fail-closed desktop startup before window creation;
 - PyInstaller hook discovery from the real Ubuntu package layout;
-- packaged verifier rejection of a missing injected bundle;
-- packaged verifier acceptance of a complete WebKitGTK pair;
-- CI invocation of the packaged verifier;
-- clean-machine coverage on Ubuntu 22.04 and Ubuntu 24.04;
+- packaged verifier rejection of a missing injected bundle or provenance manifest;
+- packaged verifier rejection of library or injected-bundle checksum mismatches;
+- packaged verifier acceptance and extraction-failure coverage for AppImages;
+- hook discovery from versioned 4.1 and 4.0 layouts plus the direct-directory fallback;
+- CI invocation of the packaged verifier against both the onedir and final AppImage;
+- clean-machine coverage on Ubuntu 22.04 and Ubuntu 24.04 with enforced newer-host package ordering;
+- explicit Xvfb, X11, and Wayland packaged GUI scenarios with renderer-crash checks;
 - Linux packaging collection of Setuptools' vendored `pkg_resources` modules;
 - a Pillow compatibility ceiling that preserves PSD compositing.
 
 ## Verification evidence
 
-- Focused Python regression suite: `29 passed`.
-- Final full Python suite: `675 passed, 5 skipped`.
+- Focused WebKitGTK, verifier, CI, and desktop-runtime regression suite: `44 passed`.
+- Final full Python suite after the review fix pass: `689 passed, 5 skipped`.
 - Frontend typecheck: passed.
 - Frontend Vitest suite: `34 files passed`, `194 tests passed`.
 - Frontend production build: passed.
@@ -168,16 +173,18 @@ Automated tests now cover:
 - Dependency-lock structural verification: passed.
 - Published `v2.1.3` AppImage with the matching Ubuntu 22.04 bundle override: exit `0`, `READY` marker written, no renderer crash in the journal.
 - New release verifier against the published `v2.1.3` AppImage: exit `1` with the expected missing-bundle diagnostic.
-- Corrected PyInstaller onedir: verifier passed; the packaged tree contained both `libwebkit2gtk-4.1.so.0` and `webkit_injected_bundle/libwebkit2gtkinjectedbundle.so`.
+- Corrected PyInstaller onedir: verifier passed; the packaged tree contained `libwebkit2gtk-4.1.so.0`, `webkit_injected_bundle/libwebkit2gtkinjectedbundle.so`, and `webkit_manifest.json`.
+- Corrected onedir provenance manifest: API `4.1`, package `libwebkit2gtk-4.1-0` version `2.52.6-0ubuntu0.24.04.2`, library SHA-256 `2983a129e5b223e44ce9bdf18565d51e020cafeb5f159f36fb635a43c9924618`, and injected-bundle SHA-256 `71b678905d234e44ae5a78ef0cf68128ec6ef0128b17a22e2cb1ad5e1df476af`; both packaged checksums were recomputed and matched.
 - Corrected onedir dependency inspection: embedded `PIL._version` reported Pillow `12.3.0`.
 - Corrected onedir packaged PSD render: `sample.psd` produced a valid 220×160 RGB JPEG with 2,252 distinct colors and 16,278 bytes.
-- Corrected onedir GUI smoke test with `WEBKIT_INJECTED_BUNDLE_PATH` explicitly unset: exit `0`, `READY` marker written, and `Frontend mounted and reported ready.` in the application log.
-- Corrected replacement AppImage: `appimagetool` 1.9.1 was downloaded and verified against SHA-256 `ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0`; the resulting AppImage had SHA-256 `7779f3962ac7771d13e15f09b218862c11b69be4cfda71d20fccdeace27d9bcc`.
-- Corrected replacement AppImage verification: the release verifier found the matching injected bundle under the extracted `usr/bin/_internal/webkit_injected_bundle/` directory.
+- Corrected onedir native X11 GUI smoke test with `WEBKIT_INJECTED_BUNDLE_PATH` explicitly unset: exit `0`, `READY` marker written, and `Frontend mounted and reported ready.` in the application log.
+- Corrected replacement AppImage: `appimagetool` 1.9.1 was downloaded and verified against SHA-256 `ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0`; the resulting AppImage had SHA-256 `d999ce503f95471a5a47f8acc56360bc824117e046dabadd41e91169da31c47a`.
+- Corrected replacement AppImage verification: the release verifier found the matching injected bundle and provenance manifest under the extracted `usr/bin/_internal/webkit_injected_bundle/` directory.
 - Corrected replacement AppImage packaged PSD render: `sample.psd` produced a valid 220×160 RGB JPEG with 2,252 distinct colors and 16,278 bytes.
-- Corrected replacement AppImage GUI smoke test with `WEBKIT_INJECTED_BUNDLE_PATH` explicitly unset: exit `0`, `READY` marker written, and `Frontend mounted and reported ready.` in the application log.
-- Journal check after the corrected onedir and AppImage runs: zero `WKBundleInitialize`, `libwebkit2gtkinjectedbundle`, or `WebKitWebProcess` crash entries.
+- Corrected replacement AppImage native X11 GUI smoke test with `WEBKIT_INJECTED_BUNDLE_PATH` explicitly unset: exit `0`, `READY` marker written, and `Frontend mounted and reported ready.` in the application log.
+- Journal check after the corrected native X11 onedir and AppImage runs: zero `WKBundleInitialize`, `libwebkit2gtkinjectedbundle`, or `WebKitWebProcess` crash entries.
 - The corrected onedir and AppImage contained the same frontend tree as the final production build: aggregate SHA-256 `7a72322d747656c89a703a9d4045bf5bbe38042a56e60d1f5c11bab5333d2bf9`.
+- The local host did not provide `xvfb-run` or Weston, so the Xvfb and Wayland scenarios remain CI acceptance gates rather than local evidence.
 
 ## Release requirements and remaining risk
 
@@ -187,8 +194,8 @@ Before publishing a replacement release:
 
 1. Merge this branch through the normal review process.
 2. Let the Ubuntu 22.04 build job create the AppImage with the corrected hook.
-3. Require the new bundled-artifact verifier to pass.
-4. Require the Ubuntu 22.04 and Ubuntu 24.04 clean-machine GUI smoke tests to pass.
+3. Require the bundled-artifact verifier to pass against both the onedir and final AppImage.
+4. Require the Ubuntu 22.04 and Ubuntu 24.04 clean-machine jobs to prove newer-host ordering where applicable and to pass the Xvfb, X11, and Wayland packaged GUI scenarios.
 5. Promote the resulting artifact only after those native checks pass.
 
 The Ubuntu 24.04 clean-machine job has not run in this local session because the branch has not been pushed. It remains the required proof that the release catches distribution drift. Passing Ubuntu 22.04 and 24.04 does not certify every Linux distribution; the README now states that limitation explicitly.

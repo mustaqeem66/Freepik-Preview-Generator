@@ -48,7 +48,7 @@ jobs:
           sudo apt-get install -y \
             libwebkit2gtk-4.1-0 gir1.2-webkit2-4.1 gir1.2-gtk-3.0 \
             libgirepository1.0-dev libcairo2-dev pkg-config python3-dev \
-            libgl1-mesa-glx libegl1 fuse libfuse2 xvfb
+            libgl1-mesa-glx libegl1 fuse libfuse2 xvfb binutils
 
       - name: Install dependencies (hash-pinned lock)
         # bash, not the Windows runner's default pwsh: `if [ ... ]; then` is a
@@ -482,6 +482,10 @@ jobs:
           test -f PreviewGen-Linux.AppImage || { echo "FATAL: appimagetool failed to create PreviewGen-Linux.AppImage"; exit 1; }
           chmod +x PreviewGen-Linux.AppImage
 
+      - name: Verify final Linux AppImage
+        if: runner.os == 'Linux'
+        run: python scripts/verify_linux_webkit_bundle.py PreviewGen-Linux.AppImage
+
       # ── Upload artifact ──
       - name: Upload build artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -660,24 +664,99 @@ jobs:
         run: |
           set -euo pipefail
           echo "Testing Linux AppImage on machine without project Python/Node..."
-          sudo apt-get update && sudo apt-get install -y xvfb libfuse2 python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 || sudo apt-get install -y xvfb libfuse2 python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.0
+          sudo apt-get update
+          sudo apt-get install -y xvfb weston libfuse2 python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 || sudo apt-get install -y xvfb weston libfuse2 python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.0
           chmod +x PreviewGen-Linux.AppImage
-          export PREVIEWGEN_READY_MARKER="$PWD/gui_ready.txt"
+
+          # The manifest records the exact build-host WebKitGTK package and the
+          # selected library/injected-bundle pair. Ubuntu 24.04 is useful only
+          # when its installed host package is genuinely newer than the build
+          # host package, so enforce that ordering instead of trusting labels.
+          rm -rf appimage-extract
+          mkdir appimage-extract
+          (cd appimage-extract && ../PreviewGen-Linux.AppImage --appimage-extract >/dev/null)
+          manifest="appimage-extract/squashfs-root/usr/bin/_internal/webkit_injected_bundle/webkit_manifest.json"
+          test -f "$manifest" || { echo "FATAL: WebKitGTK provenance manifest not found in AppImage"; exit 1; }
+          build_webkit_version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["package_version"])' "$manifest")
+          host_webkit_version=$(dpkg-query -W -f='${Version}' libwebkit2gtk-4.1-0)
+          echo "Build-host WebKitGTK package: $build_webkit_version"
+          echo "Acceptance-host WebKitGTK package: $host_webkit_version"
+          if [ "${{ matrix.os }}" = "ubuntu-24.04" ]; then
+            dpkg --compare-versions "$host_webkit_version" gt "$build_webkit_version" || {
+              echo "FATAL: acceptance host WebKitGTK package is not newer than the build-host package"
+              exit 1
+            }
+          fi
+
           # Engine violations are diagnostic only, including deliberate smoke probes.
           export PREVIEWGEN_CSP_MARKER="$PWD/csp_selftest.json"
           export PREVIEWGEN_CSP_VIOLATIONS="$PWD/csp_violations.jsonl"
+          journal_since=$(date --iso-8601=seconds)
+
+          export PREVIEWGEN_READY_MARKER="$PWD/gui_ready_xvfb.txt"
           rm -f "$PREVIEWGEN_READY_MARKER" "$PREVIEWGEN_CSP_MARKER" "$PREVIEWGEN_CSP_VIOLATIONS"
-          timeout 60s xvfb-run -a ./PreviewGen-Linux.AppImage --gui-smoke-test > previewgen-gui.log 2>&1 || {
-            echo "FATAL: Linux GUI smoke test failed or timed out after 60s"
+          timeout 60s xvfb-run -a env -u DISPLAY -u WAYLAND_DISPLAY ./PreviewGen-Linux.AppImage --gui-smoke-test > previewgen-gui-xvfb.log 2>&1 || {
+            echo "FATAL: Linux Xvfb GUI smoke test failed or timed out after 60s"
+            cat previewgen-gui-xvfb.log
             cat ~/.local/state/previewgen/previewgen.log 2>/dev/null || true
             exit 1
           }
-          test -f "$PWD/gui_ready.txt" || {
-            echo "FATAL: frontend_ready marker not found on Linux"
-            cat previewgen-gui.log
-            cat ~/.local/state/previewgen/previewgen.log 2>/dev/null || true
+          test -f "$PWD/gui_ready_xvfb.txt" || {
+            echo "FATAL: frontend_ready marker not found in Xvfb"
+            cat previewgen-gui-xvfb.log
             exit 1
           }
+
+          export PREVIEWGEN_READY_MARKER="$PWD/gui_ready_x11.txt"
+          rm -f "$PREVIEWGEN_READY_MARKER"
+          timeout 60s xvfb-run -a env -u DISPLAY -u WAYLAND_DISPLAY GDK_BACKEND=x11 ./PreviewGen-Linux.AppImage --gui-smoke-test > previewgen-gui-x11.log 2>&1 || {
+            echo "FATAL: Linux X11 GUI smoke test failed or timed out after 60s"
+            cat previewgen-gui-x11.log
+            exit 1
+          }
+          test -f "$PWD/gui_ready_x11.txt" || {
+            echo "FATAL: frontend_ready marker not found in X11"
+            cat previewgen-gui-x11.log
+            exit 1
+          }
+
+          export XDG_RUNTIME_DIR="$PWD/xdg-runtime"
+          mkdir -m 700 "$XDG_RUNTIME_DIR"
+          weston --backend=headless-backend.so --socket=wayland-previewgen --idle-time=0 > previewgen-weston.log 2>&1 &
+          weston_pid=$!
+          for attempt in $(seq 1 100); do
+            test -S "$XDG_RUNTIME_DIR/wayland-previewgen" && break
+            sleep 0.1
+          done
+          test -S "$XDG_RUNTIME_DIR/wayland-previewgen" || {
+            echo "FATAL: headless Wayland compositor did not start"
+            cat previewgen-weston.log
+            kill "$weston_pid" 2>/dev/null || true
+            exit 1
+          }
+          export PREVIEWGEN_READY_MARKER="$PWD/gui_ready_wayland.txt"
+          rm -f "$PREVIEWGEN_READY_MARKER"
+          env -u DISPLAY WAYLAND_DISPLAY=wayland-previewgen GDK_BACKEND=wayland timeout 60s ./PreviewGen-Linux.AppImage --gui-smoke-test > previewgen-gui-wayland.log 2>&1 || {
+            echo "FATAL: Linux Wayland GUI smoke test failed or timed out after 60s"
+            cat previewgen-gui-wayland.log
+            kill "$weston_pid" 2>/dev/null || true
+            exit 1
+          }
+          kill "$weston_pid" 2>/dev/null || true
+          wait "$weston_pid" 2>/dev/null || true
+          test -f "$PWD/gui_ready_wayland.txt" || {
+            echo "FATAL: frontend_ready marker not found in Wayland"
+            cat previewgen-gui-wayland.log
+            exit 1
+          }
+
+          renderer_crashes=$(journalctl --since "$journal_since" --no-pager 2>/dev/null | grep -Ei 'WKBundleInitialize|libwebkit2gtkinjectedbundle.*(segfault|core dump)|WebKitWebProcess.*(crash|segfault|core dump)' || true)
+          if [ -n "$renderer_crashes" ]; then
+            echo "FATAL: WebKitGTK renderer crash detected"
+            echo "$renderer_crashes"
+            exit 1
+          fi
+
           python3 scripts/check_csp_marker.py --marker "$PREVIEWGEN_CSP_MARKER"
           echo "Verifying frozen AppImage render capabilities on Linux (all fixtures)..."
           ./PreviewGen-Linux.AppImage --render-test-all --fixtures tests/fixtures
@@ -692,9 +771,13 @@ jobs:
         with:
           name: native-csp-${{ matrix.artifact }}-${{ matrix.os }}
           path: |
-            gui_ready.txt
+            gui_ready_xvfb.txt
+            gui_ready_x11.txt
+            gui_ready_wayland.txt
             csp_selftest.json
             csp_violations.jsonl
+            previewgen-gui-*.log
+            previewgen-weston.log
           if-no-files-found: ignore
 
   # ── Stage signed release artifacts for manual native QA sign-off ──

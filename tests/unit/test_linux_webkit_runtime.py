@@ -9,7 +9,9 @@ import pytest
 from previewgen.linux_webkit import (
     INJECTED_BUNDLE_DIRNAME,
     INJECTED_BUNDLE_ENV,
+    WEBKIT_MANIFEST_FILENAME,
     configure_linux_webkit_runtime,
+    write_webkit_manifest,
 )
 
 pytestmark = pytest.mark.core
@@ -47,6 +49,12 @@ def test_frozen_linux_fails_when_matching_injected_bundle_is_missing(tmp_path: P
         )
 
     assert INJECTED_BUNDLE_ENV not in environ
+
+
+def test_webkit_manifest_keeps_its_exact_packaged_filename() -> None:
+    manifest_path = write_webkit_manifest({"schema_version": 1})
+
+    assert manifest_path.name == WEBKIT_MANIFEST_FILENAME
 
 
 def test_source_checkout_leaves_host_webkit_configuration_untouched(tmp_path: Path) -> None:

@@ -211,7 +211,7 @@ PreviewGen's AppImage includes a matching frozen WebKitGTK library and injected-
 sudo apt install libwebkit2gtk-4.1-0 gir1.2-webkit2-4.1 gir1.2-gtk-3.0
 ```
 
-Package names can differ on other distributions. PreviewGen release checks run the AppImage on Ubuntu 22.04 and Ubuntu 24.04 to detect WebKitGTK distribution drift; passing those checks does not certify every Linux distribution.
+Package names can differ on other distributions. PreviewGen release checks run the AppImage on Ubuntu 22.04 and Ubuntu 24.04, require the Ubuntu 24.04 host's WebKitGTK package to be newer than the build-host package, and exercise the packaged frontend through Xvfb, X11, and Wayland display backends. Passing those checks does not certify every Linux distribution.
 
 For a Linux installation made through the terminal script above, you can later uninstall it with:
 
