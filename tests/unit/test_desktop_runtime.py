@@ -170,6 +170,11 @@ def test_smoke_watchdog_waits_for_the_csp_probe_after_the_frontend_is_ready(monk
     monkeypatch.setattr(runtime, "SMOKE_READY_POLL_ATTEMPTS", 2)
     monkeypatch.setattr(runtime, "SMOKE_READY_POLL_SECONDS", 0.05)
     monkeypatch.setattr(runtime, "SMOKE_CSP_POLL_SECONDS", 0.01)
+    # Keep the probe budget bounded by the test's 5-second deadline rather
+    # than by a 150 ms wall-clock race between two scheduler threads. The CSP
+    # writer still runs after the ready budget is exhausted, which is the
+    # behavior this regression test protects.
+    monkeypatch.setattr(runtime, "SMOKE_CSP_POLL_ATTEMPTS", 100000)
 
     ready_marker = tmp_path / "ready.marker"
     csp_marker = tmp_path / "csp_selftest.json"
