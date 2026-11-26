@@ -29,6 +29,7 @@ from previewgen.linux_webkit import (  # noqa: E402
 
 _INJECTED_BUNDLE_FILENAME = "libwebkit2gtkinjectedbundle.so"
 _FROZEN_WEBKIT_LIBRARY_NAMES = ("libwebkit2gtk-4.1.so.0", "libwebkit2gtk-4.0.so.0")
+_HOST_GRAPHICS_LIBRARIES = ("libepoxy.so.0", "libgbm.so.1")
 
 
 class VerificationError(RuntimeError):
@@ -59,6 +60,13 @@ def _load_manifest(path: Path) -> dict[str, Any]:
 
 
 def _verify_tree(root: Path) -> Path:
+    bundled_graphics = [path for library in _HOST_GRAPHICS_LIBRARIES for path in root.rglob(library) if path.is_file()]
+    if bundled_graphics:
+        names = ", ".join(sorted(path.name for path in bundled_graphics))
+        raise VerificationError(
+            f"Packaged artifact freezes graphics libraries; graphics libraries must be provided by the host: {names}"
+        )
+
     bundles = [
         path
         for path in root.rglob(_INJECTED_BUNDLE_FILENAME)
