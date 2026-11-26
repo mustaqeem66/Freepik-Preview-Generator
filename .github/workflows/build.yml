@@ -705,7 +705,7 @@ jobs:
 
           export PREVIEWGEN_READY_MARKER="$PWD/gui_ready_xvfb.txt"
           rm -f "$PREVIEWGEN_READY_MARKER" "$PREVIEWGEN_CSP_MARKER" "$PREVIEWGEN_CSP_VIOLATIONS"
-          timeout 60s xvfb-run -a env -u WAYLAND_DISPLAY GDK_BACKEND=x11 EGL_PLATFORM=x11 __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json LIBGL_ALWAYS_SOFTWARE=1 ./appimage-extract/squashfs-root/AppRun --gui-smoke-test > previewgen-gui-xvfb.log 2>&1 || {
+          timeout 60s xvfb-run -a env -u WAYLAND_DISPLAY GDK_BACKEND=x11 EGL_PLATFORM=x11 __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 ./appimage-extract/squashfs-root/AppRun --gui-smoke-test > previewgen-gui-xvfb.log 2>&1 || {
             echo "FATAL: Linux Xvfb GUI smoke test failed or timed out after 60s"
             cat previewgen-gui-xvfb.log
             cat ~/.local/state/previewgen/previewgen.log 2>/dev/null || true
@@ -719,7 +719,7 @@ jobs:
 
           export PREVIEWGEN_READY_MARKER="$PWD/gui_ready_x11.txt"
           rm -f "$PREVIEWGEN_READY_MARKER"
-          timeout 60s xvfb-run -a env -u WAYLAND_DISPLAY GDK_BACKEND=x11 EGL_PLATFORM=x11 __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json LIBGL_ALWAYS_SOFTWARE=1 ./appimage-extract/squashfs-root/AppRun --gui-smoke-test > previewgen-gui-x11.log 2>&1 || {
+          timeout 60s xvfb-run -a env -u WAYLAND_DISPLAY GDK_BACKEND=x11 EGL_PLATFORM=x11 __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 ./appimage-extract/squashfs-root/AppRun --gui-smoke-test > previewgen-gui-x11.log 2>&1 || {
             echo "FATAL: Linux X11 GUI smoke test failed or timed out after 60s"
             cat previewgen-gui-x11.log
             exit 1
@@ -746,7 +746,7 @@ jobs:
           }
           export PREVIEWGEN_READY_MARKER="$PWD/gui_ready_wayland.txt"
           rm -f "$PREVIEWGEN_READY_MARKER"
-          env -u DISPLAY WAYLAND_DISPLAY=wayland-previewgen GDK_BACKEND=wayland EGL_PLATFORM=wayland __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json LIBGL_ALWAYS_SOFTWARE=1 timeout 60s ./appimage-extract/squashfs-root/AppRun --gui-smoke-test > previewgen-gui-wayland.log 2>&1 || {
+          env -u DISPLAY WAYLAND_DISPLAY=wayland-previewgen GDK_BACKEND=wayland EGL_PLATFORM=wayland __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 timeout 60s ./appimage-extract/squashfs-root/AppRun --gui-smoke-test > previewgen-gui-wayland.log 2>&1 || {
             echo "FATAL: Linux Wayland GUI smoke test failed or timed out after 60s"
             cat previewgen-gui-wayland.log
             kill "$weston_pid" 2>/dev/null || true

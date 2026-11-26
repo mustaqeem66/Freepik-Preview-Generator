@@ -413,6 +413,8 @@ def test_linux_clean_machine_gate_covers_x11_xvfb_and_wayland_sessions() -> None
     assert "EGL_PLATFORM=x11" in clean_machine_job
     assert "EGL_PLATFORM=wayland" in clean_machine_job
     assert "__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json" in clean_machine_job
+    assert "WEBKIT_DISABLE_DMABUF_RENDERER=1" in clean_machine_job
+    assert "WEBKIT_DISABLE_COMPOSITING_MODE=1" in clean_machine_job
     assert "LIBGL_ALWAYS_SOFTWARE=1" in clean_machine_job
     assert "appimage-extract/squashfs-root/AppRun --gui-smoke-test" in clean_machine_job
     assert "weston --backend=headless-backend.so" in clean_machine_job
