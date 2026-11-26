@@ -208,6 +208,7 @@ def test_smoke_watchdog_waits_for_the_csp_probe_after_the_frontend_is_ready(monk
     monkeypatch.setattr(fake_webview, "start", _wait_for_csp_budget)
 
     assert runtime.start_desktop_app() == 0
+    assert fake_webview.window.destroyed is False, "the window closed before the CSP verdict"
     csp_marker.write_text("{}", encoding="utf-8")
 
     assert exited.wait(5.0), "smoke watchdog never terminated the process"
