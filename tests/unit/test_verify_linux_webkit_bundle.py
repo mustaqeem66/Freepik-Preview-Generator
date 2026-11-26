@@ -139,6 +139,7 @@ shutil.copytree(source, root / "usr" / "bin" / "_internal")
     return destination
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="AppImage executables are Linux-only")
 def test_verifier_accepts_appimage_after_extraction(tmp_path: Path) -> None:
     source = _make_onedir(tmp_path / "source")
     artifact = _make_extracting_appimage(source, tmp_path / "PreviewGen-Linux.AppImage")
@@ -149,6 +150,7 @@ def test_verifier_accepts_appimage_after_extraction(tmp_path: Path) -> None:
     assert "matching injected bundle" in result.stdout
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="AppImage executables are Linux-only")
 def test_verifier_rejects_failed_appimage_extraction(tmp_path: Path) -> None:
     artifact = _make_extracting_appimage(tmp_path, tmp_path / "broken.AppImage", exit_code=7)
 
