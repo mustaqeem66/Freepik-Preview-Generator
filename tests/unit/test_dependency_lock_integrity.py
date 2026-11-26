@@ -179,12 +179,19 @@ def test_root_script_running_npm_at_the_repository_root_is_rejected(tmp_path: Pa
     assert any("must start with 'npm --prefix frontend '" in issue for issue in check_locks(root))
 
 
-def test_pillow_ceiling_preserves_psd_tools_imagemath_compatibility() -> None:
-    """Pillow 13 removed the ImageMath API used by the PSD renderer."""
+def test_pillow_lock_satisfies_security_advisories_and_psd_tools() -> None:
+    """Pillow 13 fixes known advisories and still provides psd-tools' ImageMath API."""
     root = Path(__file__).resolve().parent.parent.parent
     requirements = (root / "requirements.in").read_text(encoding="utf-8")
 
-    assert "Pillow>=10.0.0,<13" in requirements
+    assert "Pillow>=13.0.0,<14" in requirements
+    for lock_name in (
+        "requirements-lock.txt",
+        "requirements-dev-lock.txt",
+        "requirements-linux-gui-lock.txt",
+    ):
+        lock = (root / lock_name).read_text(encoding="utf-8")
+        assert "pillow==13.0.0" in lock, f"{lock_name} must pin the patched Pillow release"
 
 
 def test_non_object_root_manifest_is_reported_not_raised(tmp_path: Path):

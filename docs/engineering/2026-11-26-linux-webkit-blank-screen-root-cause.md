@@ -116,13 +116,13 @@ This was not related to WebKitGTK, but it would prevent CI from producing a test
 
 ### Frozen renderer compatibility
 
-The fresh native build also exposed an independent release-renderer failure. Pillow 13.0.0 removed `ImageMath.lambda_eval`, while the pinned `psd-tools` release still calls that API when compositing PSD previews:
+The fresh native build also exposed an independent release-renderer failure. The host's system Pillow 10.2.0 shadowed the virtual environment during the first build and does not expose `ImageMath.lambda_eval`, while the pinned `psd-tools` release calls that API when compositing PSD previews:
 
 ```text
 AttributeError: module 'PIL.ImageMath' has no attribute 'lambda_eval'
 ```
 
-The runtime requirement now caps Pillow below 13, and all three hash-pinned Python lock files select Pillow 12.3.0. A clean isolated `uv` install of `requirements-lock.txt` selected Pillow 12.3.0 and exposed `ImageMath.lambda_eval`; a structural regression test keeps that compatibility ceiling in place. The corrected frozen application was then inspected directly and reported Pillow 12.3.0 from its embedded `PIL._version` module. Its packaged renderer produced a valid 220×160 JPEG from `sample.psd`, proving that the frozen PSD path no longer fails in `ImageMath.lambda_eval`.
+The secure and compatible resolution is Pillow 13.0.0: it fixes the published decoder advisories and still provides the `ImageMath.lambda_eval` API used by `psd-tools` 1.25.0. All three hash-pinned Python lock files now select Pillow 13.0.0, and a structural regression test keeps the patched floor and major-version ceiling in place. A clean isolated install of the updated runtime lock selected Pillow 13.0.0, exposed `ImageMath.lambda_eval`, rendered `sample.psd` successfully, and passed the advisory audit with no known vulnerabilities.
 
 ### Release gate
 
