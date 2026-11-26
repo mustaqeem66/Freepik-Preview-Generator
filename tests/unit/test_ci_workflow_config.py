@@ -326,6 +326,22 @@ def test_the_release_does_not_require_a_paid_code_signing_certificate() -> None:
     assert 'if [ -n "${{ secrets.APPLE_ID }}" ]' in text
 
 
+def test_linux_build_verifies_the_frozen_webkit_bundle() -> None:
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+
+    assert "python scripts/verify_linux_webkit_bundle.py dist/PreviewGen" in text
+
+
+def test_linux_clean_machine_gate_covers_a_newer_distribution_webkit() -> None:
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+    clean_machine_job = text.split("clean-machine-test:", 1)[1]
+
+    assert "os: ubuntu-22.04" in clean_machine_job
+    assert "os: ubuntu-24.04" in clean_machine_job
+
+
 def test_the_windows_installer_verifies_more_than_a_self_consistent_checksum() -> None:
     """install.ps1 must not trust a checksum fetched from the same release.
 

@@ -159,6 +159,10 @@ jobs:
             ${{ runner.os == 'macOS' && '--osx-bundle-identifier com.zenartisan.previewgen --windowed' || '' }} \
             app.py --clean -y
 
+      - name: Verify frozen Linux WebKitGTK bundle
+        if: runner.os == 'Linux'
+        run: python scripts/verify_linux_webkit_bundle.py dist/PreviewGen
+
       # Issue #20: a policy string no engine enforces is not a control. Prove
       # the shipped directives in WebKitGTK against both the built HTML and the
       # copy PyInstaller froze into the artifact. The clean-machine jobs below
@@ -501,6 +505,8 @@ jobs:
           - os: macos-latest
             artifact: PreviewGen-macOS
           - os: ubuntu-22.04
+            artifact: PreviewGen-Linux
+          - os: ubuntu-24.04
             artifact: PreviewGen-Linux
 
     runs-on: ${{ matrix.os }}

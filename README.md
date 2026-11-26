@@ -205,6 +205,14 @@ chmod +x PreviewGen-Linux.AppImage
 
 The AppImage can run without being installed system-wide. Depending on your distro, FUSE compatibility may be required.
 
+PreviewGen's AppImage includes a matching frozen WebKitGTK library and injected-bundle pair so newer host distributions do not mix WebKitGTK ABIs. The host must still provide the GTK 3 and GObject Introspection runtime used to start the WebView. On Debian and Ubuntu, the required packages are typically:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-0 gir1.2-webkit2-4.1 gir1.2-gtk-3.0
+```
+
+Package names can differ on other distributions. PreviewGen release checks run the AppImage on Ubuntu 22.04 and Ubuntu 24.04 to detect WebKitGTK distribution drift; passing those checks does not certify every Linux distribution.
+
 For a Linux installation made through the terminal script above, you can later uninstall it with:
 
 ```bash
