@@ -411,6 +411,7 @@ def test_linux_clean_machine_gate_covers_x11_xvfb_and_wayland_sessions() -> None
     assert "GDK_BACKEND=x11" in clean_machine_job
     assert "GDK_BACKEND=wayland" in clean_machine_job
     assert "LIBGL_ALWAYS_SOFTWARE=1" in clean_machine_job
+    assert "appimage-extract/squashfs-root/AppRun --gui-smoke-test" in clean_machine_job
     assert "weston --backend=headless-backend.so" in clean_machine_job
     assert "WKBundleInitialize" in clean_machine_job
     assert "WebKitWebProcess" in clean_machine_job
