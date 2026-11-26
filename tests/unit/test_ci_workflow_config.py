@@ -333,6 +333,15 @@ def test_linux_build_verifies_the_frozen_webkit_bundle() -> None:
     assert "python scripts/verify_linux_webkit_bundle.py dist/PreviewGen" in text
 
 
+def test_linux_build_delegates_graphics_libraries_to_the_host() -> None:
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+    strip_index = text.index("rm -f dist/PreviewGen/_internal/libepoxy.so.0 dist/PreviewGen/_internal/libgbm.so.1")
+    verify_index = text.index("python scripts/verify_linux_webkit_bundle.py dist/PreviewGen")
+
+    assert strip_index < verify_index
+
+
 def test_linux_build_collects_setuptools_vendor_modules() -> None:
     build = ROOT / ".github/workflows/build.yml"
     text = build.read_text(encoding="utf-8")

@@ -114,6 +114,16 @@ def test_verifier_rejects_package_name_that_contradicts_the_api_version(tmp_path
     assert "package name" in result.stderr
 
 
+def test_verifier_rejects_bundled_graphics_libraries(tmp_path: Path) -> None:
+    artifact = _make_onedir(tmp_path)
+    (artifact / "libepoxy.so.0").write_bytes(b"frozen graphics library")
+
+    result = _run_verifier(artifact)
+
+    assert result.returncode != 0
+    assert "graphics libraries must be provided by the host" in result.stderr
+
+
 def test_verifier_accepts_present_matching_injected_bundle(tmp_path: Path) -> None:
     artifact = _make_onedir(tmp_path)
 

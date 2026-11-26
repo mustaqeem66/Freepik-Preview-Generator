@@ -160,6 +160,16 @@ jobs:
             ${{ runner.os == 'macOS' && '--osx-bundle-identifier com.zenartisan.previewgen --windowed' || '' }} \
             app.py --clean -y
 
+      - name: Delegate Linux graphics libraries to the host
+        if: runner.os == 'Linux'
+        run: |
+          # WebKitGTK's renderer must use the host's EGL/Mesa stack. Freezing
+          # Ubuntu 22.04's libepoxy/libgbm shadows the newer graphics runtime
+          # on Ubuntu 24.04 and aborts WebKitWebProcess with EGL_BAD_PARAMETER.
+          rm -f dist/PreviewGen/_internal/libepoxy.so.0 dist/PreviewGen/_internal/libgbm.so.1
+          test ! -e dist/PreviewGen/_internal/libepoxy.so.0
+          test ! -e dist/PreviewGen/_internal/libgbm.so.1
+
       - name: Verify frozen Linux WebKitGTK bundle
         if: runner.os == 'Linux'
         run: python scripts/verify_linux_webkit_bundle.py dist/PreviewGen
