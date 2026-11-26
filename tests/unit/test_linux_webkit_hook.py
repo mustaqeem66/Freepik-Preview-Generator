@@ -33,7 +33,8 @@ def test_hook_freezes_injected_bundle_from_selected_webkit_library_directory(
     library_dir.mkdir(parents=True)
     webkit_library = library_dir / "libwebkit2gtk-4.1.so.0"
     webkit_library.write_bytes(b"webkit library")
-    injected_bundle = library_dir / "libwebkit2gtkinjectedbundle.so"
+    injected_bundle = library_dir / "webkit2gtk-4.1" / "injected-bundle" / "libwebkit2gtkinjectedbundle.so"
+    injected_bundle.parent.mkdir(parents=True)
     injected_bundle.write_bytes(b"matching injected bundle")
     typelib = tmp_path / "WebKit2-4.1.typelib"
     typelib.write_bytes(b"typelib")

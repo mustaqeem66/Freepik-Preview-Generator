@@ -28,10 +28,14 @@ for version in ("4.1", "4.0"):
         library_dir = module_info.get_libdir()
         if library_dir is None:
             raise RuntimeError(f"WebKitGTK {version} does not resolve to a shared-library directory")
-        injected_bundle = Path(library_dir) / "libwebkit2gtkinjectedbundle.so"
-        if not injected_bundle.is_file():
-            raise RuntimeError(
-                f"WebKitGTK {version} injected bundle not found beside the selected library: {injected_bundle}"
-            )
+        library_path = Path(library_dir)
+        injected_bundle_candidates = (
+            library_path / f"webkit2gtk-{version}" / "injected-bundle" / "libwebkit2gtkinjectedbundle.so",
+            library_path / "libwebkit2gtkinjectedbundle.so",
+        )
+        injected_bundle = next((path for path in injected_bundle_candidates if path.is_file()), None)
+        if injected_bundle is None:
+            candidates = ", ".join(str(path) for path in injected_bundle_candidates)
+            raise RuntimeError(f"WebKitGTK {version} injected bundle not found; checked: {candidates}")
         datas.append((str(injected_bundle), INJECTED_BUNDLE_DIRNAME))
         break
