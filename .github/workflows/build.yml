@@ -695,7 +695,7 @@ jobs:
 
           export PREVIEWGEN_READY_MARKER="$PWD/gui_ready_xvfb.txt"
           rm -f "$PREVIEWGEN_READY_MARKER" "$PREVIEWGEN_CSP_MARKER" "$PREVIEWGEN_CSP_VIOLATIONS"
-          timeout 60s xvfb-run -a env -u DISPLAY -u WAYLAND_DISPLAY ./PreviewGen-Linux.AppImage --gui-smoke-test > previewgen-gui-xvfb.log 2>&1 || {
+          timeout 60s xvfb-run -a env -u WAYLAND_DISPLAY ./PreviewGen-Linux.AppImage --gui-smoke-test > previewgen-gui-xvfb.log 2>&1 || {
             echo "FATAL: Linux Xvfb GUI smoke test failed or timed out after 60s"
             cat previewgen-gui-xvfb.log
             cat ~/.local/state/previewgen/previewgen.log 2>/dev/null || true
@@ -709,7 +709,7 @@ jobs:
 
           export PREVIEWGEN_READY_MARKER="$PWD/gui_ready_x11.txt"
           rm -f "$PREVIEWGEN_READY_MARKER"
-          timeout 60s xvfb-run -a env -u DISPLAY -u WAYLAND_DISPLAY GDK_BACKEND=x11 ./PreviewGen-Linux.AppImage --gui-smoke-test > previewgen-gui-x11.log 2>&1 || {
+          timeout 60s xvfb-run -a env -u WAYLAND_DISPLAY GDK_BACKEND=x11 ./PreviewGen-Linux.AppImage --gui-smoke-test > previewgen-gui-x11.log 2>&1 || {
             echo "FATAL: Linux X11 GUI smoke test failed or timed out after 60s"
             cat previewgen-gui-x11.log
             exit 1

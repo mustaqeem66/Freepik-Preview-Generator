@@ -404,6 +404,9 @@ def test_linux_clean_machine_gate_covers_x11_xvfb_and_wayland_sessions() -> None
     assert "weston --backend=headless-backend.so" in clean_machine_job
     assert "WKBundleInitialize" in clean_machine_job
     assert "WebKitWebProcess" in clean_machine_job
+    assert "xvfb-run -a env -u DISPLAY" not in clean_machine_job, (
+        "xvfb-run must keep the DISPLAY value it creates for the packaged application"
+    )
 
 
 def test_linux_setuptools_collection_is_attached_to_the_pyinstaller_command() -> None:
