@@ -24,7 +24,8 @@ import webview
 
 from previewgen.api import DesktopApi
 from previewgen.dialogs import applescript_string
-from previewgen.resources import get_html_dist
+from previewgen.linux_webkit import configure_linux_webkit_runtime
+from previewgen.resources import get_html_dist, get_resource_dir
 from previewgen.ui_watchdog import WindowHangDetector, log_thread_stacks, windows_window_responding
 
 # Smoke mode gives the frontend time to report ready, then closes the window and
@@ -102,6 +103,19 @@ def start_desktop_app() -> int:
             "PreviewGen - Missing Frontend Bundle",
             f"Cannot find frontend bundle at: {html_dist}\n\nPlease reinstall PreviewGen.",
         )
+        return 1
+
+    # A frozen Linux build must select its matching WebKitGTK injected bundle
+    # before pywebview creates the window and starts WebKit child processes.
+    try:
+        configure_linux_webkit_runtime(
+            get_resource_dir(),
+            platform=sys.platform,
+            environ=os.environ,
+            frozen=bool(getattr(sys, "frozen", False)),
+        )
+    except RuntimeError as exc:
+        show_fatal_error("PreviewGen - Incompatible WebKitGTK Runtime", str(exc))
         return 1
 
     # P0: Headless smoke test mode - validates full GUI stack without human interaction

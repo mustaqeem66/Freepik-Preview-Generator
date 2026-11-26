@@ -13,7 +13,9 @@
 #       --output-file requirements-dev-lock.txt requirements-dev.in
 resvg-py>=0.5.0
 matplotlib>=3.7.0
-Pillow>=10.0.0
+# Pillow 13 fixes the published image-decoder advisories and still provides
+# ImageMath.lambda_eval, which psd-tools uses to composite PSD previews.
+Pillow>=13.0.0,<14
 psd-tools>=1.9.0
 trimesh>=4.0.0
 # trimesh loads COLLADA (.dae) through pycollada; without it the advertised

@@ -1,4 +1,5 @@
 """No-network tests for dependency lock parity and checksum metadata."""
+
 from __future__ import annotations
 
 import base64
@@ -27,14 +28,15 @@ def fixture_tree(tmp_path: Path) -> Path:
     frontend.mkdir()
     deps = {"lenis": "1.3.27"}
     frontend_manifest = {
-        "name": "frontend", "version": "1.0.0",
-        "dependencies": deps, "devDependencies": {},
+        "name": "frontend",
+        "version": "1.0.0",
+        "dependencies": deps,
+        "devDependencies": {},
     }
     frontend_lock = {
         "lockfileVersion": 3,
         "packages": {
-            "": {"name": "frontend", "version": "1.0.0",
-                 "dependencies": deps, "devDependencies": {}},
+            "": {"name": "frontend", "version": "1.0.0", "dependencies": deps, "devDependencies": {}},
             "node_modules/lenis": {
                 "version": "1.3.27",
                 "resolved": "https://registry.npmjs.org/lenis/-/lenis-1.3.27.tgz",
@@ -48,7 +50,9 @@ def fixture_tree(tmp_path: Path) -> Path:
     # workspaces, because npm would then resolve a workspace-root lock and
     # ignore frontend/package-lock.json entirely.
     root_manifest = {
-        "name": "previewgen-cloud-preview", "version": "1.0.0", "private": True,
+        "name": "previewgen-cloud-preview",
+        "version": "1.0.0",
+        "private": True,
         "scripts": {
             "dev": "npm --prefix frontend run dev",
             "build": "npm --prefix frontend run build",
@@ -163,9 +167,7 @@ def test_root_script_must_delegate_to_the_frontend_lock(tmp_path: Path):
     data = json.loads(path.read_text())
     data["scripts"]["build"] = "cd frontend && npm install"
     path.write_text(json.dumps(data))
-    assert any(
-        "must start with 'npm --prefix frontend '" in issue for issue in check_locks(root)
-    )
+    assert any("must start with 'npm --prefix frontend '" in issue for issue in check_locks(root))
 
 
 def test_root_script_running_npm_at_the_repository_root_is_rejected(tmp_path: Path):
@@ -174,9 +176,22 @@ def test_root_script_running_npm_at_the_repository_root_is_rejected(tmp_path: Pa
     data = json.loads(path.read_text())
     data["scripts"]["test"] = "npm test"
     path.write_text(json.dumps(data))
-    assert any(
-        "must start with 'npm --prefix frontend '" in issue for issue in check_locks(root)
-    )
+    assert any("must start with 'npm --prefix frontend '" in issue for issue in check_locks(root))
+
+
+def test_pillow_lock_satisfies_security_advisories_and_psd_tools() -> None:
+    """Pillow 13 fixes known advisories and still provides psd-tools' ImageMath API."""
+    root = Path(__file__).resolve().parent.parent.parent
+    requirements = (root / "requirements.in").read_text(encoding="utf-8")
+
+    assert "Pillow>=13.0.0,<14" in requirements
+    for lock_name in (
+        "requirements-lock.txt",
+        "requirements-dev-lock.txt",
+        "requirements-linux-gui-lock.txt",
+    ):
+        lock = (root / lock_name).read_text(encoding="utf-8")
+        assert "pillow==13.0.0" in lock, f"{lock_name} must pin the patched Pillow release"
 
 
 def test_non_object_root_manifest_is_reported_not_raised(tmp_path: Path):

@@ -4,6 +4,7 @@ GUI-independent helpers for owner-marked temporary directories and diagnostic
 cleanup. Cleanup failures (antivirus locks, open image handles, permission or
 network filesystem errors) are always logged rather than silently swallowed.
 """
+
 from __future__ import annotations
 
 import getpass
@@ -35,6 +36,7 @@ PREVIEWGEN_PREFIXES: tuple[str, ...] = (
     "previewgen_dim_",
     "previewgen_export_",
     "previewgen_nested_brush_",
+    "previewgen_webkit_",
 )
 
 
@@ -45,6 +47,7 @@ def _pid_alive(pid: int) -> bool:
     if sys.platform == "win32":
         try:
             import ctypes
+
             SYNCHRONIZE = 0x00100000
             handle = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, pid)
             if not handle:
@@ -73,6 +76,7 @@ def create_temp_dir(prefix: str, base_dir: Path | None = None) -> Path:
     path = Path(tempfile.mkdtemp(prefix=prefix, dir=str(base_dir) if base_dir else None))
     try:
         import uuid
+
         (path / OWNER_MARKER).write_text(
             json.dumps(
                 {
@@ -124,6 +128,7 @@ def safe_rmtree(
                     type(exc).__name__,
                 )
     return False
+
 
 def cleanup_stale_temp_dirs(
     base: Path | None = None,
@@ -180,10 +185,7 @@ def cleanup_stale_temp_dirs(
             # do not delete fresh directories under MINIMUM_DELETION_AGE_SECONDS
             is_stale = age > max_age_seconds
             owner_dead = owner_pid is not None and not _pid_alive(owner_pid)
-            eligible = (
-                (owner_dead and age >= MINIMUM_DELETION_AGE_SECONDS)
-                or (owner_pid is None and is_stale)
-            )
+            eligible = (owner_dead and age >= MINIMUM_DELETION_AGE_SECONDS) or (owner_pid is None and is_stale)
 
             if eligible and safe_rmtree(entry, "stale temp"):
                 removed += 1
