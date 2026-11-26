@@ -333,6 +333,13 @@ def test_linux_build_verifies_the_frozen_webkit_bundle() -> None:
     assert "python scripts/verify_linux_webkit_bundle.py dist/PreviewGen" in text
 
 
+def test_linux_build_collects_setuptools_vendor_modules() -> None:
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+
+    assert "--collect-all setuptools" in text
+
+
 def test_linux_clean_machine_gate_covers_a_newer_distribution_webkit() -> None:
     build = ROOT / ".github/workflows/build.yml"
     text = build.read_text(encoding="utf-8")
@@ -340,6 +347,7 @@ def test_linux_clean_machine_gate_covers_a_newer_distribution_webkit() -> None:
 
     assert "os: ubuntu-22.04" in clean_machine_job
     assert "os: ubuntu-24.04" in clean_machine_job
+    assert "name: native-csp-${{ matrix.artifact }}-${{ matrix.os }}" in text
 
 
 def test_the_windows_installer_verifies_more_than_a_self_consistent_checksum() -> None:

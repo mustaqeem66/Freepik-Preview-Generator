@@ -154,6 +154,7 @@ jobs:
             --collect-all resvg_py --collect-all matplotlib \
             --collect-all cascadio --collect-all ezdxf --collect-all olefile \
             --collect-all collada \
+            ${{ runner.os == 'Linux' && '--collect-all setuptools' || '' }} \
             --collect-all pypdfium2 --collect-all pypdfium2_raw --collect-all fontTools --collect-all brotli \
             --collect-all lxml --collect-all networkx \
             ${{ runner.os == 'macOS' && '--osx-bundle-identifier com.zenartisan.previewgen --windowed' || '' }} \
@@ -689,7 +690,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: native-csp-${{ matrix.artifact }}
+          name: native-csp-${{ matrix.artifact }}-${{ matrix.os }}
           path: |
             gui_ready.txt
             csp_selftest.json
