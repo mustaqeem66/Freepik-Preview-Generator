@@ -170,10 +170,6 @@ def test_smoke_watchdog_waits_for_the_csp_probe_after_the_frontend_is_ready(monk
     monkeypatch.setattr(runtime, "SMOKE_READY_POLL_ATTEMPTS", 2)
     monkeypatch.setattr(runtime, "SMOKE_READY_POLL_SECONDS", 0.05)
     monkeypatch.setattr(runtime, "SMOKE_CSP_POLL_SECONDS", 0.01)
-    # Keep the probe budget bounded by the test's 5-second deadline rather
-    # than by a 150 ms wall-clock race between two scheduler threads. The CSP
-    # writer still runs after the ready budget is exhausted, which is the
-    # behavior this regression test protects.
     monkeypatch.setattr(runtime, "SMOKE_CSP_POLL_ATTEMPTS", 100000)
 
     ready_marker = tmp_path / "ready.marker"
@@ -184,24 +180,35 @@ def test_smoke_watchdog_waits_for_the_csp_probe_after_the_frontend_is_ready(monk
     exited = threading.Event()
     monkeypatch.setattr(runtime.os, "_exit", lambda _code: exited.set())
 
+    # Synchronize the two threads instead of racing their wall-clock sleeps.
+    # The first ready poll publishes the marker, so it is consumed on the
+    # second poll. The fake GUI loop then blocks until the watchdog has entered
+    # its separate CSP wait. Only then does the probe write its verdict. A
+    # single-budget implementation never enters that wait and fails the test.
+    csp_wait_started = threading.Event()
+    real_sleep = time.sleep
+    ready_polls = 0
+
+    def _controlled_sleep(delay: float) -> None:
+        nonlocal ready_polls
+        if delay == 0.05:
+            ready_polls += 1
+            if ready_polls == 1:
+                ready_marker.write_text("READY\n", encoding="utf-8")
+            return
+        if delay == 0.01:
+            csp_wait_started.set()
+        real_sleep(delay)
+
+    monkeypatch.setattr(runtime.time, "sleep", _controlled_sleep)
+
+    def _wait_for_csp_budget(**_kwargs) -> None:
+        assert csp_wait_started.wait(2.0), "the watchdog never started the CSP budget"
+
+    monkeypatch.setattr(fake_webview, "start", _wait_for_csp_budget)
+
     assert runtime.start_desktop_app() == 0
-
-    # The frontend reports ready on the second poll of the ready budget.
-    def _report_ready() -> None:
-        time.sleep(0.02)
-        ready_marker.write_text("READY\n", encoding="utf-8")
-
-    threading.Thread(target=_report_ready, daemon=True).start()
-
-    # The probe finishes after the ready budget would have been exhausted.
-    # A real probe runs inside the live WebView, so it can only produce a
-    # verdict while the window is still alive.
-    def _write_csp_late() -> None:
-        time.sleep(0.15)
-        if not fake_webview.window.destroyed:
-            csp_marker.write_text("{}", encoding="utf-8")
-
-    threading.Thread(target=_write_csp_late, daemon=True).start()
+    csp_marker.write_text("{}", encoding="utf-8")
 
     assert exited.wait(5.0), "smoke watchdog never terminated the process"
     assert fake_webview.window.destroyed is True
