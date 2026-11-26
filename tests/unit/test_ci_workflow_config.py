@@ -420,8 +420,9 @@ def test_linux_clean_machine_gate_covers_x11_xvfb_and_wayland_sessions() -> None
     assert "weston --backend=headless-backend.so" in clean_machine_job
     assert "WKBundleInitialize" in clean_machine_job
     assert "WebKitWebProcess" in clean_machine_job
-    assert "xvfb-run -a env -u DISPLAY" not in clean_machine_job, (
-        "xvfb-run must keep the DISPLAY value it creates for the packaged application"
+    assert "Xvfb :99 -screen 0 1280x1024x24" in clean_machine_job
+    assert "xvfb-run -a" not in clean_machine_job, (
+        "the headless WebKit process must connect to a direct Xvfb server without an xauth cookie"
     )
 
 
