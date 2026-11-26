@@ -703,7 +703,12 @@ jobs:
           export PREVIEWGEN_CSP_VIOLATIONS="$PWD/csp_violations.jsonl"
           journal_since=$(date --iso-8601=seconds)
 
-          # Start Xvfb directly. xvfb-run adds an Xauthority cookie that
+          # Ubuntu 22.04 covers the X11-family sessions with the frozen
+          # WebKit 2.50 pair. Ubuntu 24.04 exercises the newer host through
+          # Wayland below because its headless Mesa 25 stack cannot initialize
+          # the older frozen WebKit X11 EGL display.
+          if [ "${{ matrix.os }}" != "ubuntu-24.04" ]; then
+            # Start Xvfb directly. xvfb-run adds an Xauthority cookie that
           # WebKit's sandboxed renderer does not always inherit; without the
           # cookie the renderer can fail EGL display setup on newer hosts.
           Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp > previewgen-xvfb-server.log 2>&1 &
@@ -745,6 +750,7 @@ jobs:
             cat previewgen-gui-x11.log
             exit 1
           }
+          fi
 
           export XDG_RUNTIME_DIR="$PWD/xdg-runtime"
           mkdir -m 700 "$XDG_RUNTIME_DIR"
