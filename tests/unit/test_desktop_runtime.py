@@ -254,3 +254,16 @@ def test_native_titlebar_env_fallback_disables_frameless(monkeypatch, tmp_path):
     assert runtime.start_desktop_app() == 0
     assert fake_webview.window_options["frameless"] is False
     assert fake_api.custom_chrome is False
+
+
+def test_frozen_linux_missing_injected_bundle_fails_before_window_creation(monkeypatch, tmp_path):
+    runtime, fake_webview, _api = _load_runtime(monkeypatch, tmp_path, ["previewgen"])
+    resource_dir = tmp_path / "resources"
+    resource_dir.mkdir()
+    monkeypatch.setattr(runtime.sys, "platform", "linux")
+    monkeypatch.setattr(runtime.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(runtime, "get_resource_dir", lambda: resource_dir, raising=False)
+
+    assert runtime.start_desktop_app() == 1
+    assert fake_webview.started is False
+    assert fake_webview.window_options == {}
