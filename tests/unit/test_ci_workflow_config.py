@@ -431,6 +431,59 @@ def test_linux_clean_machine_gate_covers_x11_xvfb_and_wayland_sessions() -> None
     )
 
 
+def test_frozen_setuptools_collection_applies_to_every_pyinstaller_target() -> None:
+    """The frozen bootstrap omission must not return on another platform."""
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+    pyinstaller_block = next(body for _, body in _run_blocks(text) if "pyinstaller --noconsole" in body)
+
+    assert "--collect-all setuptools" in pyinstaller_block
+    assert "runner.os == 'Linux' && '--collect-all setuptools'" not in text
+
+
+def test_macos_build_sets_and_verifies_the_bundle_identity_and_resources() -> None:
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+    mac_build = text.split("clean-machine-test:", 1)[0]
+
+    assert "CFBundleShortVersionString" in mac_build
+    assert "CFBundleVersion" in mac_build
+    assert "python scripts/verify_macos_bundle.py dist/PreviewGen.app" in mac_build
+
+
+def test_macos_build_runs_a_real_wkwebview_smoke_with_render_evidence() -> None:
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+    mac_build = text.split("clean-machine-test:", 1)[0]
+
+    assert "--gui-smoke-test" in mac_build
+    assert "PREVIEWGEN_READY_MARKER" in mac_build
+    assert "PREVIEWGEN_RENDER_MARKER" in mac_build
+    assert "PREVIEWGEN_CSP_MARKER" in mac_build
+    assert "check_render_marker.py" in mac_build
+
+
+def test_macos_clean_machine_gate_verifies_the_final_dmg_and_render_evidence() -> None:
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+    clean_machine_job = text.split("clean-machine-test:", 1)[1]
+
+    assert ("python3 scripts/verify_macos_bundle.py /Volumes/PreviewGenTest/PreviewGen.app") in clean_machine_job
+    assert "PREVIEWGEN_RENDER_MARKER" in clean_machine_job
+    assert "check_render_marker.py" in clean_machine_job
+
+
+def test_native_evidence_upload_includes_macos_markers_and_log() -> None:
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+
+    assert "gui_ready.txt" in text
+    assert "render_ready.json" in text
+    assert "previewgen-macos.log" in text
+    assert "csp_selftest.json" in text
+    assert "csp_violations.jsonl" in text
+
+
 def test_linux_setuptools_collection_is_attached_to_the_pyinstaller_command() -> None:
     """A collection flag elsewhere in the workflow cannot fix frozen bootstrap."""
     build = ROOT / ".github/workflows/build.yml"

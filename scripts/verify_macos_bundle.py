@@ -19,6 +19,10 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 BUNDLE_IDENTIFIER = "com.zenartisan.previewgen"
 BUNDLE_EXECUTABLE = "PreviewGen"
 MACHO_MAGICS = {
