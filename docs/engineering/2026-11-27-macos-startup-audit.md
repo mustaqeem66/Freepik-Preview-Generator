@@ -2,8 +2,8 @@
 
 **Date:** 2026-11-27  
 **Affected platform:** macOS 11+ (native arm64 release runner)  
-**Related release:** Published as `v2.1.5` on 2026-11-27.  
-**Status:** Fixed in source, verified by the native Windows/macOS/Linux build and clean-machine matrix, and published as `v2.1.5`.
+**Related release:** `v2.1.5` is the published native-verified baseline; post-publication audit corrections are included in `v2.1.6`.
+**Status:** Fixed in source and natively verified. `v2.1.5` remains unchanged; `v2.1.6` carries the final lifecycle and diagnostic corrections.
 
 ## Scope
 
@@ -141,6 +141,21 @@ The release is published at https://github.com/mustaqeem66/Freepik-Preview-Gener
 - `PreviewGen-Linux.AppImage`: `ea572efa664d254a27b8bfddf768682516ebe9f154ecfc5985ee452a097bbadd`
 - `PreviewGen-Setup.exe`: `d7690a3919e8d3ba70771847863477020559471a6a3ae0ffaeb5928f25cbf6aa`
 - `PreviewGen-Windows.zip`: `ca8a682f3b1a3c1e18dfd7b3796f0fb8411ff9953bb3a42e0a6939c8409501f5`
+
+## Post-publication audit correction
+
+An independent final review after `v2.1.5` publication found two additional lifecycle gaps and one diagnostic gap:
+
+- a failed macOS `osascript` dialog could suppress the stderr fallback for a fatal startup error;
+- single-export renderer and asset-probe workers were not registered with shutdown; and
+- late operation registration and surviving renderer descendants could escape lifecycle accounting.
+
+PR #199 fixes these paths and adds regression coverage. The published `v2.1.5` assets are not modified. The corrections ship in `v2.1.6`:
+
+- https://github.com/mustaqeem66/Freepik-Preview-Generator/pull/199
+- complete Python suite: `746 passed, 5 skipped`
+- focused runtime/lifecycle suite: `36 passed`
+- independent final review: no Critical or Important findings
 
 ## Remaining macOS limitations
 

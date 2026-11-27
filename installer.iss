@@ -5,7 +5,7 @@
 
 #define MyAppName "PreviewGen"
 #ifndef MyAppVersion
-#define MyAppVersion "2.1.5"
+#define MyAppVersion "2.1.6"
 #endif
 #define MyAppPublisher "ZenArtisan"
 #define MyAppURL "https://github.com/Mustaqeem66/Freepik-Preview-Generator"
