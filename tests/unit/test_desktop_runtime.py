@@ -378,6 +378,7 @@ def test_fatal_error_fallback_does_not_require_stderr(monkeypatch, tmp_path):
 
     class _SysWithoutStderr:
         stderr = None
+        platform = "linux"
 
         def __getattr__(self, name):
             return getattr(sys, name)
