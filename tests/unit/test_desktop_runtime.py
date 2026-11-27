@@ -375,7 +375,17 @@ def test_missing_window_object_cleans_up_the_api(monkeypatch, tmp_path):
 
 def test_fatal_error_fallback_does_not_require_stderr(monkeypatch, tmp_path):
     runtime, _fake_webview, _api = _load_runtime(monkeypatch, tmp_path, ["previewgen"])
-    monkeypatch.setattr(runtime.sys, "stderr", None)
+
+    class _SysWithoutStderr:
+        stderr = None
+
+        def __getattr__(self, name):
+            return getattr(sys, name)
+
+    # Replace the module's view of sys instead of mutating the process-wide
+    # sys.stderr. Pytest's Windows capture owns that stream and can block if a
+    # test removes it temporarily.
+    monkeypatch.setattr(runtime, "sys", _SysWithoutStderr())
 
     runtime.show_fatal_error("PreviewGen - Test", "failure detail")
 
