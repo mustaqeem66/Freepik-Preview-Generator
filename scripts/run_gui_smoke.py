@@ -16,6 +16,12 @@ TIMEOUT_EXIT_CODE = 124
 
 def _terminate_group(process: subprocess.Popen[bytes]) -> None:
     """Stop the smoke process and every native child it started."""
+    if sys.platform == "win32":
+        with contextlib.suppress(ProcessLookupError):
+            process.kill()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            process.wait(timeout=5)
+        return
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:

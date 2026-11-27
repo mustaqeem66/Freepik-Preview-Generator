@@ -119,6 +119,10 @@ def test_cleanup_terminates_active_renderer(tmp_path):
     assert list(tmp_path.glob("previewgen_render_*")) == []
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",
+)
 def test_renderer_pool_reports_process_completion(tmp_path):
     if not SAMPLE_PNG.is_file():
         pytest.skip("sample.png fixture missing")
@@ -317,6 +321,10 @@ def test_start_batch_after_shutdown_is_rejected(monkeypatch, tmp_path):
     assert lifecycle.cancel_event.is_set()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",
+)
 def test_process_starting_after_shutdown_is_terminated_immediately(tmp_path):
     """A renderer registered after cleanup must not escape the shutdown gate."""
     from previewgen.lifecycle import ActiveOperation
@@ -345,6 +353,10 @@ def test_process_starting_after_shutdown_is_terminated_immediately(tmp_path):
         child.join(timeout=2.0)
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",
+)
 def test_cleanup_terminates_registered_batch_renderer(monkeypatch, tmp_path):
     """A renderer PID must reach the lifecycle registry before shutdown."""
     from previewgen import lifecycle as lifecycle_module
