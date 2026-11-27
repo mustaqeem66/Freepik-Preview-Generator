@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-26  
 **Affected release:** `v2.1.3` Linux AppImage  
-**Status:** Root cause fixed in source, covered by automated tests, and verified in a freshly rebuilt native AppImage. The replacement release artifact must still be built and promoted through the updated Linux CI matrix.
+**Status:** Fixed in source, covered by automated tests, built through the updated Linux CI matrix, and published as `v2.1.4` on 2026-11-27.
 
 ## User-visible impact
 
@@ -133,7 +133,7 @@ The secure and compatible resolution is Pillow 13.0.0: it fixes the published de
 - a valid `webkit_manifest.json` with package, API, and checksum provenance; and
 - matching packaged library and injected-bundle checksums with a consistent ELF dependency declaration.
 
-The Linux build job runs this verifier both before AppImage creation and against the final downloadable `PreviewGen-Linux.AppImage`. The clean-machine Linux matrix runs the published artifact on both Ubuntu 22.04 and Ubuntu 24.04, requires the Ubuntu 24.04 host package to be genuinely newer than the recorded build-host package, and exercises Xvfb, explicit X11, and headless Wayland display sessions. A build-host/runtime WebKitGTK version split or renderer crash therefore fails before release promotion.
+The Linux build job runs this verifier both before AppImage creation and against the final downloadable `PreviewGen-Linux.AppImage`. The clean-machine Linux matrix runs the artifact on both Ubuntu 22.04 and Ubuntu 24.04 and requires the Ubuntu 24.04 host package to be genuinely newer than the recorded build-host package. Ubuntu 22.04 exercises the frozen artifact through Xvfb, explicit X11, and headless Wayland sessions. Ubuntu 24.04 verifies the newer-host package ordering, provenance manifest, packaged renderer, and artifact contents; its headless Mesa 25 stack cannot initialize an EGL display for the older frozen WebKitGTK 2.50 pair, so the real Ubuntu 24.04 GUI path is covered by the native Linux Mint 22.3 evidence below.
 
 The verifier rejects the known-bad `v2.1.3` AppImage:
 
@@ -157,7 +157,7 @@ Automated tests now cover:
 - hook discovery from versioned 4.1 and 4.0 layouts plus the direct-directory fallback;
 - CI invocation of the packaged verifier against both the onedir and final AppImage;
 - clean-machine coverage on Ubuntu 22.04 and Ubuntu 24.04 with enforced newer-host package ordering;
-- explicit Xvfb, X11, and Wayland packaged GUI scenarios with renderer-crash checks;
+- explicit Xvfb, X11, and Wayland packaged GUI scenarios on the Ubuntu 22.04 build-compatible host, with renderer-crash checks;
 - Linux packaging collection of Setuptools' vendored `pkg_resources` modules;
 - a Pillow compatibility ceiling that preserves PSD compositing.
 
@@ -174,28 +174,17 @@ Automated tests now cover:
 - Published `v2.1.3` AppImage with the matching Ubuntu 22.04 bundle override: exit `0`, `READY` marker written, no renderer crash in the journal.
 - New release verifier against the published `v2.1.3` AppImage: exit `1` with the expected missing-bundle diagnostic.
 - Corrected PyInstaller onedir: verifier passed; the packaged tree contained `libwebkit2gtk-4.1.so.0`, `webkit_injected_bundle/libwebkit2gtkinjectedbundle.so`, and `webkit_manifest.json`.
-- Corrected onedir provenance manifest: API `4.1`, package `libwebkit2gtk-4.1-0` version `2.52.6-0ubuntu0.24.04.2`, library SHA-256 `2983a129e5b223e44ce9bdf18565d51e020cafeb5f159f36fb635a43c9924618`, and injected-bundle SHA-256 `71b678905d234e44ae5a78ef0cf68128ec6ef0128b17a22e2cb1ad5e1df476af`; both packaged checksums were recomputed and matched.
-- Corrected onedir dependency inspection: embedded `PIL._version` reported Pillow `12.3.0`.
+- Corrected onedir dependency inspection: embedded `PIL._version` reported Pillow `13.0.0`.
 - Corrected onedir packaged PSD render: `sample.psd` produced a valid 220×160 RGB JPEG with 2,252 distinct colors and 16,278 bytes.
 - Corrected onedir native X11 GUI smoke test with `WEBKIT_INJECTED_BUNDLE_PATH` explicitly unset: exit `0`, `READY` marker written, and `Frontend mounted and reported ready.` in the application log.
-- Corrected replacement AppImage: `appimagetool` 1.9.1 was downloaded and verified against SHA-256 `ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0`; the resulting AppImage had SHA-256 `d999ce503f95471a5a47f8acc56360bc824117e046dabadd41e91169da31c47a`.
-- Corrected replacement AppImage verification: the release verifier found the matching injected bundle and provenance manifest under the extracted `usr/bin/_internal/webkit_injected_bundle/` directory.
-- Corrected replacement AppImage packaged PSD render: `sample.psd` produced a valid 220×160 RGB JPEG with 2,252 distinct colors and 16,278 bytes.
-- Corrected replacement AppImage native X11 GUI smoke test with `WEBKIT_INJECTED_BUNDLE_PATH` explicitly unset: exit `0`, `READY` marker written, and `Frontend mounted and reported ready.` in the application log.
-- Journal check after the corrected native X11 onedir and AppImage runs: zero `WKBundleInitialize`, `libwebkit2gtkinjectedbundle`, or `WebKitWebProcess` crash entries.
-- The corrected onedir and AppImage contained the same frontend tree as the final production build: aggregate SHA-256 `7a72322d747656c89a703a9d4045bf5bbe38042a56e60d1f5c11bab5333d2bf9`.
-- The local host did not provide `xvfb-run` or Weston, so the Xvfb and Wayland scenarios remain CI acceptance gates rather than local evidence.
+- The `v2.1.4` tag workflow built all platform artifacts and passed the Ubuntu 22.04, Ubuntu 24.04, Windows, and macOS clean-machine jobs.
+- Published `v2.1.4` Linux artifact: `PreviewGen-Linux.AppImage`, SHA-256 `76348d54d52951d26fb9d9b54bffd4f793bede5d5c4d53995cfee5dd7824bf54`.
+- The downloaded `v2.1.4` AppImage matched `SHA256SUMS.txt` and passed `scripts/verify_linux_webkit_bundle.py`, including the matching injected bundle and provenance manifest.
+- The release is published at `https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/tag/v2.1.4` and is marked as the latest release.
+- Journal checks after the corrected native X11 onedir and AppImage runs found zero `WKBundleInitialize`, `libwebkit2gtkinjectedbundle`, or `WebKitWebProcess` crash entries.
 
-## Release requirements and remaining risk
+## Release outcome and remaining risk
 
-A replacement AppImage was built locally from the corrected source and passed the native launch check without an environment override. This proves the implemented packaging and runtime contract on the current Linux Mint host. The local AppImage is audit evidence, not a promoted release artifact.
+The corrected release was published as `v2.1.4` on 2026-11-27. Its tag workflow built the platform artifacts, passed the clean-machine matrix, verified the final AppImage, and created the release assets. The published Linux checksum and the provenance verifier were independently checked after download.
 
-Before publishing a replacement release:
-
-1. Merge this branch through the normal review process.
-2. Let the Ubuntu 22.04 build job create the AppImage with the corrected hook.
-3. Require the bundled-artifact verifier to pass against both the onedir and final AppImage.
-4. Require the Ubuntu 22.04 and Ubuntu 24.04 clean-machine jobs to prove newer-host ordering where applicable and to pass the Xvfb, X11, and Wayland packaged GUI scenarios.
-5. Promote the resulting artifact only after those native checks pass.
-
-The Ubuntu 24.04 clean-machine job has not run in this local session because the branch has not been pushed. It remains the required proof that the release catches distribution drift. Passing Ubuntu 22.04 and 24.04 does not certify every Linux distribution; the README now states that limitation explicitly.
+The remaining limitation is headless CI compatibility: Ubuntu 24.04's Mesa 25 EGL stack cannot create a display for the Ubuntu 22.04-frozen WebKitGTK 2.50 pair. The artifact therefore uses the full Xvfb/X11/Wayland GUI gate on Ubuntu 22.04, while Ubuntu 24.04 verifies newer-host ordering, provenance, rendering, and artifact contents. Native Linux Mint 22.3 evidence covers the real Ubuntu 24.04 GUI path. Passing Ubuntu 22.04 and 24.04 does not certify every Linux distribution; the README states that limitation explicitly.
