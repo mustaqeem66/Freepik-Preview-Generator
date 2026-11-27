@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 
 from scripts.run_gui_smoke import main
@@ -51,9 +52,19 @@ def test_gui_smoke_times_out_and_terminates_the_child(tmp_path) -> None:
     )
     assert code == 124
     pid = int(pid_file.read_text(encoding="utf-8"))
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        pass
+    if sys.platform == "win32":
+        result = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        assert str(pid) not in result.stdout, f"timed-out GUI child {pid} is still alive"
     else:
-        raise AssertionError(f"timed-out GUI child {pid} is still alive")
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            pass
+        else:
+            raise AssertionError(f"timed-out GUI child {pid} is still alive")
