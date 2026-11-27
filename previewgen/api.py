@@ -605,6 +605,74 @@ class DesktopApi:
     # Frontend-facing API methods
     # ============================================================
 
+    _render_evidence_timeout = 5.0
+    _render_evidence_script = """
+      (() => {
+        const root = document.getElementById('root');
+        const rect = root ? root.getBoundingClientRect() : null;
+        return JSON.stringify({
+          rootChildCount: root ? root.childElementCount : 0,
+          rootWidth: rect ? rect.width : 0,
+          rootHeight: rect ? rect.height : 0,
+          textLength: document.body ? (document.body.textContent || '').trim().length : 0
+        });
+      })()
+    """
+
+    def _collect_render_evidence(self) -> dict[str, Any]:
+        """Measure the mounted React root in the live native WebView."""
+        evidence: dict[str, Any] = {
+            "ok": False,
+            "rootChildCount": 0,
+            "rootWidth": 0,
+            "rootHeight": 0,
+            "textLength": 0,
+            "error": None,
+        }
+        if self._window is None:
+            evidence["error"] = "RENDER_NO_WINDOW"
+            return evidence
+        try:
+            raw = self._evaluate_js_bounded(
+                self._window,
+                self._render_evidence_script,
+                self._render_evidence_timeout,
+            )
+        except Exception as exc:
+            logging.warning("Render evidence evaluation failed: %s", exc)
+            evidence["error"] = "RENDER_EVALUATION_FAILED"
+            return evidence
+        if raw is None:
+            evidence["error"] = "RENDER_EVALUATION_TIMEOUT"
+            return evidence
+        try:
+            observed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            evidence["error"] = "RENDER_EVALUATION_INVALID"
+            return evidence
+        if not isinstance(observed, dict):
+            evidence["error"] = "RENDER_EVALUATION_INVALID"
+            return evidence
+
+        try:
+            evidence["rootChildCount"] = int(observed.get("rootChildCount", 0))
+            evidence["rootWidth"] = float(observed.get("rootWidth", 0))
+            evidence["rootHeight"] = float(observed.get("rootHeight", 0))
+            evidence["textLength"] = int(observed.get("textLength", 0))
+        except (TypeError, ValueError):
+            evidence["error"] = "RENDER_EVALUATION_INVALID"
+            return evidence
+
+        if evidence["rootChildCount"] <= 0:
+            evidence["error"] = "RENDER_ROOT_EMPTY"
+        elif evidence["rootWidth"] <= 0 or evidence["rootHeight"] <= 0:
+            evidence["error"] = "RENDER_ROOT_ZERO_SIZE"
+        elif evidence["textLength"] <= 0:
+            evidence["error"] = "RENDER_TEXT_EMPTY"
+        else:
+            evidence["ok"] = True
+        return evidence
+
     def frontend_ready(self) -> dict[str, Any]:
         """Called by React frontend when mounted and interactive."""
         logging.info("Frontend mounted and reported ready.")
@@ -614,6 +682,16 @@ class DesktopApi:
                 Path(ready_marker).write_text("READY\n", encoding="utf-8")
             except Exception as exc:
                 logging.warning("Could not write ready marker: %s", exc)
+        render_marker = os.environ.get("PREVIEWGEN_RENDER_MARKER")
+        if render_marker:
+            evidence = self._collect_render_evidence()
+            try:
+                Path(render_marker).write_text(
+                    json.dumps(evidence, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+            except OSError as exc:
+                logging.warning("Could not write render evidence marker: %s", exc)
         if "--gui-smoke-test" in sys.argv and self._window:
             if os.environ.get("PREVIEWGEN_CSP_MARKER"):
                 if self._csp_smoke_started.acquire(blocking=False):

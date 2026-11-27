@@ -8,6 +8,8 @@ Two readiness signals protect a release:
 * the release gate — a tagged release must never pass without a frozen artifact
   being exercised, so the packaged gate is fail-closed.
 """
+
+import json
 import os
 import subprocess
 import sys
@@ -39,6 +41,87 @@ def test_frontend_ready_writes_supervisor_marker(tmp_path, monkeypatch):
         api.cleanup()
 
 
+def test_frontend_ready_writes_render_evidence(tmp_path, monkeypatch):
+    marker = tmp_path / "render_ready.json"
+    monkeypatch.setenv("PREVIEWGEN_RENDER_MARKER", str(marker))
+
+    api = DesktopApi()
+    api._window = object()
+    monkeypatch.setattr(
+        api,
+        "_evaluate_js_bounded",
+        lambda _window, _script, _timeout: json.dumps(
+            {
+                "rootChildCount": 3,
+                "rootWidth": 1400,
+                "rootHeight": 900,
+                "textLength": 42,
+            }
+        ),
+    )
+    try:
+        result = api.frontend_ready()
+        assert result["ok"] is True
+        evidence = json.loads(marker.read_text(encoding="utf-8"))
+        assert evidence == {
+            "ok": True,
+            "rootChildCount": 3,
+            "rootWidth": 1400,
+            "rootHeight": 900,
+            "textLength": 42,
+            "error": None,
+        }
+    finally:
+        api.cleanup()
+
+
+def test_frontend_ready_records_an_empty_render_root(tmp_path, monkeypatch):
+    marker = tmp_path / "render_ready.json"
+    monkeypatch.setenv("PREVIEWGEN_RENDER_MARKER", str(marker))
+
+    api = DesktopApi()
+    api._window = object()
+    monkeypatch.setattr(
+        api,
+        "_evaluate_js_bounded",
+        lambda _window, _script, _timeout: json.dumps(
+            {
+                "rootChildCount": 0,
+                "rootWidth": 1400,
+                "rootHeight": 900,
+                "textLength": 0,
+            }
+        ),
+    )
+    try:
+        assert api.frontend_ready()["ok"] is True
+        evidence = json.loads(marker.read_text(encoding="utf-8"))
+        assert evidence["ok"] is False
+        assert evidence["error"] == "RENDER_ROOT_EMPTY"
+    finally:
+        api.cleanup()
+
+
+def test_frontend_ready_records_a_render_evaluation_timeout(tmp_path, monkeypatch):
+    marker = tmp_path / "render_ready.json"
+    monkeypatch.setenv("PREVIEWGEN_RENDER_MARKER", str(marker))
+
+    api = DesktopApi()
+    api._window = object()
+    monkeypatch.setattr(
+        api,
+        "_evaluate_js_bounded",
+        lambda _window, _script, _timeout: None,
+    )
+    try:
+        assert api.frontend_ready()["ok"] is True
+        evidence = json.loads(marker.read_text(encoding="utf-8"))
+        assert evidence["ok"] is False
+        assert evidence["error"] == "RENDER_EVALUATION_TIMEOUT"
+    finally:
+        api.cleanup()
+
+
 def test_frontend_ready_without_marker_is_harmless(monkeypatch):
     monkeypatch.delenv("PREVIEWGEN_READY_MARKER", raising=False)
 
@@ -64,8 +147,7 @@ def test_release_gate_is_fail_closed_without_frozen_artifact():
             "-q",
             "-p",
             "no:cacheprovider",
-            "tests/integration/test_release_renderers_gate.py::"
-            "test_release_frozen_artifact_is_exercised_when_supplied",
+            "tests/integration/test_release_renderers_gate.py::test_release_frozen_artifact_is_exercised_when_supplied",
         ],
         cwd=str(PROJECT_ROOT),
         env=env,
