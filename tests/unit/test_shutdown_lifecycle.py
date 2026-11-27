@@ -5,6 +5,9 @@ An orderly shutdown must interrupt work that is mid-flight (discovery, a running
 renderer, report writing) without leaving orphaned processes, temp directories,
 or partially written reports behind.
 """
+
+import multiprocessing
+import queue
 import sys
 import threading
 import time
@@ -28,6 +31,12 @@ from processor import PreviewConfig
 pytestmark = pytest.mark.core
 
 SAMPLE_PNG = PROJECT_ROOT / "tests" / "fixtures" / "sample.png"
+
+
+def _sleep_until_stopped(stop_event) -> None:
+    """Top-level spawn-safe child used by the lifecycle registration test."""
+    while not stop_event.is_set():
+        time.sleep(0.02)
 
 
 class _FakeScanner:
@@ -110,6 +119,329 @@ def test_cleanup_terminates_active_renderer(tmp_path):
     assert list(tmp_path.glob("previewgen_render_*")) == []
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",
+)
+def test_renderer_pool_reports_process_completion(tmp_path):
+    if not SAMPLE_PNG.is_file():
+        pytest.skip("sample.png fixture missing")
+
+    started: list[int] = []
+    finished: list[tuple[int, set[int]]] = []
+    pool = RendererProcessPool(default_timeout=30.0)
+
+    pool.render(
+        SAMPLE_PNG,
+        tmp_path / "out.jpg",
+        PreviewConfig(),
+        timeout_seconds=30.0,
+        on_process_started=started.append,
+        on_process_finished=lambda pid, survivors: finished.append((pid, survivors)),
+    )
+
+    assert started
+    assert [pid for pid, _survivors in finished] == started
+    assert all(not survivors for _pid, survivors in finished)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",
+)
+def test_renderer_completion_is_reported_before_result_queue_read(monkeypatch, tmp_path):
+    """The PID must leave the lifecycle registry before it can be reused."""
+    if not SAMPLE_PNG.is_file():
+        pytest.skip("sample.png fixture missing")
+
+    from previewgen import renderer_process
+
+    queue_entered = threading.Event()
+    release_queue = threading.Event()
+
+    class _BlockingQueue:
+        def get(self, timeout=None):
+            queue_entered.set()
+            release_queue.wait(timeout=5)
+            raise queue.Empty
+
+        def get_nowait(self):
+            raise queue.Empty
+
+        def close(self):
+            return None
+
+        def join_thread(self):
+            return None
+
+    class _CompletedProcess:
+        def __init__(self, *_args, **_kwargs) -> None:
+            self.pid = 4242
+            self.exitcode = 0
+
+        def start(self) -> None:
+            return None
+
+        def is_alive(self) -> bool:
+            return False
+
+        def join(self, timeout=None) -> None:
+            return None
+
+    monkeypatch.setattr(renderer_process.mp, "Queue", _BlockingQueue)
+    monkeypatch.setattr(renderer_process.mp, "Process", _CompletedProcess)
+    finished: list[tuple[int, set[int]]] = []
+    pool = renderer_process.RendererProcessPool(default_timeout=30.0)
+    errors: list[BaseException] = []
+
+    def _render():
+        try:
+            pool.render(
+                SAMPLE_PNG,
+                tmp_path / "out.jpg",
+                PreviewConfig(),
+                timeout_seconds=30.0,
+                on_process_finished=lambda pid, survivors: finished.append((pid, survivors)),
+            )
+        except BaseException as exc:
+            errors.append(exc)
+
+    worker = threading.Thread(target=_render)
+    worker.start()
+    try:
+        assert queue_entered.wait(5.0), "the renderer never reached result queue retrieval"
+        assert finished, "the exited renderer PID remained registered during queue retrieval"
+    finally:
+        release_queue.set()
+        worker.join(timeout=5.0)
+    assert not worker.is_alive()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",
+)
+def test_completed_renderer_pid_is_removed_from_lifecycle_registry(monkeypatch, tmp_path):
+    """A stale PID could be reused by an unrelated process before shutdown."""
+    from previewgen import lifecycle as lifecycle_module
+
+    release = threading.Event()
+    reported = threading.Event()
+
+    def _fake_process_folder(
+        input_folder,
+        output_folder,
+        config,
+        progress,
+        is_cancelled,
+        *,
+        selected_files=None,
+        on_process_started=None,
+        on_process_finished=None,
+    ):
+        assert on_process_started is not None
+        assert on_process_finished is not None
+        on_process_started(4242)
+        on_process_finished(4242, set())
+        reported.set()
+        release.wait(timeout=3)
+        return {
+            "planned": 0,
+            "processed": 0,
+            "remaining": 0,
+            "success": 0,
+            "failed": 0,
+            "skipped": 0,
+            "cancelled": True,
+            "status": "cancelled",
+            "errors": [],
+            "duration": 0.0,
+        }
+
+    monkeypatch.setattr(lifecycle_module, "process_folder", _fake_process_folder)
+    lifecycle = LifecycleManager()
+    lifecycle.start_batch(
+        tmp_path,
+        tmp_path / "out",
+        PreviewConfig(),
+        progress_callback=lambda *_args: None,
+        is_cancelled=lifecycle.cancel_event.is_set,
+        operation_id="batch_finished_renderer",
+    )
+
+    assert reported.wait(2.0)
+    operation = lifecycle.registry.get("batch_finished_renderer")
+    assert operation is not None
+    assert 4242 not in operation.process_ids
+    release.set()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",
+)
+def test_lifecycle_retains_surviving_renderer_descendants():
+    """A survivor must remain registered for a later shutdown retry."""
+    from previewgen.lifecycle import ActiveOperation
+
+    lifecycle = LifecycleManager()
+    operation = ActiveOperation(operation_id="surviving_renderer", kind="batch_render")
+    lifecycle.register_operation(operation)
+
+    lifecycle._unregister_process(operation, 100, {200})
+
+    assert 100 not in operation.process_ids
+    assert 200 in operation.process_ids
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",
+)
+def test_start_batch_after_shutdown_is_rejected(monkeypatch, tmp_path):
+    """A late batch must not clear cancellation or escape the shutdown gate."""
+    from previewgen import lifecycle as lifecycle_module
+
+    process_calls = []
+
+    def _fake_process_folder(*_args, **_kwargs):
+        process_calls.append(True)
+        return {
+            "planned": 0,
+            "processed": 0,
+            "remaining": 0,
+            "success": 0,
+            "failed": 0,
+            "skipped": 0,
+            "cancelled": True,
+            "status": "cancelled",
+            "errors": [],
+            "duration": 0.0,
+        }
+
+    monkeypatch.setattr(lifecycle_module, "process_folder", _fake_process_folder)
+    lifecycle = LifecycleManager()
+    lifecycle.cleanup()
+
+    with pytest.raises(RuntimeError, match="shutting down"):
+        lifecycle.start_batch(
+            tmp_path,
+            tmp_path / "out",
+            PreviewConfig(),
+            progress_callback=lambda *_args: None,
+            is_cancelled=lifecycle.cancel_event.is_set,
+            operation_id="late_batch",
+        )
+
+    assert process_calls == []
+    assert lifecycle.cancel_event.is_set()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",
+)
+def test_process_starting_after_shutdown_is_terminated_immediately(tmp_path):
+    """A renderer registered after cleanup must not escape the shutdown gate."""
+    from previewgen.lifecycle import ActiveOperation
+
+    context = multiprocessing.get_context("spawn")
+    stop_event = context.Event()
+    child = context.Process(target=_sleep_until_stopped, args=(stop_event,))
+    child.start()
+
+    lifecycle = LifecycleManager()
+    operation = ActiveOperation(operation_id="late_renderer", kind="batch_render")
+    lifecycle.register_operation(operation)
+    lifecycle.cleanup()
+
+    lifecycle._register_process(operation, child.pid)
+
+    deadline = time.monotonic() + 3.0
+    while child.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    try:
+        assert not child.is_alive()
+    finally:
+        stop_event.set()
+        if child.is_alive():
+            child.terminate()
+        child.join(timeout=2.0)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",
+)
+def test_cleanup_terminates_registered_batch_renderer(monkeypatch, tmp_path):
+    """A renderer PID must reach the lifecycle registry before shutdown."""
+    from previewgen import lifecycle as lifecycle_module
+
+    context = multiprocessing.get_context("spawn")
+    stop_event = context.Event()
+    child = context.Process(
+        target=_sleep_until_stopped,
+        args=(stop_event,),
+    )
+    child.start()
+    pid_registered = threading.Event()
+
+    def _fake_process_folder(
+        input_folder,
+        output_folder,
+        config,
+        progress,
+        is_cancelled,
+        *,
+        selected_files=None,
+        on_process_started=None,
+        on_process_finished=None,
+    ):
+        assert on_process_started is not None
+        on_process_started(child.pid)
+        pid_registered.set()
+        while not stop_event.is_set():
+            time.sleep(0.02)
+        return {
+            "planned": 1,
+            "processed": 1,
+            "remaining": 0,
+            "success": 1,
+            "failed": 0,
+            "skipped": 0,
+            "cancelled": False,
+            "status": "completed",
+            "errors": [],
+            "duration": 0.0,
+        }
+
+    monkeypatch.setattr(lifecycle_module, "process_folder", _fake_process_folder)
+    lifecycle = LifecycleManager()
+    lifecycle.start_batch(
+        tmp_path,
+        tmp_path / "out",
+        PreviewConfig(),
+        progress_callback=lambda *_args: None,
+        is_cancelled=lifecycle.cancel_event.is_set,
+        operation_id="batch_with_renderer",
+    )
+
+    assert pid_registered.wait(2.0)
+    operation = lifecycle.registry.get("batch_with_renderer")
+    assert operation is not None
+    assert child.pid in operation.process_ids
+    assert child.is_alive()
+
+    lifecycle.cleanup()
+
+    deadline = time.monotonic() + 3.0
+    while child.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert not child.is_alive()
+    stop_event.set()
+    child.join(timeout=2.0)
+
+
 def test_interrupted_report_write_leaves_no_partial_state(tmp_path, monkeypatch):
     out = tmp_path / "out"
     out.mkdir()
@@ -167,6 +499,7 @@ def test_concurrent_report_writes_never_corrupt_latest_pointer(tmp_path):
     assert (out / pointer["json"]).is_file()
     assert (out / pointer["csv"]).is_file()
 
+
 def test_active_operation_registry_and_incomplete_shutdown_escalation(tmp_path):
     """Surviving worker threads must escalate to incomplete shutdown and retain their temp roots."""
     from previewgen.lifecycle import ActiveOperation
@@ -200,6 +533,7 @@ def test_active_operation_registry_and_incomplete_shutdown_escalation(tmp_path):
         def __init__(self):
             self.active_scan_thread = worker_thread
             self.active_scan_context = SimpleNamespace(temp_root=temp_root)
+
         def cancel_scan(self):
             pass
 

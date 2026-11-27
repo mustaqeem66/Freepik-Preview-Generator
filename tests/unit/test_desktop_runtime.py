@@ -269,6 +269,128 @@ def test_native_titlebar_env_fallback_disables_frameless(monkeypatch, tmp_path):
     assert fake_api.custom_chrome is False
 
 
+def test_api_construction_failure_is_reported_and_returns_nonzero(monkeypatch, tmp_path):
+    runtime, fake_webview, _api = _load_runtime(monkeypatch, tmp_path, ["previewgen"])
+    diagnostics: list[tuple[str, str]] = []
+
+    def _fail_api():
+        raise OSError("preview server could not bind")
+
+    monkeypatch.setattr(runtime, "DesktopApi", _fail_api)
+    monkeypatch.setattr(
+        runtime,
+        "show_fatal_error",
+        lambda title, message: diagnostics.append((title, message)),
+    )
+
+    assert runtime.start_desktop_app() == 1
+    assert len(diagnostics) == 1
+    assert "preview server could not bind" in diagnostics[0][1]
+    assert fake_webview.started is False
+
+
+def test_frontend_resource_lookup_failure_is_reported(monkeypatch, tmp_path):
+    runtime, fake_webview, _api = _load_runtime(monkeypatch, tmp_path, ["previewgen"])
+    diagnostics: list[tuple[str, str]] = []
+
+    def _fail_lookup():
+        raise OSError("resource root is unavailable")
+
+    monkeypatch.setattr(runtime, "get_html_dist", _fail_lookup)
+    monkeypatch.setattr(
+        runtime,
+        "show_fatal_error",
+        lambda title, message: diagnostics.append((title, message)),
+    )
+
+    assert runtime.start_desktop_app() == 1
+    assert len(diagnostics) == 1
+    assert "resource root is unavailable" in diagnostics[0][1]
+    assert fake_webview.started is False
+
+
+def test_missing_frontend_bundle_fails_before_creating_the_api(monkeypatch, tmp_path):
+    runtime, fake_webview, _api = _load_runtime(monkeypatch, tmp_path, ["previewgen"])
+    missing = tmp_path / "missing.html"
+    diagnostics: list[tuple[str, str]] = []
+    api_constructed = False
+
+    def _construct_api():
+        nonlocal api_constructed
+        api_constructed = True
+        raise AssertionError("the API must not start when the frontend bundle is missing")
+
+    monkeypatch.setattr(runtime, "get_html_dist", lambda: missing)
+    monkeypatch.setattr(runtime, "DesktopApi", _construct_api)
+    monkeypatch.setattr(
+        runtime,
+        "show_fatal_error",
+        lambda title, message: diagnostics.append((title, message)),
+    )
+
+    assert runtime.start_desktop_app() == 1
+    assert api_constructed is False
+    assert len(diagnostics) == 1
+    assert "Missing Frontend Bundle" in diagnostics[0][0]
+    assert fake_webview.started is False
+
+
+def test_window_creation_failure_cleans_up_the_api(monkeypatch, tmp_path):
+    runtime, fake_webview, fake_api = _load_runtime(monkeypatch, tmp_path, ["previewgen"])
+    diagnostics: list[tuple[str, str]] = []
+
+    def _fail_create_window(*_args, **_kwargs):
+        raise RuntimeError("Cocoa could not create the window")
+
+    monkeypatch.setattr(fake_webview, "create_window", _fail_create_window)
+    monkeypatch.setattr(
+        runtime,
+        "show_fatal_error",
+        lambda title, message: diagnostics.append((title, message)),
+    )
+
+    assert runtime.start_desktop_app() == 1
+    assert fake_api.cleaned_up is True
+    assert len(diagnostics) == 1
+    assert "Cocoa could not create the window" in diagnostics[0][1]
+    assert fake_webview.started is False
+
+
+def test_missing_window_object_cleans_up_the_api(monkeypatch, tmp_path):
+    runtime, fake_webview, fake_api = _load_runtime(monkeypatch, tmp_path, ["previewgen"])
+    diagnostics: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(fake_webview, "create_window", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        runtime,
+        "show_fatal_error",
+        lambda title, message: diagnostics.append((title, message)),
+    )
+
+    assert runtime.start_desktop_app() == 1
+    assert fake_api.cleaned_up is True
+    assert len(diagnostics) == 1
+    assert "no window" in diagnostics[0][1].lower()
+
+
+def test_fatal_error_fallback_does_not_require_stderr(monkeypatch, tmp_path):
+    runtime, _fake_webview, _api = _load_runtime(monkeypatch, tmp_path, ["previewgen"])
+
+    class _SysWithoutStderr:
+        stderr = None
+        platform = "linux"
+
+        def __getattr__(self, name):
+            return getattr(sys, name)
+
+    # Replace the module's view of sys instead of mutating the process-wide
+    # sys.stderr. Pytest's Windows capture owns that stream and can block if a
+    # test removes it temporarily.
+    monkeypatch.setattr(runtime, "sys", _SysWithoutStderr())
+
+    runtime.show_fatal_error("PreviewGen - Test", "failure detail")
+
+
 def test_frozen_linux_missing_injected_bundle_fails_before_window_creation(monkeypatch, tmp_path):
     runtime, fake_webview, _api = _load_runtime(monkeypatch, tmp_path, ["previewgen"])
     resource_dir = tmp_path / "resources"
