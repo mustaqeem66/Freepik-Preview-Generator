@@ -32,6 +32,7 @@ class ActiveOperation:
     process_ids: set[int] = field(default_factory=set)
     process_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     shutting_down: bool = False
+    shutdown_incomplete: bool = False
     temp_roots: set[Path] = field(default_factory=set)
     lock_handles: list[Any] = field(default_factory=list)
     cleanup_callbacks: list[Callable[[], None]] = field(default_factory=list)
@@ -83,6 +84,7 @@ class LifecycleManager:
         self.registry = OperationRegistry()
         self._batch_lock = threading.Lock()
         self._active_batch: ActiveOperation | None = None
+        self._shutting_down = False
 
     def register_operation(self, op: ActiveOperation) -> None:
         """Register an active operation with the central lifecycle registry."""
@@ -105,11 +107,29 @@ class LifecycleManager:
                 "Renderer process pid=%d started during shutdown; terminating it immediately",
                 pid,
             )
-            proc.terminate_process_tree(int(pid))
+            survivors = proc.terminate_process_tree(int(pid))
+            with operation.process_lock:
+                if survivors:
+                    operation.process_ids.update(survivors)
+                    operation.shutdown_incomplete = True
+            if survivors:
+                logging.error(
+                    "Late renderer process tree pid=%d left surviving descendants: %s",
+                    pid,
+                    sorted(survivors),
+                )
 
-    def _unregister_process(self, operation: ActiveOperation, pid: int) -> None:
+    def _unregister_process(
+        self,
+        operation: ActiveOperation,
+        pid: int,
+        survivors: set[int] | None = None,
+    ) -> None:
         with operation.process_lock:
             operation.process_ids.discard(int(pid))
+            if survivors:
+                operation.process_ids.update(survivors)
+                operation.shutdown_incomplete = True
 
     def _mark_operations_shutting_down(self) -> None:
         for operation in self.registry.all_operations():
@@ -149,11 +169,17 @@ class LifecycleManager:
         """
         op = ActiveOperation(operation_id=operation_id, kind="batch_render")
         with self._batch_lock:
+            if self._shutting_down:
+                self.cancel_event.set()
+                raise RuntimeError("PreviewGen is shutting down; the batch was not started")
             self.cancel_event.clear()
             previous = self._active_batch
             if previous is not None:
                 previous.cancel_event.set()
             self._active_batch = op
+            # Register before releasing the lock so shutdown cannot pass its
+            # operation snapshot between batch creation and registration.
+            self.registry.register(op)
 
         def cancelled() -> bool:
             """True when this run, the manager, or the caller asked to stop.
@@ -194,8 +220,8 @@ class LifecycleManager:
                     def record_process_started(pid: int) -> None:
                         self._register_process(op, pid)
 
-                    def record_process_finished(pid: int) -> None:
-                        self._unregister_process(op, pid)
+                    def record_process_finished(pid: int, survivors: set[int]) -> None:
+                        self._unregister_process(op, pid, survivors)
 
                     if selected_files is None:
                         summary = process_folder(
@@ -251,7 +277,8 @@ class LifecycleManager:
         op.thread = worker
         with self._batch_lock:
             self.batch_thread = worker
-        self.registry.register(op)
+            if self._shutting_down:
+                op.cancel_event.set()
         worker.start()
 
     def cancel_batch(self) -> None:
@@ -270,6 +297,10 @@ class LifecycleManager:
         """Orderly shutdown sequence with escalation for workers, file writes, and temp directories."""
         logging.info("Initiating orderly lifecycle shutdown sequence...")
         clean_shutdown = True
+
+        with self._batch_lock:
+            self._shutting_down = True
+            self.cancel_event.set()
 
         # Mark operations before waiting for workers. A renderer that is still
         # inside macOS spawn startup must be terminated as soon as it reports

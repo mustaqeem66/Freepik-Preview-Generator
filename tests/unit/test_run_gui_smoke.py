@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 from scripts.run_gui_smoke import main
@@ -33,7 +34,11 @@ def test_gui_smoke_captures_output(tmp_path) -> None:
     assert "native output" in output.read_text(encoding="utf-8")
 
 
-def test_gui_smoke_times_out_and_terminates_the_child() -> None:
+def test_gui_smoke_times_out_and_terminates_the_child(tmp_path) -> None:
+    pid_file = tmp_path / "child.pid"
+    child_code = (
+        f"import os, pathlib, time; pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); time.sleep(30)"
+    )
     code = main(
         [
             "--timeout",
@@ -41,7 +46,14 @@ def test_gui_smoke_times_out_and_terminates_the_child() -> None:
             "--",
             sys.executable,
             "-c",
-            "import time; time.sleep(30)",
+            child_code,
         ]
     )
     assert code == 124
+    pid = int(pid_file.read_text(encoding="utf-8"))
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        pass
+    else:
+        raise AssertionError(f"timed-out GUI child {pid} is still alive")

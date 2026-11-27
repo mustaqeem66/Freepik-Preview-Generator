@@ -7,6 +7,7 @@ or partially written reports behind.
 """
 
 import multiprocessing
+import queue
 import sys
 import threading
 import time
@@ -123,7 +124,7 @@ def test_renderer_pool_reports_process_completion(tmp_path):
         pytest.skip("sample.png fixture missing")
 
     started: list[int] = []
-    finished: list[int] = []
+    finished: list[tuple[int, set[int]]] = []
     pool = RendererProcessPool(default_timeout=30.0)
 
     pool.render(
@@ -132,11 +133,65 @@ def test_renderer_pool_reports_process_completion(tmp_path):
         PreviewConfig(),
         timeout_seconds=30.0,
         on_process_started=started.append,
-        on_process_finished=finished.append,
+        on_process_finished=lambda pid, survivors: finished.append((pid, survivors)),
     )
 
     assert started
-    assert finished == started
+    assert [pid for pid, _survivors in finished] == started
+    assert all(not survivors for _pid, survivors in finished)
+
+
+def test_renderer_completion_is_reported_before_result_queue_read(monkeypatch, tmp_path):
+    """The PID must leave the lifecycle registry before it can be reused."""
+    if not SAMPLE_PNG.is_file():
+        pytest.skip("sample.png fixture missing")
+
+    from previewgen import renderer_process
+
+    queue_entered = threading.Event()
+    release_queue = threading.Event()
+
+    class _BlockingQueue:
+        def get(self, timeout=None):
+            queue_entered.set()
+            release_queue.wait(timeout=5)
+            raise queue.Empty
+
+        def get_nowait(self):
+            raise queue.Empty
+
+        def close(self):
+            return None
+
+        def join_thread(self):
+            return None
+
+    monkeypatch.setattr(renderer_process.mp, "Queue", _BlockingQueue)
+    finished: list[tuple[int, set[int]]] = []
+    pool = renderer_process.RendererProcessPool(default_timeout=30.0)
+    errors: list[BaseException] = []
+
+    def _render():
+        try:
+            pool.render(
+                SAMPLE_PNG,
+                tmp_path / "out.jpg",
+                PreviewConfig(),
+                timeout_seconds=30.0,
+                on_process_finished=lambda pid, survivors: finished.append((pid, survivors)),
+            )
+        except BaseException as exc:
+            errors.append(exc)
+
+    worker = threading.Thread(target=_render)
+    worker.start()
+    try:
+        assert queue_entered.wait(5.0)
+        assert finished, "the exited renderer PID remained registered during queue retrieval"
+    finally:
+        release_queue.set()
+        worker.join(timeout=5.0)
+    assert not worker.is_alive()
 
 
 def test_completed_renderer_pid_is_removed_from_lifecycle_registry(monkeypatch, tmp_path):
@@ -160,7 +215,7 @@ def test_completed_renderer_pid_is_removed_from_lifecycle_registry(monkeypatch, 
         assert on_process_started is not None
         assert on_process_finished is not None
         on_process_started(4242)
-        on_process_finished(4242)
+        on_process_finished(4242, set())
         reported.set()
         release.wait(timeout=3)
         return {
@@ -192,6 +247,59 @@ def test_completed_renderer_pid_is_removed_from_lifecycle_registry(monkeypatch, 
     assert operation is not None
     assert 4242 not in operation.process_ids
     release.set()
+
+
+def test_lifecycle_retains_surviving_renderer_descendants():
+    """A survivor must remain registered for a later shutdown retry."""
+    from previewgen.lifecycle import ActiveOperation
+
+    lifecycle = LifecycleManager()
+    operation = ActiveOperation(operation_id="surviving_renderer", kind="batch_render")
+    lifecycle.register_operation(operation)
+
+    lifecycle._unregister_process(operation, 100, {200})
+
+    assert 100 not in operation.process_ids
+    assert 200 in operation.process_ids
+
+
+def test_start_batch_after_shutdown_is_rejected(monkeypatch, tmp_path):
+    """A late batch must not clear cancellation or escape the shutdown gate."""
+    from previewgen import lifecycle as lifecycle_module
+
+    process_calls = []
+
+    def _fake_process_folder(*_args, **_kwargs):
+        process_calls.append(True)
+        return {
+            "planned": 0,
+            "processed": 0,
+            "remaining": 0,
+            "success": 0,
+            "failed": 0,
+            "skipped": 0,
+            "cancelled": True,
+            "status": "cancelled",
+            "errors": [],
+            "duration": 0.0,
+        }
+
+    monkeypatch.setattr(lifecycle_module, "process_folder", _fake_process_folder)
+    lifecycle = LifecycleManager()
+    lifecycle.cleanup()
+
+    with pytest.raises(RuntimeError, match="shutting down"):
+        lifecycle.start_batch(
+            tmp_path,
+            tmp_path / "out",
+            PreviewConfig(),
+            progress_callback=lambda *_args: None,
+            is_cancelled=lifecycle.cancel_event.is_set,
+            operation_id="late_batch",
+        )
+
+    assert process_calls == []
+    assert lifecycle.cancel_event.is_set()
 
 
 def test_process_starting_after_shutdown_is_terminated_immediately(tmp_path):

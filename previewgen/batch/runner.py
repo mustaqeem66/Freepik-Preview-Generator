@@ -117,7 +117,7 @@ def process_folder(
     *,
     selected_files: tuple[Path, ...] | None = None,
     on_process_started: Callable[[int], None] | None = None,
-    on_process_finished: Callable[[int], None] | None = None,
+    on_process_finished: Callable[[int, set[int]], None] | None = None,
 ) -> dict[str, Any]:
     input_folder = input_folder.resolve()
     output_folder = output_folder.resolve()
