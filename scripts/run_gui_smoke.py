@@ -57,12 +57,19 @@ def main(argv: list[str] | None = None) -> int:
         output_stream = output_handle
 
     try:
-        process = subprocess.Popen(
-            command,
-            start_new_session=True,
-            stdout=output_stream,
-            stderr=subprocess.STDOUT if output_stream is not None else None,
-        )
+        if os.name == "posix":
+            process = subprocess.Popen(
+                command,
+                start_new_session=True,
+                stdout=output_stream,
+                stderr=subprocess.STDOUT if output_stream is not None else None,
+            )
+        else:
+            process = subprocess.Popen(
+                command,
+                stdout=output_stream,
+                stderr=subprocess.STDOUT if output_stream is not None else None,
+            )
         try:
             return process.wait(timeout=args.timeout)
         except subprocess.TimeoutExpired:
