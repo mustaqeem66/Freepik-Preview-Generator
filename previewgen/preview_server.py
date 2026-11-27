@@ -79,7 +79,7 @@ class PreviewFileServer:
 
     _serializable = False  # never reachable from window.pywebview.api
 
-    def __init__(self) -> None:
+    def __init__(self, autostart: bool = True) -> None:
         self._root: Path | None = None
         self._httpd: http.server.ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -101,7 +101,8 @@ class PreviewFileServer:
         # kernel stopped routing to it. Binding eagerly in the constructor
         # keeps the listener on the creating thread; the accept loop still
         # runs on its own daemon thread.
-        self.start()
+        if autostart:
+            self.start()
 
     @property
     def running(self) -> bool:

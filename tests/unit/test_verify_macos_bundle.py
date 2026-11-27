@@ -43,7 +43,12 @@ def _make_bundle(root: Path) -> Path:
         '<link rel="stylesheet" href="./assets/app.css">',
     )
     _write(frameworks / "frontend" / "dist" / "assets" / "app.js", "export {};")
-    _write(frameworks / "frontend" / "dist" / "assets" / "app.css", "body {}")
+    _write(
+        frameworks / "frontend" / "dist" / "assets" / "app.css",
+        '@import "./theme.css"; body { background: url("./font.woff2"); }',
+    )
+    _write(frameworks / "frontend" / "dist" / "assets" / "theme.css", ":root {}")
+    _write(frameworks / "frontend" / "dist" / "assets" / "font.woff2", "font")
     _write(frameworks / "previewgen" / "settings_schema.json", "{}")
     _write(frameworks / "webview" / "js" / "api.js", "// api")
     _write(frameworks / "webview" / "js" / "finish.js", "// finish")
@@ -68,6 +73,7 @@ def test_verify_bundle_accepts_a_complete_app(tmp_path: Path) -> None:
         ("Contents/MacOS/PreviewGen", "executable"),
         ("Contents/Frameworks/frontend/dist/index.html", "frontend index"),
         ("Contents/Frameworks/frontend/dist/assets/app.js", "frontend asset"),
+        ("Contents/Frameworks/frontend/dist/assets/font.woff2", "frontend asset"),
         ("Contents/Frameworks/previewgen/settings_schema.json", "settings schema"),
         ("Contents/Frameworks/webview/js/api.js", "pywebview JavaScript"),
         ("Contents/Frameworks/setuptools/_vendor/jaraco/text/__init__.py", "Setuptools"),
@@ -93,12 +99,25 @@ def test_verify_bundle_rejects_wrong_identity_and_version(tmp_path: Path) -> Non
     plist = plistlib.loads(plist_path.read_bytes())
     plist["CFBundleIdentifier"] = "com.example.other"
     plist["CFBundleShortVersionString"] = "9.9.9"
+    plist["CFBundleVersion"] = "0.0.0"
     plist_path.write_bytes(plistlib.dumps(plist))
 
     failures = verify_bundle(app, expected_version=VERSION)
 
     assert any("bundle identifier" in failure for failure in failures)
-    assert any("version" in failure for failure in failures)
+    assert any("short version" in failure for failure in failures)
+    assert any("build version" in failure for failure in failures)
+
+
+def test_verify_bundle_rejects_empty_or_invalid_text_resources(tmp_path: Path) -> None:
+    app = _make_bundle(tmp_path)
+    (app / "Contents/Frameworks/webview/js/api.js").write_text("", encoding="utf-8")
+    (app / "Contents/Frameworks/previewgen/settings_schema.json").write_text("not json", encoding="utf-8")
+
+    failures = verify_bundle(app, expected_version=VERSION)
+
+    assert any("pywebview JavaScript" in failure for failure in failures)
+    assert any("settings schema" in failure for failure in failures)
 
 
 def test_verify_bundle_rejects_non_macho_executable(tmp_path: Path) -> None:

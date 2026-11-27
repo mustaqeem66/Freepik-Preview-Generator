@@ -444,7 +444,8 @@ jobs:
           export PREVIEWGEN_CSP_VIOLATIONS="$PWD/csp_violations.jsonl"
           rm -f "$PREVIEWGEN_READY_MARKER" "$PREVIEWGEN_RENDER_MARKER" \
             "$PREVIEWGEN_CSP_MARKER" "$PREVIEWGEN_CSP_VIOLATIONS"
-          python3 scripts/run_gui_smoke.py --timeout 180 -- \
+          python3 scripts/run_gui_smoke.py --timeout 180 \
+            --output previewgen-macos-gui.log -- \
             "$PWD/dmg_staging/PreviewGen.app/Contents/MacOS/PreviewGen" --gui-smoke-test
           test -f "$PREVIEWGEN_READY_MARKER" || {
             cat ~/Library/Logs/PreviewGen/previewgen.log 2>/dev/null || true
@@ -452,6 +453,24 @@ jobs:
           }
           python3 scripts/check_render_marker.py --marker "$PREVIEWGEN_RENDER_MARKER"
           python3 scripts/check_csp_marker.py --marker "$PREVIEWGEN_CSP_MARKER"
+
+      - name: Collect macOS build startup evidence
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p build_diagnostics/macos
+          cp gui_ready.txt render_ready.json csp_selftest.json csp_violations.jsonl \
+            previewgen-macos-gui.log build_diagnostics/macos/ 2>/dev/null || true
+          cp ~/Library/Logs/PreviewGen/previewgen.log \
+            build_diagnostics/macos/previewgen-macos.log 2>/dev/null || true
+
+      - name: Upload macOS build startup evidence
+        if: always() && runner.os == 'macOS'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-startup-${{ matrix.artifact }}-${{ matrix.os }}
+          path: build_diagnostics/macos/
+          if-no-files-found: ignore
 
       - name: Create macOS DMG
         if: runner.os == 'macOS'
@@ -695,7 +714,8 @@ jobs:
           # The packaged app gets a bounded budget to mount the frontend and
           # then a separate budget to run the CSP probe in the live WebView,
           # so the timeout here must cover both plus process startup.
-          python3 scripts/run_gui_smoke.py --timeout 180 -- \
+          python3 scripts/run_gui_smoke.py --timeout 180 \
+            --output previewgen-macos-gui.log -- \
             /Volumes/PreviewGenTest/PreviewGen.app/Contents/MacOS/PreviewGen --gui-smoke-test || {
             cat ~/Library/Logs/PreviewGen/previewgen.log 2>/dev/null || true
             echo "FATAL: macOS GUI test failed or timed out after 180s"; exit 1;

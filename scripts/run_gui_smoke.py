@@ -9,6 +9,7 @@ import os
 import signal
 import subprocess
 import sys
+from pathlib import Path
 
 TIMEOUT_EXIT_CODE = 124
 
@@ -33,6 +34,7 @@ def _terminate_group(process: subprocess.Popen[bytes]) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--timeout", type=float, default=180.0)
+    parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     command = args.command
@@ -41,16 +43,33 @@ def main(argv: list[str] | None = None) -> int:
     if not command:
         parser.error("a GUI smoke command is required")
 
-    process = subprocess.Popen(command, start_new_session=True)
+    output_handle = None
+    output_stream = None
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        output_handle = args.output.open("w", encoding="utf-8", errors="replace")
+        output_stream = output_handle
+
     try:
-        return process.wait(timeout=args.timeout)
-    except subprocess.TimeoutExpired:
-        print(
-            f"FATAL: GUI smoke command exceeded {args.timeout:g}s; terminating its process group.",
-            file=sys.stderr,
+        process = subprocess.Popen(
+            command,
+            start_new_session=True,
+            stdout=output_stream,
+            stderr=subprocess.STDOUT if output_stream is not None else None,
         )
-        _terminate_group(process)
-        return TIMEOUT_EXIT_CODE
+        try:
+            return process.wait(timeout=args.timeout)
+        except subprocess.TimeoutExpired:
+            message = f"FATAL: GUI smoke command exceeded {args.timeout:g}s; terminating its process group."
+            print(message, file=sys.stderr)
+            if output_stream is not None:
+                print(message, file=output_stream)
+                output_stream.flush()
+            _terminate_group(process)
+            return TIMEOUT_EXIT_CODE
+    finally:
+        if output_handle is not None:
+            output_handle.close()
 
 
 if __name__ == "__main__":

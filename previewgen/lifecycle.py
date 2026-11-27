@@ -30,6 +30,8 @@ class ActiveOperation:
     cancel_event: threading.Event = field(default_factory=threading.Event)
     thread: threading.Thread | None = None
     process_ids: set[int] = field(default_factory=set)
+    process_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    shutting_down: bool = False
     temp_roots: set[Path] = field(default_factory=set)
     lock_handles: list[Any] = field(default_factory=list)
     cleanup_callbacks: list[Callable[[], None]] = field(default_factory=list)
@@ -89,6 +91,30 @@ class LifecycleManager:
     def unregister_operation(self, operation_id: str) -> None:
         """Unregister an operation upon normal completion."""
         self.registry.unregister(operation_id)
+
+    def _register_process(self, operation: ActiveOperation, pid: int) -> None:
+        """Register a child PID, or stop it immediately after shutdown began."""
+        with operation.process_lock:
+            if operation.shutting_down:
+                terminate_now = True
+            else:
+                operation.process_ids.add(int(pid))
+                terminate_now = False
+        if terminate_now:
+            logging.warning(
+                "Renderer process pid=%d started during shutdown; terminating it immediately",
+                pid,
+            )
+            proc.terminate_process_tree(int(pid))
+
+    def _unregister_process(self, operation: ActiveOperation, pid: int) -> None:
+        with operation.process_lock:
+            operation.process_ids.discard(int(pid))
+
+    def _mark_operations_shutting_down(self) -> None:
+        for operation in self.registry.all_operations():
+            with operation.process_lock:
+                operation.shutting_down = True
 
     def get_active_operations(self) -> list[ActiveOperation]:
         """Return a snapshot of currently active registered operations."""
@@ -166,10 +192,10 @@ class LifecycleManager:
                             progress_callback(cur, tot, msg)
 
                     def record_process_started(pid: int) -> None:
-                        op.process_ids.add(int(pid))
+                        self._register_process(op, pid)
 
                     def record_process_finished(pid: int) -> None:
-                        op.process_ids.discard(int(pid))
+                        self._unregister_process(op, pid)
 
                     if selected_files is None:
                         summary = process_folder(
@@ -245,6 +271,11 @@ class LifecycleManager:
         logging.info("Initiating orderly lifecycle shutdown sequence...")
         clean_shutdown = True
 
+        # Mark operations before waiting for workers. A renderer that is still
+        # inside macOS spawn startup must be terminated as soon as it reports
+        # its PID, rather than escaping the one-shot cleanup pass.
+        self._mark_operations_shutting_down()
+
         # 1. Signal cancellation to all workers and operations
         self.cancel_event.set()
         self.registry.cancel_all()
@@ -278,19 +309,25 @@ class LifecycleManager:
                     )
 
         # 4. Check registry operations and terminate surviving child processes
-        surviving_ops = [
-            op for op in self.registry.all_operations() if (op.thread and op.thread.is_alive()) or op.process_ids
-        ]
+        surviving_ops: list[ActiveOperation] = []
+        process_ids_by_operation: dict[str, list[int]] = {}
+        for operation in self.registry.all_operations():
+            with operation.process_lock:
+                process_ids = list(operation.process_ids)
+            if (operation.thread and operation.thread.is_alive()) or process_ids:
+                surviving_ops.append(operation)
+                process_ids_by_operation[operation.operation_id] = process_ids
         if surviving_ops:
             clean_shutdown = False
             for op in surviving_ops:
+                process_ids = process_ids_by_operation.get(op.operation_id, [])
                 logging.warning(
                     "Surviving active operation during shutdown: id=%s kind=%s pids=%s",
                     op.operation_id,
                     op.kind,
-                    op.process_ids,
+                    process_ids,
                 )
-                for pid in list(op.process_ids):
+                for pid in process_ids:
                     try:
                         survivors = proc.terminate_process_tree(pid)
                         if survivors:

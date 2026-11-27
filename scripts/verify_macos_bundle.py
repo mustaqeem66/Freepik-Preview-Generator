@@ -10,8 +10,10 @@ vendored modules it imports.
 from __future__ import annotations
 
 import argparse
+import json
 import platform
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -58,15 +60,75 @@ def _source_version() -> str:
     return __version__
 
 
-def _has_file(path: Path, patterns: tuple[str, ...]) -> bool:
+def _has_file(path: Path, patterns: tuple[str, ...], min_size: int = 1) -> bool:
     if path.is_file():
-        return True
+        return path.stat().st_size >= min_size
     search_root = path if path.is_dir() else path.parent
     for pattern in patterns:
         for match in search_root.glob(pattern):
-            if match.is_file():
-                return True
+            try:
+                if match.is_file() and match.stat().st_size >= min_size:
+                    return True
+            except OSError:
+                continue
     return False
+
+
+def _css_asset_references(
+    css_path: Path,
+    root: Path,
+    seen: set[Path] | None = None,
+) -> tuple[list[Path], list[str]]:
+    """Collect local CSS imports and url(...) assets, recursively."""
+    seen = seen if seen is not None else set()
+    resolved = css_path.resolve()
+    if resolved in seen:
+        return [], []
+    seen.add(resolved)
+    try:
+        css = resolved.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        return [], [f"frontend stylesheet cannot be read: {exc}"]
+
+    raw_references: list[str] = []
+    raw_references.extend(
+        match.group(1)
+        for match in re.finditer(
+            r"@import\s+(?:url\(\s*)?[\"']?([^\"')\s;]+)",
+            css,
+            flags=re.IGNORECASE,
+        )
+    )
+    raw_references.extend(
+        match.group(1)
+        for match in re.finditer(
+            r"url\(\s*[\"']?([^\"')\s]+)",
+            css,
+            flags=re.IGNORECASE,
+        )
+    )
+
+    references: list[Path] = []
+    errors: list[str] = []
+    for raw in raw_references:
+        parsed = urlparse(raw)
+        if parsed.scheme or parsed.netloc or raw.startswith(("data:", "#")):
+            continue
+        path_text = unquote(parsed.path)
+        if not path_text:
+            continue
+        candidate = (resolved.parent / path_text.lstrip("/")).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            errors.append(f"frontend asset escapes the bundle: {raw}")
+            continue
+        references.append(candidate)
+        if candidate.suffix.lower() == ".css" and candidate.is_file():
+            nested, nested_errors = _css_asset_references(candidate, root, seen)
+            references.extend(nested)
+            errors.extend(nested_errors)
+    return references, errors
 
 
 def _frontend_references(index_path: Path) -> tuple[list[str], list[str]]:
@@ -82,7 +144,7 @@ def _frontend_references(index_path: Path) -> tuple[list[str], list[str]]:
         return [], [f"frontend index cannot be parsed: {exc}"]
 
     root = index_path.parent.resolve()
-    references: list[str] = []
+    references: list[Path] = []
     errors: list[str] = []
     for raw in parser.references:
         parsed = urlparse(raw)
@@ -97,8 +159,12 @@ def _frontend_references(index_path: Path) -> tuple[list[str], list[str]]:
         except ValueError:
             errors.append(f"frontend asset escapes the bundle: {raw}")
             continue
-        references.append(str(candidate))
-    return references, errors
+        references.append(candidate)
+        if candidate.suffix.lower() == ".css" and candidate.is_file():
+            css_references, css_errors = _css_asset_references(candidate, root)
+            references.extend(css_references)
+            errors.extend(css_errors)
+    return [str(reference) for reference in references], errors
 
 
 def _architecture_failures(executable: Path, expected_arch: str | None) -> list[str]:
@@ -162,8 +228,10 @@ def verify_bundle(
         failures.append(f"bundle executable must be {BUNDLE_EXECUTABLE!r}, found {info.get('CFBundleExecutable')!r}")
     if str(info.get("CFBundleShortVersionString", "")) != expected_version:
         failures.append(
-            f"bundle version must be {expected_version!r}, found {info.get('CFBundleShortVersionString')!r}"
+            f"bundle short version must be {expected_version!r}, found {info.get('CFBundleShortVersionString')!r}"
         )
+    if str(info.get("CFBundleVersion", "")) != expected_version:
+        failures.append(f"bundle build version must be {expected_version!r}, found {info.get('CFBundleVersion')!r}")
 
     executable = contents / "MacOS" / BUNDLE_EXECUTABLE
     if not executable.is_file():
@@ -188,8 +256,17 @@ def verify_bundle(
             if not Path(reference).is_file():
                 failures.append(f"packaged frontend asset is missing: {Path(reference).name}")
 
-    if not (frameworks / "previewgen" / "settings_schema.json").is_file():
+    settings_path = frameworks / "previewgen" / "settings_schema.json"
+    if not settings_path.is_file():
         failures.append("packaged settings schema is missing")
+    else:
+        try:
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            failures.append(f"packaged settings schema is invalid: {exc}")
+        else:
+            if not isinstance(settings, dict):
+                failures.append("packaged settings schema is not a JSON object")
 
     webview_js = frameworks / "webview" / "js"
     if not _has_file(webview_js / "api.js", ("api.js", "api.*.js")):

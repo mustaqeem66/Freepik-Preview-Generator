@@ -462,6 +462,23 @@ def test_macos_build_runs_a_real_wkwebview_smoke_with_render_evidence() -> None:
     assert "PREVIEWGEN_CSP_MARKER" in mac_build
     assert "check_render_marker.py" in mac_build
     assert "scripts/run_gui_smoke.py" in mac_build
+    assert "--output previewgen-macos-gui.log" in mac_build
+    assert "Collect macOS build startup evidence" in mac_build
+    assert "Upload macOS build startup evidence" in mac_build
+
+
+def test_macos_build_gates_run_in_fail_closed_order() -> None:
+    build = ROOT / ".github/workflows/build.yml"
+    text = build.read_text(encoding="utf-8")
+    mac_build = text.split("clean-machine-test:", 1)[0]
+
+    verify_index = mac_build.index("Verify frozen macOS application bundle")
+    gui_index = mac_build.index("macOS Packaged WKWebView Smoke Test")
+    dmg_index = mac_build.index("Create macOS DMG")
+    evidence_index = mac_build.index("Collect macOS build startup evidence")
+
+    assert verify_index < gui_index < evidence_index < dmg_index
+    assert "if: always() && runner.os == 'macOS'" in mac_build
 
 
 def test_macos_clean_machine_gate_verifies_the_final_dmg_and_render_evidence() -> None:

@@ -116,7 +116,10 @@ class DesktopApi:
         self.scanner = get_scanner()
         self.lifecycle = LifecycleManager()
         self.lifecycle.set_scanner(self.scanner)
-        self.preview_server = PreviewFileServer()
+        # Bind the preview socket only after the rest of the API is ready.
+        # This keeps a later coordinator-initialization failure from leaving
+        # an orphaned loopback thread or temp directory behind.
+        self.preview_server = PreviewFileServer(autostart=False)
         self.preview_coordinator = PreviewCoordinator(self.preview_server)
         self.preview_coordinator.set_dispatch_fn(self._dispatch_envelope)
         self.thumbnail_coordinator = ThumbnailCoordinator(
@@ -161,6 +164,21 @@ class DesktopApi:
             finished_callback=self._on_scan_finished,
         )
         self.lifecycle.set_batch_finished_callback(self._on_batch_finished)
+
+        try:
+            self.preview_server.start()
+        except Exception:
+            for cleanup in (
+                self.comparison_coordinator.close,
+                self.thumbnail_coordinator.close,
+                self.preview_coordinator.shutdown,
+                self.probe_coordinator.shutdown,
+                self.lifecycle.cleanup,
+                self.preview_server.stop,
+            ):
+                with contextlib.suppress(Exception):
+                    cleanup()
+            raise
 
     def _set_window(self, win: Any, *, custom_chrome: bool = False) -> None:
         """Bind the only trusted native window and its titlebar mode."""

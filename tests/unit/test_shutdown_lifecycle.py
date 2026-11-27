@@ -194,6 +194,34 @@ def test_completed_renderer_pid_is_removed_from_lifecycle_registry(monkeypatch, 
     release.set()
 
 
+def test_process_starting_after_shutdown_is_terminated_immediately(tmp_path):
+    """A renderer registered after cleanup must not escape the shutdown gate."""
+    from previewgen.lifecycle import ActiveOperation
+
+    context = multiprocessing.get_context("spawn")
+    stop_event = context.Event()
+    child = context.Process(target=_sleep_until_stopped, args=(stop_event,))
+    child.start()
+
+    lifecycle = LifecycleManager()
+    operation = ActiveOperation(operation_id="late_renderer", kind="batch_render")
+    lifecycle.register_operation(operation)
+    lifecycle.cleanup()
+
+    lifecycle._register_process(operation, child.pid)
+
+    deadline = time.monotonic() + 3.0
+    while child.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    try:
+        assert not child.is_alive()
+    finally:
+        stop_event.set()
+        if child.is_alive():
+            child.terminate()
+        child.join(timeout=2.0)
+
+
 def test_cleanup_terminates_registered_batch_renderer(monkeypatch, tmp_path):
     """A renderer PID must reach the lifecycle registry before shutdown."""
     from previewgen import lifecycle as lifecycle_module
