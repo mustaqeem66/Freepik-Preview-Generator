@@ -499,6 +499,7 @@ def test_native_evidence_upload_includes_macos_markers_and_log() -> None:
     assert "gui_ready.txt" in text
     assert "render_ready.json" in text
     assert "previewgen-macos.log" in text
+    assert "previewgen-macos-gui.log" in text
     assert "csp_selftest.json" in text
     assert "csp_violations.jsonl" in text
 

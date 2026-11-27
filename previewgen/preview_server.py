@@ -91,8 +91,11 @@ class PreviewFileServer:
         # Reference counts per preview handle (filename). A preview addressed by
         # several consumers survives until the last one releases it.
         self._refs: dict[str, int] = {}
-        # Bind the listening socket now, while the constructor runs on the
-        # thread that created this object. ``bind()`` issued from a worker
+        # By default, bind the listening socket now, while the constructor
+        # runs on the thread that created this object. Callers that need a
+        # larger transactional setup can pass ``autostart=False`` and call
+        # ``start()`` after their remaining initialization succeeds.
+        # ``bind()`` issued from a worker
         # thread yields a loopback socket that some kernels (WSL2 among them)
         # refuse to route connections to: the socket sits in LISTEN state and
         # the port looks bound, but every connect is answered with ECONNREFUSED.

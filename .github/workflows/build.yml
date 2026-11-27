@@ -881,6 +881,7 @@ jobs:
             csp_selftest.json
             csp_violations.jsonl
             previewgen-gui-*.log
+            previewgen-macos-gui.log
             previewgen-macos.log
             previewgen-weston.log
           if-no-files-found: ignore
