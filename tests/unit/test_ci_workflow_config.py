@@ -461,6 +461,7 @@ def test_macos_build_runs_a_real_wkwebview_smoke_with_render_evidence() -> None:
     assert "PREVIEWGEN_RENDER_MARKER" in mac_build
     assert "PREVIEWGEN_CSP_MARKER" in mac_build
     assert "check_render_marker.py" in mac_build
+    assert "scripts/run_gui_smoke.py" in mac_build
 
 
 def test_macos_clean_machine_gate_verifies_the_final_dmg_and_render_evidence() -> None:
@@ -471,6 +472,7 @@ def test_macos_clean_machine_gate_verifies_the_final_dmg_and_render_evidence() -
     assert ("python3 scripts/verify_macos_bundle.py /Volumes/PreviewGenTest/PreviewGen.app") in clean_machine_job
     assert "PREVIEWGEN_RENDER_MARKER" in clean_machine_job
     assert "check_render_marker.py" in clean_machine_job
+    assert "scripts/run_gui_smoke.py" in clean_machine_job
 
 
 def test_native_evidence_upload_includes_macos_markers_and_log() -> None:

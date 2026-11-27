@@ -444,7 +444,8 @@ jobs:
           export PREVIEWGEN_CSP_VIOLATIONS="$PWD/csp_violations.jsonl"
           rm -f "$PREVIEWGEN_READY_MARKER" "$PREVIEWGEN_RENDER_MARKER" \
             "$PREVIEWGEN_CSP_MARKER" "$PREVIEWGEN_CSP_VIOLATIONS"
-          python3 -c "import subprocess, sys; proc = subprocess.Popen(['$PWD/dmg_staging/PreviewGen.app/Contents/MacOS/PreviewGen', '--gui-smoke-test']); sys.exit(proc.wait(timeout=180))"
+          python3 scripts/run_gui_smoke.py --timeout 180 -- \
+            "$PWD/dmg_staging/PreviewGen.app/Contents/MacOS/PreviewGen" --gui-smoke-test
           test -f "$PREVIEWGEN_READY_MARKER" || {
             cat ~/Library/Logs/PreviewGen/previewgen.log 2>/dev/null || true
             echo "FATAL: packaged macOS WKWebView never reported frontend ready"; exit 1;
@@ -694,7 +695,8 @@ jobs:
           # The packaged app gets a bounded budget to mount the frontend and
           # then a separate budget to run the CSP probe in the live WebView,
           # so the timeout here must cover both plus process startup.
-          python3 -c "import subprocess, sys, time; proc = subprocess.Popen(['/Volumes/PreviewGenTest/PreviewGen.app/Contents/MacOS/PreviewGen', '--gui-smoke-test']); sys.exit(proc.wait(timeout=180))" || {
+          python3 scripts/run_gui_smoke.py --timeout 180 -- \
+            /Volumes/PreviewGenTest/PreviewGen.app/Contents/MacOS/PreviewGen --gui-smoke-test || {
             cat ~/Library/Logs/PreviewGen/previewgen.log 2>/dev/null || true
             echo "FATAL: macOS GUI test failed or timed out after 180s"; exit 1;
           }
