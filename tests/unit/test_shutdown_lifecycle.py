@@ -351,6 +351,29 @@ def test_operation_registration_after_shutdown_is_rejected():
     assert lifecycle.registry.get("late_operation") is None
 
 
+def test_cleanup_retains_surviving_renderer_descendants(monkeypatch):
+    """A failed tree termination must remain visible to lifecycle cleanup."""
+    from previewgen import lifecycle as lifecycle_module
+    from previewgen.lifecycle import ActiveOperation
+
+    lifecycle = LifecycleManager()
+    operation = ActiveOperation(operation_id="surviving_export", kind="single_export")
+    lifecycle.register_operation(operation)
+    lifecycle.register_process(operation, 4321)
+    monkeypatch.setattr(
+        lifecycle_module.proc,
+        "terminate_process_tree",
+        lambda _pid, **_kwargs: {9876},
+    )
+
+    lifecycle.cleanup()
+    lifecycle.unregister_process(operation, 4321, set())
+    lifecycle.unregister_operation(operation.operation_id)
+
+    assert 9876 in operation.process_ids
+    assert lifecycle.registry.get(operation.operation_id) is operation
+
+
 @pytest.mark.skipif(
     sys.platform == "win32",
     reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",

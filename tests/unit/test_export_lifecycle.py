@@ -34,6 +34,19 @@ def test_single_export_registers_and_retires_its_renderer_pid(tmp_path, monkeypa
     assert callable(observed["finished"])
 
 
+def test_render_preview_during_shutdown_returns_structured_error(tmp_path):
+    source = tmp_path / "asset.png"
+    Image.new("RGB", (16, 16), "red").save(source)
+    api = DesktopApi()
+    api._add_authorized_input_folder(tmp_path)
+    api.lifecycle.cleanup()
+
+    result = api.render_preview(str(source), {})
+
+    assert result["ok"] is False
+    assert result["error"]
+
+
 def test_single_probe_registers_and_retires_its_worker_pid(tmp_path, monkeypatch):
     source = tmp_path / "asset.png"
     Image.new("RGB", (16, 16), "red").save(source)

@@ -1353,8 +1353,8 @@ class DesktopApi:
             return {"ok": False, "value": None, "error": auxiliary_error}
         op_id = f"render_preview_{request_id or uuid.uuid4().hex[:6]}"
         op = ActiveOperation(operation_id=op_id, kind="preview_render")
-        self.lifecycle.register_operation(op)
         try:
+            self.lifecycle.register_operation(op)
             if not isinstance(file_path, str) or not file_path.strip():
                 return {"ok": False, "value": None, "error": "Empty file path"}
 
