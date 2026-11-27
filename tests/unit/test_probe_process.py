@@ -23,6 +23,23 @@ def test_probe_asset_isolated_reports_native_raster_size(tmp_path):
     assert result["nativeHeight"] == 123
 
 
+def test_probe_asset_isolated_reports_process_lifecycle(tmp_path):
+    src = tmp_path / "art.png"
+    Image.new("RGB", (16, 16), (1, 2, 3)).save(src)
+    started: list[int] = []
+    finished: list[tuple[int, set[int]]] = []
+
+    probe_asset_isolated(
+        src,
+        on_process_started=started.append,
+        on_process_finished=lambda pid, survivors: finished.append((pid, survivors)),
+    )
+
+    assert started
+    assert [pid for pid, _survivors in finished] == started
+    assert all(not survivors for _pid, survivors in finished)
+
+
 def test_probe_asset_isolated_fails_closed_on_uninspectable_asset(tmp_path):
     bad = tmp_path / "broken.png"
     bad.write_bytes(b"this is not a real png")

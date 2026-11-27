@@ -1457,9 +1457,9 @@ class DesktopApi:
             return {"ok": False, "value": None, "error": source_error}
         op_id = f"probe_{request_id or uuid.uuid4().hex[:6]}"
         op = ActiveOperation(operation_id=op_id, kind="asset_probe")
-        self.lifecycle.register_operation(op)
         temp_dir: Path | None = None
         try:
+            self.lifecycle.register_operation(op)
             if not isinstance(file_path, str) or not file_path.strip():
                 return {"ok": False, "value": None, "error": "Empty file path"}
 
@@ -1484,7 +1484,15 @@ class DesktopApi:
             if not source_path.is_file():
                 return {"ok": False, "value": None, "error": f"File does not exist: {source_path.name}"}
 
-            probe_data = probe_asset_isolated(source_path)
+            probe_data = probe_asset_isolated(
+                source_path,
+                on_process_started=lambda pid: self.lifecycle.register_process(op, pid),
+                on_process_finished=lambda pid, survivors: self.lifecycle.unregister_process(
+                    op,
+                    pid,
+                    survivors,
+                ),
+            )
             if request_id is not None:
                 probe_data["requestId"] = request_id
             return {"ok": True, "value": probe_data, "error": None}
@@ -1568,8 +1576,9 @@ class DesktopApi:
             # This runs synchronously on the bridge thread, so it has to be
             # visible to the watchdog; an idle app must not look stalled, but a
             # hung export must.
-            export_op = ActiveOperation(operation_id=f"export_{uuid.uuid4().hex[:12]}", kind="single_export")
-            self.lifecycle.register_operation(export_op)
+            operation = ActiveOperation(operation_id=f"export_{uuid.uuid4().hex[:12]}", kind="single_export")
+            export_op = operation
+            self.lifecycle.register_operation(operation)
 
             # A zip member's default destination is the archive's folder; the
             # extraction temp dir is deleted in the finally block.
@@ -1616,7 +1625,18 @@ class DesktopApi:
             )
 
             if not skipped:
-                render_file_isolated(source_path, dest_file, cfg, timeout_seconds=60.0)
+                render_file_isolated(
+                    source_path,
+                    dest_file,
+                    cfg,
+                    timeout_seconds=60.0,
+                    on_process_started=lambda pid: self.lifecycle.register_process(operation, pid),
+                    on_process_finished=lambda pid, survivors: self.lifecycle.unregister_process(
+                        operation,
+                        pid,
+                        survivors,
+                    ),
+                )
             if not dest_file.is_file() or (not skipped and dest_file.stat().st_size == 0):
                 return {"ok": False, "value": None, "error": "Export failed"}
 

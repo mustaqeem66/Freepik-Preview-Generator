@@ -337,6 +337,20 @@ def test_start_batch_after_shutdown_is_rejected(monkeypatch, tmp_path):
     assert lifecycle.cancel_event.is_set()
 
 
+def test_operation_registration_after_shutdown_is_rejected():
+    """A late operation must not escape the terminal shutdown state."""
+    from previewgen.lifecycle import ActiveOperation
+
+    lifecycle = LifecycleManager()
+    lifecycle.cleanup()
+    operation = ActiveOperation(operation_id="late_operation", kind="single_export")
+
+    with pytest.raises(RuntimeError, match="shutting down"):
+        lifecycle.register_operation(operation)
+
+    assert lifecycle.registry.get("late_operation") is None
+
+
 @pytest.mark.skipif(
     sys.platform == "win32",
     reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",

@@ -14,6 +14,7 @@ Execution model:
       -> parent waits with a hard timeout
       -> timeout: terminate the child tree and raise TimeoutError
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -23,6 +24,7 @@ import os
 import queue as queue_module
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -45,28 +47,34 @@ def _probe_worker(source_path: str, result_queue: Any) -> None:  # pragma: no co
         result_queue.put({"status": "success", "value": probe_asset(Path(source_path))})
     except Exception as exc:
         with contextlib.suppress(Exception):
-            result_queue.put({
-                "status": "error",
-                "error": str(exc),
-                "error_type": type(exc).__name__,
-            })
+            result_queue.put(
+                {
+                    "status": "error",
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                }
+            )
 
 
-def _terminate(process: Any) -> None:
+def _terminate(process: Any) -> set[int]:
     if process is None or not process.is_alive():
-        return
+        return set()
     pid = process.pid
+    survivors: set[int] = set()
     if pid is not None:
         survivors = proc.terminate_process_tree(pid, kill_timeout=_KILL_TIMEOUT_SECONDS)
         if survivors:
             logging.error("Probe process tree left %d surviving descendant(s)", len(survivors))
     with contextlib.suppress(Exception):
         process.join(timeout=_KILL_TIMEOUT_SECONDS)
+    return survivors
 
 
 def probe_asset_isolated(
     source_path: Path | str,
     timeout_seconds: float = DEFAULT_PROBE_TIMEOUT_SECONDS,
+    on_process_started: Callable[[int], None] | None = None,
+    on_process_finished: Callable[[int, set[int]], None] | None = None,
 ) -> dict[str, Any]:
     """Probe an asset in an isolated child process with a hard timeout.
 
@@ -80,31 +88,41 @@ def probe_asset_isolated(
         args=(str(source_path), result_queue),
         daemon=True,
     )
+    probe_pid: int | None = None
+    completion_notified = False
+    survivors: set[int] = set()
     try:
         process.start()
+        probe_pid = process.pid
+        if on_process_started is not None and probe_pid is not None:
+            with contextlib.suppress(Exception):
+                on_process_started(probe_pid)
         start_time = time.monotonic()
         while process.is_alive():
             if (time.monotonic() - start_time) > timeout_seconds:
-                _terminate(process)
+                survivors.update(_terminate(process))
                 raise TimeoutError(f"Asset probe exceeded {timeout_seconds}s for {Path(source_path).name}")
             time.sleep(0.05)
 
         process.join(timeout=_KILL_TIMEOUT_SECONDS)
+        if on_process_finished is not None and probe_pid is not None:
+            with contextlib.suppress(Exception):
+                on_process_finished(probe_pid, set(survivors))
+            completion_notified = True
 
         try:
             result = result_queue.get(timeout=2.0)
         except queue_module.Empty:
-            raise RuntimeError(
-                f"Asset probe process exited without a result (code {process.exitcode})"
-            ) from None
+            raise RuntimeError(f"Asset probe process exited without a result (code {process.exitcode})") from None
 
         if result.get("status") == "error":
-            raise RuntimeError(
-                f"Asset probe failed: {result.get('error')} ({result.get('error_type', 'Unknown')})"
-            )
+            raise RuntimeError(f"Asset probe failed: {result.get('error')} ({result.get('error_type', 'Unknown')})")
         return result["value"]
     finally:
-        _terminate(process)
+        survivors.update(_terminate(process))
+        if not completion_notified and on_process_finished is not None and probe_pid is not None:
+            with contextlib.suppress(Exception):
+                on_process_finished(probe_pid, set(survivors))
         with contextlib.suppress(Exception):
             result_queue.close()
             result_queue.join_thread()
