@@ -64,8 +64,9 @@ def show_fatal_error(title: str, message: str) -> None:
                 f"display dialog {applescript_string(message)} with title "
                 f'{applescript_string(title)} buttons {{"OK"}} default button "OK" with icon stop'
             )
-            subprocess.run(["osascript", "-e", cmd], check=False, timeout=30)
-            return
+            result = subprocess.run(["osascript", "-e", cmd], check=False, timeout=30)
+            if result.returncode == 0:
+                return
         except Exception:
             pass
     stream = sys.stderr

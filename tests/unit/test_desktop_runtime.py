@@ -9,6 +9,8 @@ branch (that produced a ``NameError`` on ordinary launches).
 from __future__ import annotations
 
 import importlib
+import io
+import subprocess
 import sys
 import threading
 import time
@@ -389,6 +391,31 @@ def test_fatal_error_fallback_does_not_require_stderr(monkeypatch, tmp_path):
     monkeypatch.setattr(runtime, "sys", _SysWithoutStderr())
 
     runtime.show_fatal_error("PreviewGen - Test", "failure detail")
+
+
+def test_darwin_fatal_error_falls_back_when_osascript_fails(monkeypatch, tmp_path):
+    runtime, _fake_webview, _api = _load_runtime(monkeypatch, tmp_path, ["previewgen"])
+    stderr = io.StringIO()
+
+    class _DarwinSys:
+        def __init__(self, error_stream):
+            self.stderr = error_stream
+            self.platform = "darwin"
+
+        def __getattr__(self, name):
+            return getattr(sys, name)
+
+    monkeypatch.setattr(runtime, "sys", _DarwinSys(stderr))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 1, "", "failed"),
+    )
+
+    runtime.show_fatal_error("PreviewGen - Test", "failure detail")
+
+    assert "FATAL ERROR" in stderr.getvalue()
+    assert "failure detail" in stderr.getvalue()
 
 
 def test_frozen_linux_missing_injected_bundle_fails_before_window_creation(monkeypatch, tmp_path):

@@ -87,12 +87,35 @@ class LifecycleManager:
         self._shutting_down = False
 
     def register_operation(self, op: ActiveOperation) -> None:
-        """Register an active operation with the central lifecycle registry."""
-        self.registry.register(op)
+        """Register an active operation unless shutdown has begun."""
+        with self._batch_lock:
+            if self._shutting_down:
+                raise RuntimeError("PreviewGen is shutting down; the operation was not registered")
+            self.registry.register(op)
 
     def unregister_operation(self, operation_id: str) -> None:
-        """Unregister an operation upon normal completion."""
-        self.registry.unregister(operation_id)
+        """Unregister a completed operation unless it still owns child processes."""
+        with self._batch_lock:
+            operation = self.registry.get(operation_id)
+            if operation is not None:
+                with operation.process_lock:
+                    has_child_processes = bool(operation.process_ids)
+                if self._shutting_down or operation.shutting_down or has_child_processes:
+                    return
+            self.registry.unregister(operation_id)
+
+    def register_process(self, operation: ActiveOperation, pid: int) -> None:
+        """Register a child PID for lifecycle-aware shutdown."""
+        self._register_process(operation, pid)
+
+    def unregister_process(
+        self,
+        operation: ActiveOperation,
+        pid: int,
+        survivors: set[int] | None = None,
+    ) -> None:
+        """Retire a child PID after its process tree has finished."""
+        self._unregister_process(operation, pid, survivors)
 
     def _register_process(self, operation: ActiveOperation, pid: int) -> None:
         """Register a child PID, or stop it immediately after shutdown began."""
@@ -271,7 +294,7 @@ class LifecycleManager:
                         elif self._finished_callback:
                             self._finished_callback(summary)
                 finally:
-                    self.registry.unregister(operation_id)
+                    self.unregister_operation(operation_id)
 
         worker = threading.Thread(target=run_worker, name=f"batch-{operation_id}", daemon=True)
         op.thread = worker
@@ -362,6 +385,9 @@ class LifecycleManager:
                     try:
                         survivors = proc.terminate_process_tree(pid)
                         if survivors:
+                            with op.process_lock:
+                                op.process_ids.update(survivors)
+                                op.shutdown_incomplete = True
                             logging.warning(
                                 "Renderer process tree pid=%d for op=%s left surviving descendants: %s",
                                 pid,
