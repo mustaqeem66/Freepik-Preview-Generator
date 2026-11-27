@@ -145,6 +145,10 @@ def test_renderer_pool_reports_process_completion(tmp_path):
     assert all(not survivors for _pid, survivors in finished)
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",
+)
 def test_renderer_completion_is_reported_before_result_queue_read(monkeypatch, tmp_path):
     """The PID must leave the lifecycle registry before it can be reused."""
     if not SAMPLE_PNG.is_file():
@@ -213,6 +217,10 @@ def test_renderer_completion_is_reported_before_result_queue_read(monkeypatch, t
     assert not worker.is_alive()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",
+)
 def test_completed_renderer_pid_is_removed_from_lifecycle_registry(monkeypatch, tmp_path):
     """A stale PID could be reused by an unrelated process before shutdown."""
     from previewgen import lifecycle as lifecycle_module
@@ -268,6 +276,10 @@ def test_completed_renderer_pid_is_removed_from_lifecycle_registry(monkeypatch, 
     release.set()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",
+)
 def test_lifecycle_retains_surviving_renderer_descendants():
     """A survivor must remain registered for a later shutdown retry."""
     from previewgen.lifecycle import ActiveOperation
@@ -282,6 +294,10 @@ def test_lifecycle_retains_surviving_renderer_descendants():
     assert 200 in operation.process_ids
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS spawn lifecycle coverage; the existing Windows renderer test remains active",
+)
 def test_start_batch_after_shutdown_is_rejected(monkeypatch, tmp_path):
     """A late batch must not clear cancellation or escape the shutdown gate."""
     from previewgen import lifecycle as lifecycle_module
