@@ -91,24 +91,26 @@ Automated tests now cover:
 - window-construction failure and a missing window object with cleanup;
 - fatal-error output when a frozen process has no `stderr`;
 - persistent logging failure not blocking startup;
-- renderer PID registration and process-tree termination;
+- renderer PID registration, completion removal, late-start termination, and process-tree cleanup;
+- transactional desktop API initialization with no orphaned preview service;
 - complete and deliberately broken macOS app bundles;
 - valid, empty, timed-out, malformed, and missing render evidence;
 - unconditional frozen Setuptools collection;
 - build-time and final-DMG macOS bundle verification;
 - build-time and final-DMG WKWebView render evidence; and
-- upload of macOS ready, render, CSP, and application-log evidence.
+- upload of macOS ready, render, CSP, captured GUI output, and application-log evidence;
+- bounded GUI smoke timeout that terminates the complete app process group.
 
 ## Verification evidence
 
-- Focused macOS/startup/package regression suite: `91 passed, 2 skipped`.
-- Full Python suite: `724 passed, 5 skipped`.
+- Focused macOS/startup/package regression suite: `102 passed, 2 skipped`.
+- Full Python suite: `735 passed, 5 skipped`.
 - Ruff: passed.
-- Pyrefly: `0 errors` (2 suppressed, 16 warnings below the default severity).
+- Pyrefly: `0 errors` (2 suppressed, 18 warnings below the default severity).
 - Frontend typecheck: passed.
 - Frontend Vitest suite: `34 files passed`, `194 tests passed`.
 - Frontend production build: passed.
-- Floorplan: `270/270` files described, `0` unassigned, `0` important health findings.
+- Floorplan: `273/273` files described, `0` unassigned, `0` important health findings.
 - Diagram self-check: passed.
 - Diagram geometry check: passed with `0` findings.
 
