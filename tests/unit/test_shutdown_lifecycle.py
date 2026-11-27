@@ -39,6 +39,31 @@ def _sleep_until_stopped(stop_event) -> None:
         time.sleep(0.02)
 
 
+class _BlockingResultQueue:
+    """Spawn-safe result queue that blocks the parent before returning a result."""
+
+    def __init__(self, marker_path: str, release_event) -> None:
+        self.marker_path = marker_path
+        self.release_event = release_event
+
+    def get(self, timeout=None):
+        Path(self.marker_path).write_text("blocked", encoding="utf-8")
+        self.release_event.wait(timeout=30)
+        raise queue.Empty
+
+    def get_nowait(self):
+        raise queue.Empty
+
+    def put(self, *_args, **_kwargs):
+        return None
+
+    def close(self):
+        return None
+
+    def join_thread(self):
+        return None
+
+
 class _FakeScanner:
     """Scanner stub whose discovery thread only stops when cancelled."""
 
@@ -148,25 +173,20 @@ def test_renderer_completion_is_reported_before_result_queue_read(monkeypatch, t
 
     from previewgen import renderer_process
 
-    queue_entered = threading.Event()
-    release_queue = threading.Event()
+    queue_marker = tmp_path / "queue-blocked.marker"
+    context = multiprocessing.get_context("spawn")
+    release_queue = context.Event()
 
-    class _BlockingQueue:
-        def get(self, timeout=None):
-            queue_entered.set()
-            release_queue.wait(timeout=5)
-            raise queue.Empty
-
-        def get_nowait(self):
-            raise queue.Empty
-
-        def close(self):
-            return None
-
-        def join_thread(self):
-            return None
-
-    monkeypatch.setattr(renderer_process.mp, "Queue", _BlockingQueue)
+    monkeypatch.setattr(
+        renderer_process.mp,
+        "Queue",
+        lambda: _BlockingResultQueue(str(queue_marker), release_queue),
+    )
+    monkeypatch.setattr(
+        renderer_process.mp,
+        "Process",
+        multiprocessing.get_context("spawn").Process,
+    )
     finished: list[tuple[int, set[int]]] = []
     pool = renderer_process.RendererProcessPool(default_timeout=30.0)
     errors: list[BaseException] = []
@@ -186,7 +206,10 @@ def test_renderer_completion_is_reported_before_result_queue_read(monkeypatch, t
     worker = threading.Thread(target=_render)
     worker.start()
     try:
-        assert queue_entered.wait(5.0)
+        deadline = time.monotonic() + 30.0
+        while not queue_marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert queue_marker.exists(), "the renderer never reached result queue retrieval"
         assert finished, "the exited renderer PID remained registered during queue retrieval"
     finally:
         release_queue.set()
