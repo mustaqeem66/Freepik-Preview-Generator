@@ -182,11 +182,14 @@ def test_renderer_completion_is_reported_before_result_queue_read(monkeypatch, t
         "Queue",
         lambda: _BlockingResultQueue(str(queue_marker), release_queue),
     )
-    monkeypatch.setattr(
-        renderer_process.mp,
-        "Process",
-        multiprocessing.get_context("spawn").Process,
-    )
+    if sys.platform == "linux":
+        # Linux defaults to fork, so force the spawn path locally. macOS and
+        # Windows already use spawn and must keep their native process API.
+        monkeypatch.setattr(
+            renderer_process.mp,
+            "Process",
+            multiprocessing.get_context("spawn").Process,
+        )
     finished: list[tuple[int, set[int]]] = []
     pool = renderer_process.RendererProcessPool(default_timeout=30.0)
     errors: list[BaseException] = []
