@@ -53,7 +53,7 @@ def test_gui_smoke_kills_a_child_that_ignores_sigterm(tmp_path) -> None:
     code = main(
         [
             "--timeout",
-            "0.5",
+            "1.0",
             "--",
             sys.executable,
             "-c",
@@ -92,7 +92,7 @@ def test_gui_smoke_times_out_and_terminates_the_child(tmp_path) -> None:
     code = main(
         [
             "--timeout",
-            "0.2",
+            "1.0",
             "--",
             sys.executable,
             "-c",

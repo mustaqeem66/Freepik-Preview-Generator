@@ -2,8 +2,8 @@
 
 **Date:** 2026-11-27  
 **Affected platform:** macOS 11+ (native arm64 release runner)  
-**Related release:** `v2.1.4` is the last published release; these changes are not in that release.  
-**Status:** Source fixes and regression coverage are complete. Native macOS CI and final-DMG acceptance remain required before merge and release promotion.
+**Related release:** Published as `v2.1.5` on 2026-11-27.  
+**Status:** Fixed in source, verified by the native Windows/macOS/Linux build and clean-machine matrix, and published as `v2.1.5`.
 
 ## Scope
 
@@ -103,8 +103,8 @@ Automated tests now cover:
 
 ## Verification evidence
 
-- Focused macOS/startup/package regression suite: `105 passed, 2 skipped`.
-- Full Python suite: `738 passed, 5 skipped`.
+- Focused macOS/startup/package regression suite: `106 passed, 2 skipped`.
+- Full Python suite: `739 passed, 5 skipped`.
 - Ruff: passed.
 - Pyrefly: `0 errors` (2 suppressed, 18 warnings below the default severity).
 - Frontend typecheck: passed.
@@ -116,18 +116,31 @@ Automated tests now cover:
 
 The published `v2.1.4` DMG was downloaded and extracted for comparison. With only its incorrect `Info.plist` version normalized to `2.1.4`, the new bundle verifier accepts the published app, proving that its current frontend, pywebview JavaScript, frozen Setuptools content, and native Cocoa modules satisfy the structural contract. Before normalization, the verifier fails closed on the published `0.0.0` bundle version.
 
-## Native evidence still required
+## Native and publication evidence
 
-Linux cannot prove macOS WKWebView, Cocoa, signing, quarantine, or installer behavior. The branch must pass the macOS build and clean-machine jobs before this work is considered natively verified.
+The `v2.1.5` tag workflow built every platform and passed all four clean-machine jobs:
 
-The native jobs must show:
+- tag workflow: https://github.com/mustaqeem66/Freepik-Preview-Generator/actions/runs/46044582066
+- Windows build and clean-machine job: passed
+- macOS `.app`/DMG build and clean-machine job: passed
+- Ubuntu 22.04 build and clean-machine job: passed
+- Ubuntu 24.04 clean-machine job: passed
 
-1. the built `.app` passes `scripts/verify_macos_bundle.py`;
-2. the packaged app writes the ready marker;
-3. the packaged app writes render evidence with `ok: true`;
-4. the packaged WKWebView passes the CSP/preview probe;
-5. the app mounted from the final DMG passes the same checks; and
-6. every renderer fixture still renders through the frozen app.
+The native macOS jobs proved that:
+
+1. the built `.app` passed `scripts/verify_macos_bundle.py`;
+2. the packaged app wrote the ready marker;
+3. the packaged app wrote render evidence with `ok: true`;
+4. the packaged WKWebView passed the CSP/preview probe;
+5. the app mounted from the final DMG passed the same checks; and
+6. every renderer fixture still rendered through the frozen app.
+
+The release is published at https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/tag/v2.1.5 and is marked as the latest release. Published asset digests are:
+
+- `PreviewGen-macOS.dmg`: `cea57cd592746a6845b4a7bb9491c8a263b7526a99286c4671b525591bf95e58`
+- `PreviewGen-Linux.AppImage`: `ea572efa664d254a27b8bfddf768682516ebe9f154ecfc5985ee452a097bbadd`
+- `PreviewGen-Setup.exe`: `d7690a3919e8d3ba70771847863477020559471a6a3ae0ffaeb5928f25cbf6aa`
+- `PreviewGen-Windows.zip`: `ca8a682f3b1a3c1e18dfd7b3796f0fb8411ff9953bb3a42e0a6939c8409501f5`
 
 ## Remaining macOS limitations
 
