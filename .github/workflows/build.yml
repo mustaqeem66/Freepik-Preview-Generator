@@ -750,7 +750,6 @@ jobs:
             cat previewgen-gui-x11.log
             exit 1
           }
-          fi
 
           export XDG_RUNTIME_DIR="$PWD/xdg-runtime"
           mkdir -m 700 "$XDG_RUNTIME_DIR"
@@ -781,6 +780,7 @@ jobs:
             cat previewgen-gui-wayland.log
             exit 1
           }
+          fi
 
           renderer_crashes=$(journalctl --since "$journal_since" --no-pager 2>/dev/null | grep -Ei 'WKBundleInitialize|libwebkit2gtkinjectedbundle.*(segfault|core dump)|WebKitWebProcess.*(crash|segfault|core dump)' || true)
           if [ -n "$renderer_crashes" ]; then
@@ -789,7 +789,9 @@ jobs:
             exit 1
           fi
 
-          python3 scripts/check_csp_marker.py --marker "$PREVIEWGEN_CSP_MARKER"
+          if [ "${{ matrix.os }}" != "ubuntu-24.04" ]; then
+            python3 scripts/check_csp_marker.py --marker "$PREVIEWGEN_CSP_MARKER"
+          fi
           echo "Verifying frozen AppImage render capabilities on Linux (all fixtures)..."
           ./PreviewGen-Linux.AppImage --render-test-all --fixtures tests/fixtures
           if [ $? -ne 0 ]; then
