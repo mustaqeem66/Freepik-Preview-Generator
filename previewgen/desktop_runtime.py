@@ -140,7 +140,14 @@ def start_desktop_app() -> int:
     """
     logging.info("Starting PreviewGen desktop runtime...")
 
-    html_dist = get_html_dist()
+    try:
+        html_dist = get_html_dist()
+    except Exception as exc:
+        show_fatal_error(
+            "PreviewGen - GUI Failure",
+            f"Failed to locate the frontend bundle: {exc}",
+        )
+        return 1
 
     if not html_dist.is_file():
         show_fatal_error(

@@ -289,6 +289,26 @@ def test_api_construction_failure_is_reported_and_returns_nonzero(monkeypatch, t
     assert fake_webview.started is False
 
 
+def test_frontend_resource_lookup_failure_is_reported(monkeypatch, tmp_path):
+    runtime, fake_webview, _api = _load_runtime(monkeypatch, tmp_path, ["previewgen"])
+    diagnostics: list[tuple[str, str]] = []
+
+    def _fail_lookup():
+        raise OSError("resource root is unavailable")
+
+    monkeypatch.setattr(runtime, "get_html_dist", _fail_lookup)
+    monkeypatch.setattr(
+        runtime,
+        "show_fatal_error",
+        lambda title, message: diagnostics.append((title, message)),
+    )
+
+    assert runtime.start_desktop_app() == 1
+    assert len(diagnostics) == 1
+    assert "resource root is unavailable" in diagnostics[0][1]
+    assert fake_webview.started is False
+
+
 def test_missing_frontend_bundle_fails_before_creating_the_api(monkeypatch, tmp_path):
     runtime, fake_webview, _api = _load_runtime(monkeypatch, tmp_path, ["previewgen"])
     missing = tmp_path / "missing.html"
