@@ -1,0 +1,139 @@
+# macOS startup and packaging audit
+
+**Date:** 2026-11-27  
+**Affected platform:** macOS 11+ (native arm64 release runner)  
+**Related release:** `v2.1.4` is the last published release; these changes are not in that release.  
+**Status:** Source fixes and regression coverage are complete. Native macOS CI and final-DMG acceptance remain required before merge and release promotion.
+
+## Scope
+
+PreviewGen's macOS desktop path was reviewed from the frozen Python entrypoint through the pywebview Cocoa/WKWebView window, the React bundle, the native bridge, isolated renderer children, the preview HTTP service, shutdown, PyInstaller packaging, signing, DMG creation, and clean-machine acceptance.
+
+The Linux WebKitGTK injected-bundle fix does not transfer to macOS. macOS uses Apple's WKWebView through pywebview's Cocoa backend. The published `v2.1.4` DMG also proves that the current `file://` frontend mounted in WKWebView on the macOS 26 arm64 runner.
+
+## Confirmed defects and fixes
+
+### Native startup errors escaped the user-visible failure path
+
+`previewgen.desktop_runtime.py` imported `webview`, constructed `DesktopApi`, resolved the frontend bundle, and created the native window before the error boundary around `webview.start()`. A damaged frozen PyObjC/WebKit package, a preview-server bind failure, or a Cocoa window-construction error could therefore terminate a windowed `.app` without the intended `osascript` diagnostic.
+
+The native import and setup now run inside one fail-closed boundary. Setup failures:
+
+- show a native fatal diagnostic;
+- return exit code `1`;
+- clean up a partially created API, preview socket, HTTP thread, and temp directory; and
+- never replace the original error with a missing-`stderr` failure.
+
+Persistent log setup is now best effort. A read-only or full home directory no longer prevents the GUI from starting.
+
+### A missing frontend bundle started unnecessary services
+
+`DesktopApi()` eagerly binds the loopback preview server. The old code created that API before checking whether `frontend/dist/index.html` existed. A missing bundle returned an error but left the server and its temp directory alive until process teardown.
+
+The frontend bundle is now validated before the API is constructed.
+
+### Spawned renderers were not registered with shutdown
+
+`ActiveOperation.process_ids` existed but no renderer PID was ever added. On macOS, renderer children use Python's `spawn` model. If the GUI shut down while a renderer was active, the lifecycle registry could not terminate it.
+
+Renderer PIDs now flow from `RendererProcessPool` through the batch runner into the active lifecycle operation. Shutdown terminates the complete process tree and reports survivors.
+
+### Frozen Setuptools collection was Linux-only
+
+The frozen bootstrap had already failed on Linux because Setuptools' vendored `jaraco` modules were not collected. CI nevertheless limited `--collect-all setuptools` to Linux while the committed spec collected it everywhere.
+
+The collection rule now applies to every PyInstaller target.
+
+### The macOS build step did not test WKWebView
+
+The build job's step named “macOS Startup Test” ran `--smoke-test`, which is a headless processor check and never creates a window. The final DMG's clean-machine job did run `--gui-smoke-test`, but the build itself could package and sign an app that never opened.
+
+The build now runs a real packaged WKWebView smoke with separate ready, render, and CSP markers. The final DMG's mounted app repeats those checks.
+
+### The macOS app had no structural release gate
+
+The package step checked only that `PreviewGen.app` and its executable existed. A missing frontend asset, bridge script, settings file, native WebKit module, frozen dependency, or correct bundle version could survive packaging.
+
+`scripts/verify_macos_bundle.py` now requires:
+
+- a valid `Contents/Info.plist`;
+- bundle identifier `com.zenartisan.previewgen`;
+- executable name `PreviewGen`;
+- `CFBundleShortVersionString` and `CFBundleVersion` matching the source version;
+- a Mach-O executable whose architecture includes the build runner;
+- `frontend/dist/index.html` and every local script/style/image it references;
+- `previewgen/settings_schema.json`;
+- pywebview's `api.js` and `finish.js`;
+- frozen Setuptools `jaraco` content;
+- native `objc`, Foundation, AppKit, and WebKit modules.
+
+The workflow writes the source version into `Info.plist` before verification and signing.
+
+### “Frontend ready” did not prove a rendered interface
+
+The native ready marker proved that React mounted and called the bridge. It did not prove that the root contained visible content.
+
+The native handshake now writes `PREVIEWGEN_RENDER_MARKER` with:
+
+- `rootChildCount`;
+- root width and height;
+- body text length; and
+- a stable failure code.
+
+`scripts/check_render_marker.py` accepts only a non-empty root with non-zero dimensions and text.
+
+## Regression coverage
+
+Automated tests now cover:
+
+- API construction failure with a visible diagnostic and nonzero exit;
+- missing frontend bundle before API construction;
+- window-construction failure and a missing window object with cleanup;
+- fatal-error output when a frozen process has no `stderr`;
+- persistent logging failure not blocking startup;
+- renderer PID registration and process-tree termination;
+- complete and deliberately broken macOS app bundles;
+- valid, empty, timed-out, malformed, and missing render evidence;
+- unconditional frozen Setuptools collection;
+- build-time and final-DMG macOS bundle verification;
+- build-time and final-DMG WKWebView render evidence; and
+- upload of macOS ready, render, CSP, and application-log evidence.
+
+## Verification evidence
+
+- Focused macOS/startup/package regression suite: `91 passed, 2 skipped`.
+- Full Python suite: `724 passed, 5 skipped`.
+- Ruff: passed.
+- Pyrefly: `0 errors` (2 suppressed, 16 warnings below the default severity).
+- Frontend typecheck: passed.
+- Frontend Vitest suite: `34 files passed`, `194 tests passed`.
+- Frontend production build: passed.
+- Floorplan: `270/270` files described, `0` unassigned, `0` important health findings.
+- Diagram self-check: passed.
+- Diagram geometry check: passed with `0` findings.
+
+The published `v2.1.4` DMG was downloaded and extracted for comparison. With only its incorrect `Info.plist` version normalized to `2.1.4`, the new bundle verifier accepts the published app, proving that its current frontend, pywebview JavaScript, frozen Setuptools content, and native Cocoa modules satisfy the structural contract. Before normalization, the verifier fails closed on the published `0.0.0` bundle version.
+
+## Native evidence still required
+
+Linux cannot prove macOS WKWebView, Cocoa, signing, quarantine, or installer behavior. The branch must pass the macOS build and clean-machine jobs before this work is considered natively verified.
+
+The native jobs must show:
+
+1. the built `.app` passes `scripts/verify_macos_bundle.py`;
+2. the packaged app writes the ready marker;
+3. the packaged app writes render evidence with `ok: true`;
+4. the packaged WKWebView passes the CSP/preview probe;
+5. the app mounted from the final DMG passes the same checks; and
+6. every renderer fixture still renders through the frozen app.
+
+## Remaining macOS limitations
+
+These are confirmed gaps or native-only risks not changed by this work:
+
+- pywebview 6.2.1's Cocoa backend loads a `file://` URL with a generic request and does not expose provisional-navigation failure events. The current release mounts successfully, but a future WebKit/package-location failure should be diagnosed through the new render marker and macOS log rather than inferred from a blank window.
+- pywebview's Cocoa backend does not emit the application's `navigating` event. The claimed navigation lockdown is therefore not active on macOS. The current frontend contains no external links, but a platform-native navigation policy remains follow-up work.
+- The release is built and tested on arm64 only. Intel and universal macOS support remain separate release work.
+- The clean-machine job executes the app from a mounted DMG. It does not yet prove a copied `/Applications` install, Dock/LaunchServices activation, or Gatekeeper acceptance of a quarantined download.
+- The render evidence proves meaningful DOM and dimensions, not a pixel-perfect visible screenshot.
+- macOS has no enforced per-child renderer memory ceiling. The existing timeout and process-tree cleanup remain the available containment mechanism.

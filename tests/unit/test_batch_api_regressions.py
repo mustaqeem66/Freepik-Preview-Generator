@@ -36,9 +36,7 @@ def test_single_export_skip_corrupt_target(tmp_path):
     output.write_bytes(b"not a valid jpeg")
     api = DesktopApi()
     api._add_authorized_input_folder(tmp_path)  # Simulates the user-selected root from the folder picker
-    result = api.export_preview(str(source), {
-        "outputFolder": str(tmp_path), "overwritePolicy": "skip"
-    })
+    result = api.export_preview(str(source), {"outputFolder": str(tmp_path), "overwritePolicy": "skip"})
     assert result["ok"] is True
     assert result["value"]["skipped"] is True
     assert result["value"]["width"] is None
@@ -52,9 +50,7 @@ def test_single_export_rename_does_not_overwrite(tmp_path):
     output.write_bytes(b"existing output")
     api = DesktopApi()
     api._add_authorized_input_folder(tmp_path)
-    result = api.export_preview(str(source), {
-        "outputFolder": str(tmp_path), "overwritePolicy": "rename"
-    })
+    result = api.export_preview(str(source), {"outputFolder": str(tmp_path), "overwritePolicy": "rename"})
     assert result["ok"]
     assert result["value"]["path"].endswith("asset_copy1.jpg")
     assert output.read_bytes() == b"existing output"
@@ -95,9 +91,7 @@ def test_batch_start_returns_id_and_emits_typed_events(tmp_path):
     api._add_authorized_output_folder(tmp_path / "out")
     window = FakeWindow()
     api._set_window(window)
-    response = api.start_batch(str(source), str(tmp_path / "out"), {
-        "overwritePolicy": "rename"
-    })
+    response = api.start_batch(str(source), str(tmp_path / "out"), {"overwritePolicy": "rename"})
     assert response["ok"], response
     assert response["operationId"].startswith("batch_")
     worker = api.lifecycle.batch_thread
@@ -118,28 +112,51 @@ def test_superseding_batch_queues_without_bridge_wait(tmp_path, monkeypatch):
     release = threading.Event()
     calls = []
 
-    def fake_process(_input, output, _config, progress, is_cancelled):
+    def fake_process(
+        _input,
+        output,
+        _config,
+        progress,
+        is_cancelled,
+        *,
+        on_process_started=None,
+    ):
         calls.append(str(output))
         if len(calls) == 1:
             started.set()
             release.wait(timeout=4)
         return {
-            "success": 0, "failed": 0, "skipped": 0,
-            "planned": 0, "duration": 0,
+            "success": 0,
+            "failed": 0,
+            "skipped": 0,
+            "planned": 0,
+            "duration": 0,
             "cancelled": is_cancelled(),
         }
 
     monkeypatch.setattr("previewgen.lifecycle.process_folder", fake_process)
     lifecycle = LifecycleManager()
     completed = []
-    lifecycle.start_batch(tmp_path, tmp_path / "first", PreviewConfig(),
-        lambda *_: None, lambda: False, operation_id="batch_first",
-        finished_callback=lambda summary, op_id: completed.append(op_id))
+    lifecycle.start_batch(
+        tmp_path,
+        tmp_path / "first",
+        PreviewConfig(),
+        lambda *_: None,
+        lambda: False,
+        operation_id="batch_first",
+        finished_callback=lambda summary, op_id: completed.append(op_id),
+    )
     assert started.wait(2)
     before = time.monotonic()
-    lifecycle.start_batch(tmp_path, tmp_path / "second", PreviewConfig(),
-        lambda *_: None, lambda: False, operation_id="batch_second",
-        finished_callback=lambda summary, op_id: completed.append(op_id))
+    lifecycle.start_batch(
+        tmp_path,
+        tmp_path / "second",
+        PreviewConfig(),
+        lambda *_: None,
+        lambda: False,
+        operation_id="batch_second",
+        finished_callback=lambda summary, op_id: completed.append(op_id),
+    )
     elapsed = time.monotonic() - before
     # The bridge call must not wait for the superseded batch, which is held
     # open by `release` below. The budget is generous on purpose: it only has
@@ -157,6 +174,7 @@ def test_superseding_batch_queues_without_bridge_wait(tmp_path, monkeypatch):
 
 def test_cancel_batch_does_not_cancel_scan_operation():
     from previewgen.lifecycle import ActiveOperation
+
     lifecycle = LifecycleManager()
     scan = ActiveOperation(operation_id="scan", kind="scan")
     lifecycle.register_operation(scan)
@@ -193,11 +211,16 @@ def test_cancel_racing_batch_start_is_not_lost(tmp_path, monkeypatch):
             time.sleep(0.01)
         observed_cancel.append(saw_cancel)
         return {
-            "planned": 1, "processed": 0 if saw_cancel else 1, "remaining": 0,
-            "success": 0 if saw_cancel else 1, "failed": 0, "skipped": 0,
+            "planned": 1,
+            "processed": 0 if saw_cancel else 1,
+            "remaining": 0,
+            "success": 0 if saw_cancel else 1,
+            "failed": 0,
+            "skipped": 0,
             "cancelled": saw_cancel,
             "status": "cancelled" if saw_cancel else "completed",
-            "errors": [], "duration": 0.0,
+            "errors": [],
+            "duration": 0.0,
         }
 
     monkeypatch.setattr(lifecycle_module, "process_folder", fake_process_folder)
@@ -221,8 +244,12 @@ def test_cancel_racing_batch_start_is_not_lost(tmp_path, monkeypatch):
     monkeypatch.setattr(threading.Event, "clear", clear_then_cancel)
 
     lifecycle.start_batch(
-        tmp_path, tmp_path / "out", PreviewConfig(),
-        lambda *_: None, lambda: False, operation_id="batch_raced",
+        tmp_path,
+        tmp_path / "out",
+        PreviewConfig(),
+        lambda *_: None,
+        lambda: False,
+        operation_id="batch_raced",
     )
 
     lifecycle.batch_thread.join(timeout=15)
@@ -231,9 +258,7 @@ def test_cancel_racing_batch_start_is_not_lost(tmp_path, monkeypatch):
     # before the batch started (nothing was rendered) or the running batch
     # observed it (the render stopped). Only a batch that finished the whole
     # folder uncancelled -- the old behaviour -- fails here.
-    assert observed_cancel in ([], [True]), (
-        f"the batch ignored the Cancel: {observed_cancel}"
-    )
+    assert observed_cancel in ([], [True]), f"the batch ignored the Cancel: {observed_cancel}"
     assert lifecycle.cancel_event.is_set()
 
 
@@ -277,7 +302,6 @@ def test_single_export_is_visible_as_outstanding_work(tmp_path, monkeypatch):
     assert seen == [True]
     assert api.has_outstanding_work() is False
     assert api.lifecycle.get_active_operations() == []
-
 
 
 def test_batch_rejects_destination_not_selected_by_user(tmp_path):
