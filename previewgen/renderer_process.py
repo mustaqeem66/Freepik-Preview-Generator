@@ -11,6 +11,7 @@ Execution model:
       -> success: validate and atomically install
       -> timeout: terminate the child tree and delete the temporary output
 """
+
 from __future__ import annotations
 
 import logging
@@ -71,6 +72,7 @@ def _render_worker(
             PreviewConfig,
             generate_file,
         )
+
         Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
         source = Path(source_path)
@@ -81,9 +83,7 @@ def _render_worker(
         if source.is_file():
             size_bytes = source.stat().st_size
             if size_bytes > MAX_SOURCE_FILE_BYTES:
-                raise ValueError(
-                    f"Source exceeds max size: {size_bytes // (1024 * 1024)} MB > 500 MB"
-                )
+                raise ValueError(f"Source exceeds max size: {size_bytes // (1024 * 1024)} MB > 500 MB")
 
         # Reject oversized assets from cheap header/estimate checks before loading.
         limits.validate_source_before_parse(source)
@@ -99,21 +99,25 @@ def _render_worker(
             if im.format != "JPEG" or im.width <= 0 or im.height <= 0:
                 raise RuntimeError(f"Invalid output: format={im.format}, size={im.size}")
 
-        result_queue.put({
-            "status": "success",
-            "output_path": str(output),
-            "width": im.width,
-            "height": im.height,
-            "size_bytes": output.stat().st_size,
-        })
+        result_queue.put(
+            {
+                "status": "success",
+                "output_path": str(output),
+                "width": im.width,
+                "height": im.height,
+                "size_bytes": output.stat().st_size,
+            }
+        )
 
     except Exception as exc:
         with contextlib.suppress(Exception):
-            result_queue.put({
-                "status": "error",
-                "error": str(exc),
-                "error_type": type(exc).__name__,
-            })
+            result_queue.put(
+                {
+                    "status": "error",
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                }
+            )
 
 
 class RendererProcessPool:
@@ -143,6 +147,7 @@ class RendererProcessPool:
         config: PreviewConfig,
         timeout_seconds: float | None = None,
         is_cancelled: Callable[[], bool] | None = None,
+        on_process_started: Callable[[int], None] | None = None,
     ) -> dict[str, Any]:
         """
         Render a single file in an isolated child process with hard timeout
@@ -209,6 +214,8 @@ class RendererProcessPool:
                 daemon=True,
             )
             self._process.start()
+            if on_process_started is not None and self._process.pid is not None:
+                on_process_started(self._process.pid)
 
             # Windows: bind the child to a Job Object so every descendant it
             # spawns is killed when the job handle is closed. A failed assign
@@ -255,9 +262,7 @@ class RendererProcessPool:
                 raise RuntimeError("Render process exited without result") from None
 
             if result.get("status") == "error":
-                raise RuntimeError(
-                    f"Renderer error: {result['error']} ({result.get('error_type', 'Unknown')})"
-                )
+                raise RuntimeError(f"Renderer error: {result['error']} ({result.get('error_type', 'Unknown')})")
 
             # Validate and atomically install the batch-owned temp output.
             if not temp_output.is_file() or temp_output.stat().st_size == 0:
@@ -337,12 +342,20 @@ def render_file_isolated(
     config: PreviewConfig,
     timeout_seconds: float = 60.0,
     is_cancelled: Callable[[], bool] | None = None,
+    on_process_started: Callable[[int], None] | None = None,
 ) -> None:
     """
     Render a file in an isolated child process with hard timeout and kill escalation.
     """
     pool = RendererProcessPool(default_timeout=timeout_seconds)
-    pool.render(source_path, output_path, config, timeout_seconds, is_cancelled)
+    pool.render(
+        source_path,
+        output_path,
+        config,
+        timeout_seconds,
+        is_cancelled,
+        on_process_started=on_process_started,
+    )
 
     if not Path(output_path).is_file():
         raise RuntimeError("Renderer reported success but output file is missing")
@@ -355,6 +368,14 @@ def render_file_with_timeout(
     config: PreviewConfig,
     timeout_seconds: float = 60.0,
     is_cancelled: Callable[[], bool] | None = None,
+    on_process_started: Callable[[int], None] | None = None,
 ) -> None:
     """Compatibility wrapper - now uses process isolation."""
-    render_file_isolated(source_path, output_path, config, timeout_seconds, is_cancelled)
+    render_file_isolated(
+        source_path,
+        output_path,
+        config,
+        timeout_seconds,
+        is_cancelled,
+        on_process_started=on_process_started,
+    )

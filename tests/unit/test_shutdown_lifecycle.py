@@ -5,6 +5,8 @@ An orderly shutdown must interrupt work that is mid-flight (discovery, a running
 renderer, report writing) without leaving orphaned processes, temp directories,
 or partially written reports behind.
 """
+
+import multiprocessing
 import sys
 import threading
 import time
@@ -28,6 +30,12 @@ from processor import PreviewConfig
 pytestmark = pytest.mark.core
 
 SAMPLE_PNG = PROJECT_ROOT / "tests" / "fixtures" / "sample.png"
+
+
+def _sleep_until_stopped(stop_event) -> None:
+    """Top-level spawn-safe child used by the lifecycle registration test."""
+    while not stop_event.is_set():
+        time.sleep(0.02)
 
 
 class _FakeScanner:
@@ -110,6 +118,74 @@ def test_cleanup_terminates_active_renderer(tmp_path):
     assert list(tmp_path.glob("previewgen_render_*")) == []
 
 
+def test_cleanup_terminates_registered_batch_renderer(monkeypatch, tmp_path):
+    """A renderer PID must reach the lifecycle registry before shutdown."""
+    from previewgen import lifecycle as lifecycle_module
+
+    context = multiprocessing.get_context("spawn")
+    stop_event = context.Event()
+    child = context.Process(
+        target=_sleep_until_stopped,
+        args=(stop_event,),
+    )
+    child.start()
+    pid_registered = threading.Event()
+
+    def _fake_process_folder(
+        input_folder,
+        output_folder,
+        config,
+        progress,
+        is_cancelled,
+        *,
+        selected_files=None,
+        on_process_started=None,
+    ):
+        assert on_process_started is not None
+        on_process_started(child.pid)
+        pid_registered.set()
+        while not stop_event.is_set():
+            time.sleep(0.02)
+        return {
+            "planned": 1,
+            "processed": 1,
+            "remaining": 0,
+            "success": 1,
+            "failed": 0,
+            "skipped": 0,
+            "cancelled": False,
+            "status": "completed",
+            "errors": [],
+            "duration": 0.0,
+        }
+
+    monkeypatch.setattr(lifecycle_module, "process_folder", _fake_process_folder)
+    lifecycle = LifecycleManager()
+    lifecycle.start_batch(
+        tmp_path,
+        tmp_path / "out",
+        PreviewConfig(),
+        progress_callback=lambda *_args: None,
+        is_cancelled=lifecycle.cancel_event.is_set,
+        operation_id="batch_with_renderer",
+    )
+
+    assert pid_registered.wait(2.0)
+    operation = lifecycle.registry.get("batch_with_renderer")
+    assert operation is not None
+    assert child.pid in operation.process_ids
+    assert child.is_alive()
+
+    lifecycle.cleanup()
+
+    deadline = time.monotonic() + 3.0
+    while child.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert not child.is_alive()
+    stop_event.set()
+    child.join(timeout=2.0)
+
+
 def test_interrupted_report_write_leaves_no_partial_state(tmp_path, monkeypatch):
     out = tmp_path / "out"
     out.mkdir()
@@ -167,6 +243,7 @@ def test_concurrent_report_writes_never_corrupt_latest_pointer(tmp_path):
     assert (out / pointer["json"]).is_file()
     assert (out / pointer["csv"]).is_file()
 
+
 def test_active_operation_registry_and_incomplete_shutdown_escalation(tmp_path):
     """Surviving worker threads must escalate to incomplete shutdown and retain their temp roots."""
     from previewgen.lifecycle import ActiveOperation
@@ -200,6 +277,7 @@ def test_active_operation_registry_and_incomplete_shutdown_escalation(tmp_path):
         def __init__(self):
             self.active_scan_thread = worker_thread
             self.active_scan_context = SimpleNamespace(temp_root=temp_root)
+
         def cancel_scan(self):
             pass
 

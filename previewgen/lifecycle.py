@@ -3,6 +3,7 @@ PreviewGen Lifecycle Module
 Orderly shutdown sequence for workers, file writes, and temp directories.
 GUI-independent - no webview imports.
 """
+
 import logging
 import threading
 from collections.abc import Callable
@@ -10,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from previewgen import proc
 from previewgen.errors import classify_exception
 from previewgen.tempfiles import safe_rmtree
 from processor import (
@@ -62,13 +64,14 @@ class OperationRegistry:
                 op.cancel_event.set()
                 op.state = "cancelled"
 
+
 class LifecycleManager:
     """
     Manages application lifecycle, worker threads, and orderly shutdown.
     GUI-independent.
     """
-    _serializable = False  # never reachable from window.pywebview.api
 
+    _serializable = False  # never reachable from window.pywebview.api
 
     def __init__(self) -> None:
         self.cancel_event = threading.Event()
@@ -90,6 +93,7 @@ class LifecycleManager:
     def get_active_operations(self) -> list[ActiveOperation]:
         """Return a snapshot of currently active registered operations."""
         return self.registry.all_operations()
+
     def set_scanner(self, scanner: Any) -> None:
         """Set scanner reference after it's created."""
         self.scanner = scanner
@@ -142,36 +146,62 @@ class LifecycleManager:
                     previous.thread.join()  # Worker thread only; never the bridge thread.
                 if cancelled():
                     summary = {
-                        "planned": 0, "processed": 0, "remaining": 0,
-                        "success": 0, "failed": 0, "skipped": 0,
-                        "cancelled": True, "status": "cancelled",
-                        "errors": [], "duration": 0.0,
+                        "planned": 0,
+                        "processed": 0,
+                        "remaining": 0,
+                        "success": 0,
+                        "failed": 0,
+                        "skipped": 0,
+                        "cancelled": True,
+                        "status": "cancelled",
+                        "errors": [],
+                        "duration": 0.0,
                     }
                 else:
+
                     def progress(cur: int, tot: int, msg: str) -> None:
                         with self._batch_lock:
                             current = self._active_batch is op
                         if current:
                             progress_callback(cur, tot, msg)
 
+                    def record_process_started(pid: int) -> None:
+                        op.process_ids.add(int(pid))
+
                     if selected_files is None:
                         summary = process_folder(
-                            input_folder, output_folder, config, progress, cancelled,
+                            input_folder,
+                            output_folder,
+                            config,
+                            progress,
+                            cancelled,
+                            on_process_started=record_process_started,
                         )
                     else:
                         summary = process_folder(
-                            input_folder, output_folder, config, progress, cancelled,
+                            input_folder,
+                            output_folder,
+                            config,
+                            progress,
+                            cancelled,
                             selected_files=selected_files,
+                            on_process_started=record_process_started,
                         )
             except Exception as exc:
                 logging.exception("Batch execution failed")
                 code, message = classify_exception(exc)
                 summary = {
-                    "planned": 0, "processed": 0, "remaining": 0,
-                    "success": 0, "failed": 0, "skipped": 0,
+                    "planned": 0,
+                    "processed": 0,
+                    "remaining": 0,
+                    "success": 0,
+                    "failed": 0,
+                    "skipped": 0,
                     "cancelled": cancelled(),
                     "status": "cancelled" if cancelled() else "failed",
-                    "errorCode": code, "errors": [message], "duration": 0.0,
+                    "errorCode": code,
+                    "errors": [message],
+                    "duration": 0.0,
                 }
             finally:
                 with self._batch_lock:
@@ -229,7 +259,7 @@ class LifecycleManager:
                 )
 
         # 3. Wait bounded time for scan thread (via scanner)
-        if self.scanner and hasattr(self.scanner, 'active_scan_thread'):
+        if self.scanner and hasattr(self.scanner, "active_scan_thread"):
             scan_t = self.scanner.active_scan_thread
             if scan_t and scan_t.is_alive():
                 logging.info("Waiting for scan thread termination...")
@@ -244,27 +274,36 @@ class LifecycleManager:
 
         # 4. Check registry operations and terminate surviving child processes
         surviving_ops = [
-            op for op in self.registry.all_operations()
-            if (op.thread and op.thread.is_alive()) or op.process_ids
+            op for op in self.registry.all_operations() if (op.thread and op.thread.is_alive()) or op.process_ids
         ]
         if surviving_ops:
             clean_shutdown = False
             for op in surviving_ops:
                 logging.warning(
                     "Surviving active operation during shutdown: id=%s kind=%s pids=%s",
-                    op.operation_id, op.kind, op.process_ids
+                    op.operation_id,
+                    op.kind,
+                    op.process_ids,
                 )
                 for pid in list(op.process_ids):
                     try:
-                        import os
-                        import signal
-                        os.kill(pid, signal.SIGTERM)
-                        logging.info("Signalled SIGTERM to orphaned renderer process pid=%d", pid)
+                        survivors = proc.terminate_process_tree(pid)
+                        if survivors:
+                            logging.warning(
+                                "Renderer process tree pid=%d for op=%s left surviving descendants: %s",
+                                pid,
+                                op.operation_id,
+                                sorted(survivors),
+                            )
+                        else:
+                            logging.info("Terminated orphaned renderer process tree pid=%d", pid)
                     except Exception as kill_err:
                         logging.warning(
                             "Could not terminate orphaned renderer process pid=%d for op=%s: %s. "
                             "Manual intervention required.",
-                            pid, op.operation_id, kill_err,
+                            pid,
+                            op.operation_id,
+                            kill_err,
                         )
 
         # 5. Clean session directories with logging ONLY if their owning operations exited cleanly
@@ -272,11 +311,11 @@ class LifecycleManager:
 
         scan_active = bool(
             self.scanner
-            and hasattr(self.scanner, 'active_scan_thread')
+            and hasattr(self.scanner, "active_scan_thread")
             and self.scanner.active_scan_thread
             and self.scanner.active_scan_thread.is_alive()
         )
-        if self.scanner and hasattr(self.scanner, 'active_scan_context') and self.scanner.active_scan_context:
+        if self.scanner and hasattr(self.scanner, "active_scan_context") and self.scanner.active_scan_context:
             scan_root = self.scanner.active_scan_context.temp_root
             if not scan_active and scan_root not in active_temp_roots:
                 safe_rmtree(scan_root, "shutdown scan temp")
@@ -298,6 +337,7 @@ class LifecycleManager:
         else:
             logging.warning("Lifecycle shutdown finished with incomplete worker joins. Resources safely retained.")
         return clean_shutdown
+
     # Callback for batch completion (set by DesktopApi)
     _finished_callback: Callable[[dict[str, Any]], None] | None = None
 

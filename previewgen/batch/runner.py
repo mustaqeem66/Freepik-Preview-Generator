@@ -3,6 +3,7 @@ PreviewGen Batch Runner
 Walks an input folder (including nested ZIP archives), renders each supported
 asset, and writes durable JSON/CSV batch reports.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -92,8 +93,12 @@ def _extract_nested_archives(
             destination = archive.parent / archive.stem
             try:
                 written = safe_extract_zip(
-                    archive, destination, is_cancelled=is_cancelled,
-                    depth=depth + 1, max_depth=MAX_NESTED_DEPTH, budget_bytes=remaining,
+                    archive,
+                    destination,
+                    is_cancelled=is_cancelled,
+                    depth=depth + 1,
+                    max_depth=MAX_NESTED_DEPTH,
+                    budget_bytes=remaining,
                 )
             except Exception as exc:
                 problems.append(f"{archive.name}: {exc}")
@@ -111,6 +116,7 @@ def process_folder(
     is_cancelled: Callable[[], bool],
     *,
     selected_files: tuple[Path, ...] | None = None,
+    on_process_started: Callable[[int], None] | None = None,
 ) -> dict[str, Any]:
     input_folder = input_folder.resolve()
     output_folder = output_folder.resolve()
@@ -135,9 +141,7 @@ def process_folder(
         # A same-folder export writes previews next to their originals, where
         # discovery cannot tell them apart by name, so exclude the outputs this
         # app recorded in its own prior reports.
-        prior_outputs = (
-            previously_generated_outputs(output_folder) if output_folder == input_folder else set()
-        )
+        prior_outputs = previously_generated_outputs(output_folder) if output_folder == input_folder else set()
         raw_files = list(
             discover_files(
                 input_folder,
@@ -172,9 +176,7 @@ def process_folder(
     if not raw_files and not cancelled:
         if discovery_stats.truncated:
             reasons = ", ".join(discovery_stats.reasons) or "unknown"
-            raise ValueError(
-                f"Discovery stopped early ({reasons}) before any supported image was found"
-            )
+            raise ValueError(f"Discovery stopped early ({reasons}) before any supported image was found")
         ext_list = ", ".join(SUPPORTED_EXTENSIONS)
         raise ValueError(f"No supported images ({ext_list}) found in the input folder")
 
@@ -182,6 +184,7 @@ def process_folder(
 
     # Disk-space preflight: estimate temporary and final storage separately (Finding 7)
     from previewgen.limits import estimate_batch_disk_requirements
+
     disk_preflight = estimate_batch_disk_requirements(raw_files, output_folder)
     if not disk_preflight["sufficient"]:
         raise OSError(disk_preflight["error"])
@@ -189,6 +192,7 @@ def process_folder(
     start_time = time.time()
     started_at_iso = datetime.datetime.now(datetime.UTC).isoformat()
     import uuid
+
     batch_id = uuid.uuid4().hex[:12]
 
     # Centralized DirectoryLock service (Finding 8)
@@ -215,18 +219,15 @@ def process_folder(
                     safe_extract_zip(src, zip_tmp, is_cancelled=is_cancelled)
                     # The parent archive's bytes count against the same total, so
                     # nesting cannot double the per-batch disk allowance.
-                    parent_bytes = sum(
-                        p.stat().st_size for p in zip_tmp.rglob("*") if p.is_file()
-                    )
+                    parent_bytes = sum(p.stat().st_size for p in zip_tmp.rglob("*") if p.is_file())
                     remaining_budget = max(0, MAX_TOTAL_BYTES - parent_bytes)
-                    for problem in _extract_nested_archives(
-                        zip_tmp, is_cancelled, budget_bytes=remaining_budget
-                    ):
+                    for problem in _extract_nested_archives(zip_tmp, is_cancelled, budget_bytes=remaining_budget):
                         failed += 1
                         errors.append(f"{src.name}: {problem}")
 
                     inner_files = sorted(
-                        p for p in zip_tmp.rglob("*.*")
+                        p
+                        for p in zip_tmp.rglob("*.*")
                         if p.is_file()
                         and p.suffix.lower() in SUPPORTED_EXTENSIONS
                         and p.suffix.lower() != ".zip"
@@ -290,9 +291,7 @@ def process_folder(
             if is_cancelled():
                 cancelled = True
                 break
-            target_file = protect_source_destinations(
-                output_folder / out_name, protected_sources, allocated_names
-            )
+            target_file = protect_source_destinations(output_folder / out_name, protected_sources, allocated_names)
             if target_file.exists():
                 if config.overwrite_policy == "skip":
                     skipped += 1
@@ -304,9 +303,7 @@ def process_folder(
                     while target_file.exists() or target_file.resolve() in protected_sources:
                         target_file = output_folder / f"{Path(out_name).stem}_copy{r_count}.jpg"
                         r_count += 1
-                        target_file = protect_source_destinations(
-                            target_file, protected_sources, allocated_names
-                        )
+                        target_file = protect_source_destinations(target_file, protected_sources, allocated_names)
 
             file_start = time.time()
             file_rec: dict[str, Any] = {
@@ -329,7 +326,12 @@ def process_folder(
                     file_records.append(file_rec)
                     break
                 _render_file_with_timeout(
-                    item_path, target_file, config, timeout_seconds=60.0, is_cancelled=is_cancelled
+                    item_path,
+                    target_file,
+                    config,
+                    timeout_seconds=60.0,
+                    is_cancelled=is_cancelled,
+                    on_process_started=on_process_started,
                 )
                 file_duration = round(time.time() - file_start, 3)
                 file_rec["status"] = "success"
