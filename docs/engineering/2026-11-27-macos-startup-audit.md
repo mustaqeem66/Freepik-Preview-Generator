@@ -103,8 +103,8 @@ Automated tests now cover:
 
 ## Verification evidence
 
-- Focused macOS/startup/package regression suite: `102 passed, 2 skipped`.
-- Full Python suite: `735 passed, 5 skipped`.
+- Focused macOS/startup/package regression suite: `105 passed, 2 skipped`.
+- Full Python suite: `738 passed, 5 skipped`.
 - Ruff: passed.
 - Pyrefly: `0 errors` (2 suppressed, 18 warnings below the default severity).
 - Frontend typecheck: passed.
