@@ -1,6 +1,6 @@
 """
 PreviewGen Desktop Runtime
-GUI entry point. ONLY this module imports pywebview at module scope.
+GUI entry point. ONLY this module imports pywebview, and it does so inside the guarded startup path.
 
 CLI modes and pure modules (cli, scanner, settings, api, lifecycle, renderers)
 must never import this module, so they remain usable without a GUI runtime.
@@ -19,8 +19,6 @@ import time
 import webbrowser
 from pathlib import Path
 from typing import Any
-
-import webview
 
 from previewgen.api import DesktopApi
 from previewgen.dialogs import applescript_string
@@ -70,7 +68,10 @@ def show_fatal_error(title: str, message: str) -> None:
             return
         except Exception:
             pass
-    sys.stderr.write(f"\n[FATAL ERROR] {title}\n{message}\n\n")
+    stream = sys.stderr
+    if stream is not None:
+        with contextlib.suppress(Exception):
+            stream.write(f"\n[FATAL ERROR] {title}\n{message}\n\n")
 
 
 def bridge_is_stalled(api: Any, now: float, quiet_seconds: float = 15.0) -> bool:
@@ -85,6 +86,50 @@ def bridge_is_stalled(api: Any, now: float, quiet_seconds: float = 15.0) -> bool
     return bool(api.has_outstanding_work())
 
 
+def _create_desktop_window(
+    html_dist: Path,
+    *,
+    is_smoke: bool,
+    custom_chrome: bool,
+) -> tuple[Any | None, Any | None]:
+    """Create the native API and window inside one fail-closed boundary."""
+    api: Any | None = None
+    try:
+        # Import the native backend only after the fatal-error handler exists.
+        # A damaged frozen PyObjC/WebKit package must reach that handler rather
+        # than terminating a windowed .app while the module is being imported.
+        import webview
+
+        api = DesktopApi()
+        window = webview.create_window(
+            "PreviewGen",
+            html_dist.as_uri(),
+            width=1400,
+            height=900,
+            min_size=(1100, 700),
+            resizable=True,
+            text_select=False,
+            frameless=custom_chrome,
+            easy_drag=False,
+            on_top=False,
+            background_color="#0F172A",
+            js_api=api,
+            hidden=is_smoke,
+        )
+        if window is None:
+            raise RuntimeError("webview.create_window returned no window; a GUI backend is unavailable")
+        return api, window
+    except Exception as exc:
+        if api is not None:
+            with contextlib.suppress(Exception):
+                api.cleanup()
+        show_fatal_error(
+            "PreviewGen - GUI Failure",
+            f"Failed to initialize webview window: {exc}",
+        )
+        return None, None
+
+
 def start_desktop_app() -> int:
     """
     Create and run the pywebview window with the React frontend.
@@ -95,7 +140,6 @@ def start_desktop_app() -> int:
     """
     logging.info("Starting PreviewGen desktop runtime...")
 
-    api = DesktopApi()
     html_dist = get_html_dist()
 
     if not html_dist.is_file():
@@ -142,27 +186,16 @@ def start_desktop_app() -> int:
     elif sys.platform == "win32":
         gui_type = "edgechromium"
 
-    is_headless = is_smoke
     # Set PREVIEWGEN_NATIVE_TITLEBAR=1 to fall back to OS decorations on
     # systems where frameless windows are not draggable/resizable.
     custom_chrome = os.environ.get("PREVIEWGEN_NATIVE_TITLEBAR") != "1"
-    window = webview.create_window(
-        "PreviewGen",
-        target_url,
-        width=1400,
-        height=900,
-        min_size=(1100, 700),
-        resizable=True,
-        text_select=False,
-        frameless=custom_chrome,
-        easy_drag=False,
-        on_top=False,
-        background_color="#0F172A",
-        js_api=api,
-        hidden=is_headless,
+    api, window = _create_desktop_window(
+        html_dist,
+        is_smoke=is_smoke,
+        custom_chrome=custom_chrome,
     )
-    if window is None:
-        raise RuntimeError("webview.create_window returned no window; a GUI backend is unavailable")
+    if api is None or window is None:
+        return 1
     # Bind api to window
     api._set_window(window, custom_chrome=custom_chrome)
 
@@ -221,6 +254,8 @@ def start_desktop_app() -> int:
     ).start()
 
     try:
+        import webview
+
         start_kwargs: dict[str, Any] = {"debug": False}
         if gui_type:
             start_kwargs["gui"] = gui_type
@@ -264,10 +299,11 @@ def start_desktop_app() -> int:
         webview.start(**start_kwargs)
     except Exception as exc:
         show_fatal_error("PreviewGen - GUI Failure", f"Failed to initialize webview window: {exc}")
-        raise
+        return 1
     finally:
         watchdog_stop.set()
-        api.cleanup()
+        with contextlib.suppress(Exception):
+            api.cleanup()
     return 0
 
 

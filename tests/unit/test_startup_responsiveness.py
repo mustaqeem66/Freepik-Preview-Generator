@@ -1,6 +1,8 @@
 """Startup cleanup must not make the desktop entrypoint wait for slow disks."""
+
 from __future__ import annotations
 
+import sys
 import threading
 
 import pytest
@@ -30,6 +32,20 @@ def test_slow_temp_sweep_is_not_on_the_desktop_startup_thread(monkeypatch):
     assert complete.wait(1)
 
 
+def test_log_configuration_failure_does_not_stop_startup(monkeypatch):
+    from previewgen import entrypoint, settings
+
+    monkeypatch.setattr(sys, "argv", ["previewgen", "--smoke-test"])
+    monkeypatch.setattr(entrypoint, "_run_headless_smoke_test", lambda: 0)
+
+    def _fail_logging():
+        raise OSError("log directory is not writable")
+
+    monkeypatch.setattr(settings, "configure_logging", _fail_logging)
+
+    assert entrypoint.main() == 0
+
+
 def test_open_diagnostics_folder_is_authorized_and_local(monkeypatch, tmp_path):
     from previewgen import settings
     from previewgen.api import DesktopApi
@@ -39,7 +55,8 @@ def test_open_diagnostics_folder_is_authorized_and_local(monkeypatch, tmp_path):
     api = DesktopApi()
     visited = []
     monkeypatch.setattr(
-        api, "open_folder",
+        api,
+        "open_folder",
         lambda path: visited.append(path) or {"ok": True, "error": None},
     )
     result = api.open_diagnostics_folder()
