@@ -28,7 +28,8 @@ def _terminate_group(process: subprocess.Popen[bytes]) -> None:
         return
     with contextlib.suppress(subprocess.TimeoutExpired):
         process.wait(timeout=5)
-        return
+    # The group leader may exit after SIGTERM while a descendant ignores it.
+    # Escalate the whole group even when wait() succeeded.
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
