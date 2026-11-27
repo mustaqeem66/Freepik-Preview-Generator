@@ -120,6 +120,7 @@ def test_superseding_batch_queues_without_bridge_wait(tmp_path, monkeypatch):
         is_cancelled,
         *,
         on_process_started=None,
+        on_process_finished=None,
     ):
         calls.append(str(output))
         if len(calls) == 1:

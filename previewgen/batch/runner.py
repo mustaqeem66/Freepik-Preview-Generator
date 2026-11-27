@@ -117,6 +117,7 @@ def process_folder(
     *,
     selected_files: tuple[Path, ...] | None = None,
     on_process_started: Callable[[int], None] | None = None,
+    on_process_finished: Callable[[int], None] | None = None,
 ) -> dict[str, Any]:
     input_folder = input_folder.resolve()
     output_folder = output_folder.resolve()
@@ -332,6 +333,7 @@ def process_folder(
                     timeout_seconds=60.0,
                     is_cancelled=is_cancelled,
                     on_process_started=on_process_started,
+                    on_process_finished=on_process_finished,
                 )
                 file_duration = round(time.time() - file_start, 3)
                 file_rec["status"] = "success"

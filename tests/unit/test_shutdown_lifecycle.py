@@ -118,6 +118,82 @@ def test_cleanup_terminates_active_renderer(tmp_path):
     assert list(tmp_path.glob("previewgen_render_*")) == []
 
 
+def test_renderer_pool_reports_process_completion(tmp_path):
+    if not SAMPLE_PNG.is_file():
+        pytest.skip("sample.png fixture missing")
+
+    started: list[int] = []
+    finished: list[int] = []
+    pool = RendererProcessPool(default_timeout=30.0)
+
+    pool.render(
+        SAMPLE_PNG,
+        tmp_path / "out.jpg",
+        PreviewConfig(),
+        timeout_seconds=30.0,
+        on_process_started=started.append,
+        on_process_finished=finished.append,
+    )
+
+    assert started
+    assert finished == started
+
+
+def test_completed_renderer_pid_is_removed_from_lifecycle_registry(monkeypatch, tmp_path):
+    """A stale PID could be reused by an unrelated process before shutdown."""
+    from previewgen import lifecycle as lifecycle_module
+
+    release = threading.Event()
+    reported = threading.Event()
+
+    def _fake_process_folder(
+        input_folder,
+        output_folder,
+        config,
+        progress,
+        is_cancelled,
+        *,
+        selected_files=None,
+        on_process_started=None,
+        on_process_finished=None,
+    ):
+        assert on_process_started is not None
+        assert on_process_finished is not None
+        on_process_started(4242)
+        on_process_finished(4242)
+        reported.set()
+        release.wait(timeout=3)
+        return {
+            "planned": 0,
+            "processed": 0,
+            "remaining": 0,
+            "success": 0,
+            "failed": 0,
+            "skipped": 0,
+            "cancelled": True,
+            "status": "cancelled",
+            "errors": [],
+            "duration": 0.0,
+        }
+
+    monkeypatch.setattr(lifecycle_module, "process_folder", _fake_process_folder)
+    lifecycle = LifecycleManager()
+    lifecycle.start_batch(
+        tmp_path,
+        tmp_path / "out",
+        PreviewConfig(),
+        progress_callback=lambda *_args: None,
+        is_cancelled=lifecycle.cancel_event.is_set,
+        operation_id="batch_finished_renderer",
+    )
+
+    assert reported.wait(2.0)
+    operation = lifecycle.registry.get("batch_finished_renderer")
+    assert operation is not None
+    assert 4242 not in operation.process_ids
+    release.set()
+
+
 def test_cleanup_terminates_registered_batch_renderer(monkeypatch, tmp_path):
     """A renderer PID must reach the lifecycle registry before shutdown."""
     from previewgen import lifecycle as lifecycle_module
@@ -140,6 +216,7 @@ def test_cleanup_terminates_registered_batch_renderer(monkeypatch, tmp_path):
         *,
         selected_files=None,
         on_process_started=None,
+        on_process_finished=None,
     ):
         assert on_process_started is not None
         on_process_started(child.pid)

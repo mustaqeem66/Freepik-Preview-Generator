@@ -148,6 +148,7 @@ class RendererProcessPool:
         timeout_seconds: float | None = None,
         is_cancelled: Callable[[], bool] | None = None,
         on_process_started: Callable[[int], None] | None = None,
+        on_process_finished: Callable[[int], None] | None = None,
     ) -> dict[str, Any]:
         """
         Render a single file in an isolated child process with hard timeout
@@ -201,6 +202,7 @@ class RendererProcessPool:
 
         self._result_queue = mp.Queue()
         self._cancelled.clear()
+        renderer_pid: int | None = None
 
         try:
             # Create the Job Object before the child exists so the window in which
@@ -214,8 +216,10 @@ class RendererProcessPool:
                 daemon=True,
             )
             self._process.start()
-            if on_process_started is not None and self._process.pid is not None:
-                on_process_started(self._process.pid)
+            renderer_pid = self._process.pid
+            if on_process_started is not None and renderer_pid is not None:
+                with contextlib.suppress(Exception):
+                    on_process_started(renderer_pid)
 
             # Windows: bind the child to a Job Object so every descendant it
             # spawns is killed when the job handle is closed. A failed assign
@@ -274,6 +278,9 @@ class RendererProcessPool:
 
         finally:
             self._cleanup()
+            if on_process_finished is not None and renderer_pid is not None:
+                with contextlib.suppress(Exception):
+                    on_process_finished(renderer_pid)
             safe_rmtree(temp_dir, "render temp")
 
     def _terminate_process_tree(self) -> None:
@@ -343,6 +350,7 @@ def render_file_isolated(
     timeout_seconds: float = 60.0,
     is_cancelled: Callable[[], bool] | None = None,
     on_process_started: Callable[[int], None] | None = None,
+    on_process_finished: Callable[[int], None] | None = None,
 ) -> None:
     """
     Render a file in an isolated child process with hard timeout and kill escalation.
@@ -355,6 +363,7 @@ def render_file_isolated(
         timeout_seconds,
         is_cancelled,
         on_process_started=on_process_started,
+        on_process_finished=on_process_finished,
     )
 
     if not Path(output_path).is_file():
@@ -369,6 +378,7 @@ def render_file_with_timeout(
     timeout_seconds: float = 60.0,
     is_cancelled: Callable[[], bool] | None = None,
     on_process_started: Callable[[int], None] | None = None,
+    on_process_finished: Callable[[int], None] | None = None,
 ) -> None:
     """Compatibility wrapper - now uses process isolation."""
     render_file_isolated(
@@ -378,4 +388,5 @@ def render_file_with_timeout(
         timeout_seconds,
         is_cancelled,
         on_process_started=on_process_started,
+        on_process_finished=on_process_finished,
     )

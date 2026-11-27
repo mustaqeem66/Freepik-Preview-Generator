@@ -168,6 +168,9 @@ class LifecycleManager:
                     def record_process_started(pid: int) -> None:
                         op.process_ids.add(int(pid))
 
+                    def record_process_finished(pid: int) -> None:
+                        op.process_ids.discard(int(pid))
+
                     if selected_files is None:
                         summary = process_folder(
                             input_folder,
@@ -176,6 +179,7 @@ class LifecycleManager:
                             progress,
                             cancelled,
                             on_process_started=record_process_started,
+                            on_process_finished=record_process_finished,
                         )
                     else:
                         summary = process_folder(
@@ -186,6 +190,7 @@ class LifecycleManager:
                             cancelled,
                             selected_files=selected_files,
                             on_process_started=record_process_started,
+                            on_process_finished=record_process_finished,
                         )
             except Exception as exc:
                 logging.exception("Batch execution failed")
