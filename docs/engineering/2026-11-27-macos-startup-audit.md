@@ -2,8 +2,8 @@
 
 **Date:** 2026-11-27  
 **Affected platform:** macOS 11+ (native arm64 release runner)  
-**Related release:** `v2.1.5` is the published native-verified baseline; post-publication audit corrections are included in `v2.1.6`.
-**Status:** Fixed in source and natively verified. `v2.1.5` remains unchanged; `v2.1.6` carries the final lifecycle and diagnostic corrections.
+**Related release:** `v2.1.5` is the published native-verified baseline; the final post-publication corrections are published as `v2.1.6`.
+**Status:** Fixed in source and natively verified. `v2.1.5` remains unchanged; `v2.1.6` is published as the latest release.
 
 ## Scope
 
@@ -156,6 +156,27 @@ PR #199 fixes these paths and adds regression coverage. The published `v2.1.5` a
 - complete Python suite: `746 passed, 5 skipped`
 - focused runtime/lifecycle suite: `36 passed`
 - independent final review: no Critical or Important findings
+
+### `v2.1.6` publication evidence
+
+The `v2.1.6` tag workflow built every platform and passed all four clean-machine jobs:
+
+- tag workflow: https://github.com/mustaqeem66/Freepik-Preview-Generator/actions/runs/46115031330
+- Windows build and clean-machine job: passed
+- macOS `.app`/DMG build and clean-machine job: passed
+- Ubuntu 22.04 build and clean-machine job: passed
+- Ubuntu 24.04 clean-machine job: passed
+- release artifact and checksum job: passed
+
+The release is published and marked as the latest release at https://github.com/mustaqeem66/Freepik-Preview-Generator/releases/tag/v2.1.6. Published asset digests are:
+
+- `PreviewGen-macOS.dmg`: `b83b993d9f8fd7d7765208b50d0f21ff5d79bcb2d1cfe5e673462feaaa957afe`
+- `PreviewGen-Linux.AppImage`: `053035e6e72cfb638bf0b4e29157635fe7914c8596d002edb0e234d905eae5ae`
+- `PreviewGen-Setup.exe`: `9f5d9036f68ce5750080ffa9e09f8139c40d42cb57aab369948486876bec25a8`
+- `PreviewGen-Windows.zip`: `d75437b75f949c4af1f920278eb1ac6fd8226cc218dce8bea021684acf9179ee`
+- `SHA256SUMS.txt`: `9207776adac612b90c106ae4e0569e89a7277f41168c668c9623ae2877604913`
+
+The published `SHA256SUMS.txt` was downloaded independently, and its digest and four listed artifact digests matched the GitHub release metadata. The published macOS DMG was also downloaded, extracted, and accepted by `scripts/verify_macos_bundle.py`.
 
 ## Remaining macOS limitations
 
