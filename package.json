@@ -1,6 +1,6 @@
 {
   "name": "previewgen-cloud-preview",
-  "version": "2.1.5",
+  "version": "2.1.6",
   "private": true,
   "description": "Root entrypoint for browser preview only; frontend/package.json remains canonical.",
   "scripts": {
